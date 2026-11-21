@@ -1,0 +1,213 @@
+"""
+Short-Term & Long-Term Memory Layer (Durable SQL Persistence + Isolated Test Store Support)
+- Short-term: Rolling 12-message window + deterministic tool-output summary
+- Long-term: Namespace-isolated store (`entity_profiles`, `case_episodes`, `reflexion_playbook`)
+  persisted in SQLite/PostgreSQL when `persist=True` (default for global singleton),
+  or isolated in-memory when instantiated directly in unit tests (`LongTermMemoryStore(persist=False)`).
+- Forget API: `forget_customer(customer_id)` wipes profiles & episodes on demand.
+"""
+from __future__ import annotations
+
+import json
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+from src.db.database import get_db, init_db, utc_now_iso
+
+
+class ReflexionLesson(BaseModel):
+    lesson_id: str
+    trigger_precondition: str
+    observed_failure: str
+    actionable_rule: str
+    status: str = "pending"  # pending | approved | rejected
+    reviewer_rationale: str = ""
+    created_at: str = Field(default_factory=utc_now_iso)
+
+
+def trim_messages_with_summary(
+    messages: list[dict[str, Any]],
+    rolling_summary: str = "",
+    window_size: int = 12,
+) -> tuple[list[dict[str, Any]], str]:
+    """
+    Keep only the most recent `window_size` messages and fold older messages
+    into a deterministic rolling summary so LLM context never bloats.
+    """
+    if len(messages) <= window_size:
+        return messages, rolling_summary
+
+    overflow = messages[:-window_size]
+    recent = messages[-window_size:]
+
+    summary_parts = [rolling_summary] if rolling_summary else []
+    for msg in overflow:
+        role = msg.get("role", "unknown")
+        content = str(msg.get("content", ""))[:120]
+        summary_parts.append(f"[{role}] {content}")
+
+    new_summary = " | ".join(summary_parts)[-2000:]
+    return recent, new_summary
+
+
+class LongTermMemoryStore:
+    """
+    Namespace-isolated long-term memory store.
+    `persist=True` stores records durably in the SQLite/PostgreSQL database;
+    `persist=False` (default for fresh test instances) keeps isolated per-instance state.
+    """
+
+    def __init__(self, persist: bool = False) -> None:
+        self._persist = persist
+        self._entity_profiles: dict[str, dict[str, Any]] = {}
+        self._case_episodes: dict[str, list[dict[str, Any]]] = {}
+        self._reflexion_playbook: dict[str, ReflexionLesson] = {}
+        self._playbook_frozen: bool = False
+        if self._persist:
+            init_db()
+
+    # ── Entity Profiles ───────────────────────────────────────────────────────
+    def save_entity_profile(self, customer_id: str, profile: dict[str, Any]) -> None:
+        now = utc_now_iso()
+        rec = {**profile, "customer_id": customer_id, "updated_at": now}
+        self._entity_profiles[customer_id] = rec
+        if self._persist:
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO entity_profiles (customer_id, profile_json, updated_at) VALUES (?, ?, ?)",
+                    (customer_id, json.dumps(rec, default=str), now),
+                )
+
+    def get_entity_profile(self, customer_id: str) -> Optional[dict[str, Any]]:
+        if self._persist:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT profile_json FROM entity_profiles WHERE customer_id = ?", (customer_id,)
+                ).fetchone()
+                return json.loads(row["profile_json"]) if row else None
+        return self._entity_profiles.get(customer_id)
+
+    # ── Case Episodes (Human-Approval Gated) ──────────────────────────────────
+    def save_case_episode(self, customer_id: str, episode: dict[str, Any], human_approved: bool) -> bool:
+        """Writes occur ONLY after human approval."""
+        if not human_approved:
+            return False
+        now = utc_now_iso()
+        rec = {**episode, "archived_at": now}
+        self._case_episodes.setdefault(customer_id, []).append(rec)
+        if self._persist:
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO case_episodes (customer_id, episode_json, archived_at) VALUES (?, ?, ?)",
+                    (customer_id, json.dumps(rec, default=str), now),
+                )
+        return True
+
+    def get_case_episodes(self, customer_id: str) -> list[dict[str, Any]]:
+        if self._persist:
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT episode_json FROM case_episodes WHERE customer_id = ? ORDER BY episode_id ASC",
+                    (customer_id,),
+                ).fetchall()
+                return [json.loads(r["episode_json"]) for r in rows]
+        return list(self._case_episodes.get(customer_id, []))
+
+    # ── Reflexion Playbook ────────────────────────────────────────────────────
+    def is_playbook_frozen(self) -> bool:
+        if self._persist:
+            with get_db() as conn:
+                row = conn.execute("SELECT flag_value FROM system_flags WHERE flag_key = 'playbook_frozen'").fetchone()
+                return bool(row and row["flag_value"] == "true")
+        return self._playbook_frozen
+
+    def freeze_playbook(self) -> None:
+        self._playbook_frozen = True
+        if self._persist:
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO system_flags (flag_key, flag_value) VALUES ('playbook_frozen', 'true')"
+                )
+
+    def add_lesson(self, lesson: ReflexionLesson) -> bool:
+        if self.is_playbook_frozen():
+            return False
+        self._reflexion_playbook[lesson.lesson_id] = lesson
+        if self._persist:
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO reflexion_playbook
+                    (lesson_id, trigger_precondition, observed_failure, actionable_rule, status, reviewer_rationale, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        lesson.lesson_id,
+                        lesson.trigger_precondition,
+                        lesson.observed_failure,
+                        lesson.actionable_rule,
+                        lesson.status,
+                        lesson.reviewer_rationale,
+                        lesson.created_at,
+                    ),
+                )
+        return True
+
+    def review_lesson(self, lesson_id: str, approve: bool, rationale: str = "") -> bool:
+        if self.is_playbook_frozen():
+            return False
+        status = "approved" if approve else "rejected"
+        if self._persist:
+            with get_db() as conn:
+                cur = conn.execute(
+                    "UPDATE reflexion_playbook SET status = ?, reviewer_rationale = ? WHERE lesson_id = ?",
+                    (status, rationale, lesson_id),
+                )
+                if cur.rowcount == 0:
+                    return False
+        else:
+            if lesson_id not in self._reflexion_playbook:
+                return False
+            self._reflexion_playbook[lesson_id].status = status
+            self._reflexion_playbook[lesson_id].reviewer_rationale = rationale
+        return True
+
+    def list_all_lessons(self) -> list[ReflexionLesson]:
+        if self._persist:
+            with get_db() as conn:
+                rows = conn.execute("SELECT * FROM reflexion_playbook ORDER BY created_at ASC").fetchall()
+                return [ReflexionLesson(**dict(r)) for r in rows]
+        return list(self._reflexion_playbook.values())
+
+    def retrieve_top_lessons(self, query: str, top_k: int = 3) -> list[ReflexionLesson]:
+        approved = [l for l in self.list_all_lessons() if l.status == "approved"]
+        words = set(query.lower().split())
+        scored = []
+        for lesson in approved:
+            text = f"{lesson.trigger_precondition} {lesson.observed_failure} {lesson.actionable_rule}".lower()
+            overlap = sum(1 for w in words if w in text)
+            scored.append((overlap, lesson))
+        scored.sort(key=lambda x: -x[0])
+        return [l for _, l in scored[:top_k]]
+
+    # ── Forget API (Section 11.1) ─────────────────────────────────────────────
+    def forget_customer(self, customer_id: str) -> dict[str, Any]:
+        profile_removed = self._entity_profiles.pop(customer_id, None) is not None
+        episodes_removed = len(self._case_episodes.pop(customer_id, []))
+        if self._persist:
+            with get_db() as conn:
+                c1 = conn.execute("DELETE FROM entity_profiles WHERE customer_id = ?", (customer_id,))
+                c2 = conn.execute("DELETE FROM case_episodes WHERE customer_id = ?", (customer_id,))
+                profile_removed = profile_removed or (c1.rowcount > 0)
+                episodes_removed = max(episodes_removed, c2.rowcount)
+        return {
+            "customer_id": customer_id,
+            "profile_removed": profile_removed,
+            "episodes_removed": episodes_removed,
+            "deleted_at": utc_now_iso(),
+        }
+
+
+# Durable SQL-backed singleton used by FastAPI & runtime agents
+memory_store = LongTermMemoryStore(persist=True)

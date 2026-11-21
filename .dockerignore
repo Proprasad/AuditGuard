@@ -1,0 +1,12 @@
+# Prevent held-out test set leakage into runtime containers (Blueprint Rule #4)
+eval/held_out/
+data/synthetic/held_out/
+
+# Local caches & virtualenvs
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.db
+.env

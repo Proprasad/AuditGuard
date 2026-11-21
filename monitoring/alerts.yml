@@ -1,0 +1,25 @@
+groups:
+  - name: auditguard_alerts
+    rules:
+      - alert: HighCitationFailureRate
+        expr: |
+          (
+            sum(rate(auditguard_citations_verified_total{status="failed"}[5m]))
+            /
+            clamp_min(sum(rate(auditguard_citations_verified_total[5m])), 1)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Citation verification failure rate exceeded 2% (below 98% SLO)"
+          description: "More than 2% of regulatory/evidence citations failed verification over the last 5 minutes."
+
+      - alert: HighInvestigationLatency
+        expr: histogram_quantile(0.95, sum(rate(auditguard_investigation_duration_seconds_bucket[5m])) by (le)) > 45
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Investigation p95 latency exceeded 45s"
+          description: "95th percentile investigation latency is above the 45-second C2 SLO."

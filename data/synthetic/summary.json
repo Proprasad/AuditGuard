@@ -1,0 +1,20 @@
+{
+  "total": 60,
+  "dev": 20,
+  "held_out": 40,
+  "dev_dir": "data\\synthetic\\dev",
+  "held_out_dir": "eval\\held_out",
+  "categories": {
+    "clear_scatter_gather": "escalate_str",
+    "staggered_timing": "escalate_str",
+    "fee_skimming": "escalate_str",
+    "missing_hop": "request_info",
+    "two_tier_layered": "escalate_str",
+    "marketplace_payout": "close_benign",
+    "charitable_donations": "close_benign",
+    "wedding_collection": "close_benign",
+    "salary_disbursement": "close_benign",
+    "chit_fund": "close_benign"
+  },
+  "seed": 42
+}

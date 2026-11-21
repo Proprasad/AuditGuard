@@ -1,0 +1,24 @@
+experiment_id: "E1"
+name: "Architecture Value"
+description: "Compare C0 (Fixed Workflow) vs. C1 (Single Agent) vs. C2 (Multi-Agent Team) under identical models, tools, and budgets."
+split: "held_out"
+repeats: 3
+modes:
+  - "c0_fixed"
+  - "c1_single"
+  - "c2_multi"
+budgets:
+  max_tool_calls: 15
+  max_cost_usd_per_case: 0.15
+  max_replans: 3
+defenses_enabled: true
+reflexion_enabled: false
+memory_enabled: true
+metrics:
+  - "disposition_accuracy"
+  - "evidence_recall"
+  - "replanning_recovery_rate"
+  - "citation_validity_rate"
+  - "inr_arithmetic_error_rate"
+  - "cost_usd"
+  - "latency_seconds"

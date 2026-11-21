@@ -1,0 +1,23 @@
+experiment_id: "E3"
+name: "Reflexion Playbook"
+description: "Compare Frozen Playbook OFF vs. ON (plus Memory ON vs. OFF) on 40 held-out cases."
+split: "held_out"
+repeats: 3
+modes:
+  - "c1_single"
+  - "c2_multi"
+variants:
+  - name: "playbook_off_memory_off"
+    reflexion_enabled: false
+    memory_enabled: false
+  - name: "playbook_off_memory_on"
+    reflexion_enabled: false
+    memory_enabled: true
+  - name: "playbook_on_memory_on"
+    reflexion_enabled: true
+    memory_enabled: true
+    playbook_frozen: true
+metrics:
+  - "disposition_accuracy"
+  - "replanning_recovery_rate"
+  - "evidence_recall"

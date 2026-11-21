@@ -1,0 +1,25 @@
+experiment_id: "E4"
+name: "Signature Ablation"
+description: "Ablate (a) Configurable Graph Tool + Replanning ON vs. Fixed Detector OFF, and (b) Deterministic Verifier ON vs. Direct LLM Math."
+split: "held_out"
+repeats: 3
+modes:
+  - "c1_single"
+variants:
+  - name: "full_system"
+    configurable_graph: true
+    replanning_enabled: true
+    deterministic_verifier: true
+  - name: "no_replanning"
+    configurable_graph: false
+    replanning_enabled: false
+    deterministic_verifier: true
+  - name: "no_verifier"
+    configurable_graph: true
+    replanning_enabled: true
+    deterministic_verifier: false
+metrics:
+  - "disposition_accuracy"
+  - "replanning_recovery_rate"
+  - "inr_arithmetic_error_rate"
+  - "citation_validity_rate"

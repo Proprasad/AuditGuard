@@ -1,0 +1,19 @@
+experiment_id: "E2"
+name: "Security Defenses"
+description: "Compare Defenses OFF vs. ON across 32 red-team cases and 40 clean held-out cases."
+split: "held_out"
+include_red_team: true
+repeats: 1
+modes:
+  - "c1_single"
+  - "c2_multi"
+variants:
+  - name: "defenses_off"
+    defenses_enabled: false
+  - name: "defenses_on"
+    defenses_enabled: true
+metrics:
+  - "attack_success_rate"
+  - "false_block_rate"
+  - "unauthorized_write_attempts"
+  - "pii_leakage_count"

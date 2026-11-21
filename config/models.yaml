@@ -1,0 +1,55 @@
+config_version: "1.0.0"
+
+models:
+  c1_investigator:
+    provider: "openrouter"
+    model_id: "openai/gpt-4.1-mini"
+    temperature: 0.1
+    max_tokens: 2048
+  c2_supervisor:
+    provider: "openrouter"
+    model_id: "openai/gpt-4.1"
+    temperature: 0.1
+    max_tokens: 2048
+  c2_specialists:
+    provider: "openrouter"
+    model_id: "openai/gpt-4.1-mini"
+    temperature: 0.1
+    max_tokens: 1536
+  judge:
+    provider: "openrouter"
+    model_id: "google/gemini-3.1-flash-lite"
+    temperature: 0.0
+    max_tokens: 1024
+
+budgets:
+  max_tool_calls: 15
+  max_replans: 3
+  max_critique_retries: 2
+  max_cost_usd_per_case: 0.15
+
+graph_bounds:
+  time_window_days:
+    min: 1
+    max: 30
+    default: 7
+  max_hops:
+    min: 2
+    max: 5
+    default: 3
+  amount_tolerance:
+    min: 0.01
+    max: 0.25
+    default: 0.10
+  min_intermediaries:
+    min: 2
+    max: 10
+    default: 2
+
+retrieval:
+  embedding_model: "BAAI/bge-m3"
+  reranker_model: "BAAI/bge-reranker-base"
+  rrf_k: 60
+  top_k_dense: 20
+  top_k_bm25: 20
+  top_k_final: 5

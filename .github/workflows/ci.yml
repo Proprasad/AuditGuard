@@ -1,0 +1,26 @@
+name: AuditGuard CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-eval-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pyyaml pydantic pydantic-settings networkx fastapi httpx typer
+      - name: Generate synthetic dataset
+        run: python -m data.synthetic_generator
+      - name: Run unit & integration tests
+        run: pytest tests/ -v
+      - name: Run dev eval gate
+        run: python -m eval.run_eval --config E1 --split dev --limit 5

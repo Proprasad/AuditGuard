@@ -1,0 +1,162 @@
+{
+  "case_id": "CASE-0014",
+  "alert_id": "ALT-2026-0014",
+  "category": "fee_skimming",
+  "category_id": 3,
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": true,
+  "description": "Intermediaries retain 8-12% fee cut on day 10; requires replanning window & tolerance",
+  "is_held_out": false,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0140",
+  "network_accounts": [
+    "ACC-INT-0141",
+    "ACC-INT-0142",
+    "ACC-INT-0143",
+    "ACC-DST-0147",
+    "ACC-DST-0148"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-3607983",
+      "sender_account": "ACC-ROOT-0140",
+      "receiver_account": "ACC-INT-0141",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:26:00Z",
+      "channel": "IMPS",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-4533779",
+      "sender_account": "ACC-INT-0141",
+      "receiver_account": "ACC-DST-0147",
+      "amount_inr": 276000.0,
+      "timestamp": "2026-09-11T10:17:00Z",
+      "channel": "IMPS",
+      "memo": "Net transfer"
+    },
+    {
+      "tx_id": "TXN-5428914",
+      "sender_account": "ACC-ROOT-0140",
+      "receiver_account": "ACC-INT-0142",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T09:57:00Z",
+      "channel": "UPI",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-1852264",
+      "sender_account": "ACC-INT-0142",
+      "receiver_account": "ACC-DST-0147",
+      "amount_inr": 276000.0,
+      "timestamp": "2026-09-11T10:09:00Z",
+      "channel": "NEFT",
+      "memo": "Net transfer"
+    },
+    {
+      "tx_id": "TXN-8106422",
+      "sender_account": "ACC-ROOT-0140",
+      "receiver_account": "ACC-INT-0143",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:47:00Z",
+      "channel": "IMPS",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-1059486",
+      "sender_account": "ACC-INT-0143",
+      "receiver_account": "ACC-DST-0147",
+      "amount_inr": 276000.0,
+      "timestamp": "2026-09-11T09:16:00Z",
+      "channel": "IMPS",
+      "memo": "Net transfer"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0140": {
+      "account_id": "ACC-ROOT-0140",
+      "customer_id": "CUST-ACC-ROOT-0140",
+      "entity_name": "Agency-14",
+      "entity_type": "individual",
+      "pan": "ABCDE3143F",
+      "risk_category": "high",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 400000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": "8% intermediary fee retention"
+    },
+    "ACC-INT-0141": {
+      "account_id": "ACC-INT-0141",
+      "customer_id": "CUST-ACC-INT-0141",
+      "entity_name": "Agent-0141",
+      "entity_type": "individual",
+      "pan": "ABCDE5291F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 310000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0142": {
+      "account_id": "ACC-INT-0142",
+      "customer_id": "CUST-ACC-INT-0142",
+      "entity_name": "Agent-0142",
+      "entity_type": "individual",
+      "pan": "ABCDE3647F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 310000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0143": {
+      "account_id": "ACC-INT-0143",
+      "customer_id": "CUST-ACC-INT-0143",
+      "entity_name": "Agent-0143",
+      "entity_type": "individual",
+      "pan": "ABCDE8239F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 310000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0147": {
+      "account_id": "ACC-DST-0147",
+      "customer_id": "CUST-ACC-DST-0147",
+      "entity_name": "Agent-0147",
+      "entity_type": "individual",
+      "pan": "ABCDE8007F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 310000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0148": {
+      "account_id": "ACC-DST-0148",
+      "customer_id": "CUST-ACC-DST-0148",
+      "entity_name": "Agent-0148",
+      "entity_type": "individual",
+      "pan": "ABCDE1158F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 310000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

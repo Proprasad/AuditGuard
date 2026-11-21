@@ -1,0 +1,144 @@
+{
+  "case_id": "CASE-0058",
+  "alert_id": "ALT-2026-0058",
+  "category": "chit_fund",
+  "category_id": 10,
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "description": "Actively registered Chit Fund pooling recurring member contributions and prize payout",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0580",
+  "network_accounts": [
+    "ACC-INT-0581",
+    "ACC-INT-0582",
+    "ACC-INT-0583",
+    "ACC-DST-0587",
+    "ACC-DST-0588"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-2355439",
+      "sender_account": "ACC-INT-0581",
+      "receiver_account": "ACC-ROOT-0580",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T09:23:00Z",
+      "channel": "IMPS",
+      "memo": "Monthly Chit Installment"
+    },
+    {
+      "tx_id": "TXN-3488628",
+      "sender_account": "ACC-INT-0582",
+      "receiver_account": "ACC-ROOT-0580",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:40:00Z",
+      "channel": "NEFT",
+      "memo": "Monthly Chit Installment"
+    },
+    {
+      "tx_id": "TXN-5614002",
+      "sender_account": "ACC-INT-0583",
+      "receiver_account": "ACC-ROOT-0580",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T09:37:00Z",
+      "channel": "IMPS",
+      "memo": "Monthly Chit Installment"
+    },
+    {
+      "tx_id": "TXN-9901266",
+      "sender_account": "ACC-ROOT-0580",
+      "receiver_account": "ACC-DST-0587",
+      "amount_inr": 855000.0,
+      "timestamp": "2026-09-03T10:42:00Z",
+      "channel": "IMPS",
+      "memo": "Registered Chit Auction Prize Payout"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0580": {
+      "account_id": "ACC-ROOT-0580",
+      "customer_id": "CUST-ACC-ROOT-0580",
+      "entity_name": "SuvidhaChits-58 Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE8433F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 40000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "CHIT_FUND",
+      "kyc_notes": "State Registrar of Chits active license under Chit Funds Act 1982"
+    },
+    "ACC-INT-0581": {
+      "account_id": "ACC-INT-0581",
+      "customer_id": "CUST-ACC-INT-0581",
+      "entity_name": "Subscriber-0581",
+      "entity_type": "individual",
+      "pan": "ABCDE9282F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1800000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0582": {
+      "account_id": "ACC-INT-0582",
+      "customer_id": "CUST-ACC-INT-0582",
+      "entity_name": "Subscriber-0582",
+      "entity_type": "individual",
+      "pan": "ABCDE8048F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1800000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0583": {
+      "account_id": "ACC-INT-0583",
+      "customer_id": "CUST-ACC-INT-0583",
+      "entity_name": "Subscriber-0583",
+      "entity_type": "individual",
+      "pan": "ABCDE2624F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1800000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0587": {
+      "account_id": "ACC-DST-0587",
+      "customer_id": "CUST-ACC-DST-0587",
+      "entity_name": "Subscriber-0587",
+      "entity_type": "individual",
+      "pan": "ABCDE2874F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1800000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0588": {
+      "account_id": "ACC-DST-0588",
+      "customer_id": "CUST-ACC-DST-0588",
+      "entity_name": "Subscriber-0588",
+      "entity_type": "individual",
+      "pan": "ABCDE4522F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1800000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

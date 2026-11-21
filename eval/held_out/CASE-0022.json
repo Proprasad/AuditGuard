@@ -1,0 +1,107 @@
+{
+  "case_id": "CASE-0022",
+  "alert_id": "ALT-2026-0022",
+  "category": "missing_hop",
+  "category_id": 4,
+  "expected_disposition": "request_info",
+  "expected_replan_required": true,
+  "description": "Intermediate external bank leg missing from records; must avoid guessing -> request_info",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0220",
+  "network_accounts": [
+    "ACC-INT-0221",
+    "ACC-INT-0222",
+    "ACC-INT-0223",
+    "ACC-DST-0227",
+    "ACC-DST-0228"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-9294272",
+      "sender_account": "ACC-ROOT-0220",
+      "receiver_account": "ACC-INT-0221",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:43:00Z",
+      "channel": "UPI",
+      "memo": "External Nostro / Inter-bank gap"
+    },
+    {
+      "tx_id": "TXN-3475836",
+      "sender_account": "ACC-ROOT-0220",
+      "receiver_account": "ACC-INT-0222",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T10:07:00Z",
+      "channel": "NEFT",
+      "memo": "External Nostro / Inter-bank gap"
+    },
+    {
+      "tx_id": "TXN-8132769",
+      "sender_account": "ACC-ROOT-0220",
+      "receiver_account": "ACC-INT-0223",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-03T09:32:00Z",
+      "channel": "RTGS",
+      "memo": "External Nostro / Inter-bank gap"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0220": {
+      "account_id": "ACC-ROOT-0220",
+      "customer_id": "CUST-ACC-ROOT-0220",
+      "entity_name": "Exporter-22",
+      "entity_type": "individual",
+      "pan": "ABCDE3881F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 1200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": "Downstream correspondent bank statement pending"
+    },
+    "ACC-INT-0221": {
+      "account_id": "ACC-INT-0221",
+      "customer_id": "CUST-ACC-INT-0221",
+      "entity_name": "ExtAcct-0221",
+      "entity_type": "individual",
+      "pan": "ABCDE9486F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 600000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0222": {
+      "account_id": "ACC-INT-0222",
+      "customer_id": "CUST-ACC-INT-0222",
+      "entity_name": "ExtAcct-0222",
+      "entity_type": "individual",
+      "pan": "ABCDE8611F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 600000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0223": {
+      "account_id": "ACC-INT-0223",
+      "customer_id": "CUST-ACC-INT-0223",
+      "entity_name": "ExtAcct-0223",
+      "entity_type": "individual",
+      "pan": "ABCDE1822F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 600000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

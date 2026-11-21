@@ -1,0 +1,107 @@
+{
+  "case_id": "CASE-0046",
+  "alert_id": "ALT-2026-0046",
+  "category": "wedding_collection",
+  "category_id": 8,
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "description": "Low-risk family pool disbursing payments to GST-registered catering & venue merchants",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0460",
+  "network_accounts": [
+    "ACC-INT-0461",
+    "ACC-INT-0462",
+    "ACC-INT-0463",
+    "ACC-DST-0467",
+    "ACC-DST-0468"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-3791137",
+      "sender_account": "ACC-ROOT-0460",
+      "receiver_account": "ACC-INT-0461",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T10:58:00Z",
+      "channel": "IMPS",
+      "memo": "Wedding venue & catering invoice"
+    },
+    {
+      "tx_id": "TXN-1771600",
+      "sender_account": "ACC-ROOT-0460",
+      "receiver_account": "ACC-INT-0462",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T09:12:00Z",
+      "channel": "IMPS",
+      "memo": "Wedding venue & catering invoice"
+    },
+    {
+      "tx_id": "TXN-5921894",
+      "sender_account": "ACC-ROOT-0460",
+      "receiver_account": "ACC-INT-0463",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T09:19:00Z",
+      "channel": "IMPS",
+      "memo": "Wedding venue & catering invoice"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0460": {
+      "account_id": "ACC-ROOT-0460",
+      "customer_id": "CUST-ACC-ROOT-0460",
+      "entity_name": "SharmaFamilyWeddingEscrow-46",
+      "entity_type": "individual",
+      "pan": "ABCDE7141F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 6500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": "Verified wedding vendor settlement with GST invoices on file"
+    },
+    "ACC-INT-0461": {
+      "account_id": "ACC-INT-0461",
+      "customer_id": "CUST-ACC-INT-0461",
+      "entity_name": "GrandBanquets-0461 Pvt Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE8056F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 30000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-INT-0462": {
+      "account_id": "ACC-INT-0462",
+      "customer_id": "CUST-ACC-INT-0462",
+      "entity_name": "GrandBanquets-0462 Pvt Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE3385F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 30000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-INT-0463": {
+      "account_id": "ACC-INT-0463",
+      "customer_id": "CUST-ACC-INT-0463",
+      "entity_name": "GrandBanquets-0463 Pvt Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE5000F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 30000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    }
+  }
+}

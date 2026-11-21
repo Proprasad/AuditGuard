@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AuditGuard — AML Compliance Analyst Workbench</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111827;
+      --border: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --danger: #ef4444;
+      --success: #10b981;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      padding: 16px 24px;
+      background: #0f172a;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 0.3px; }
+    header span.sub { color: var(--muted); font-size: 0.85rem; margin-left: 12px; }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #1e293b;
+      color: var(--accent);
+      border: 1px solid #334155;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 18px;
+      padding: 18px 24px;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px 0;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--accent);
+    }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+    select, input, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #374151;
+      background: #0b1120;
+      color: var(--text);
+      margin-bottom: 12px;
+      font-size: 0.9rem;
+    }
+    button {
+      padding: 9px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.9; }
+    .btn-primary { background: var(--accent); color: #0f172a; width: 100%; }
+    .btn-approve { background: var(--success); color: #052e16; }
+    .btn-edit { background: var(--warn); color: #451a03; }
+    .btn-reject { background: var(--danger); color: #fff; }
+    .trace-box {
+      background: #050811;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: Consolas, monospace;
+      font-size: 0.82rem;
+      max-height: 190px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .hash-pill {
+      font-family: Consolas, monospace;
+      font-size: 0.78rem;
+      background: #050811;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      word-break: break-all;
+      margin: 8px 0;
+    }
+    .actions-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .cite-tag {
+      display: inline-block;
+      background: #1e293b;
+      border: 1px solid #38bdf844;
+      color: #7dd3fc;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-size: 0.78rem;
+      margin: 2px 4px 2px 0;
+    }
+    .status-banner {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🛡️ AuditGuard <span class="sub">Evidence-Grounded AML Investigation &amp; Human Approval Workbench</span></h1>
+    </div>
+    <div>
+      <span class="badge">Zero LLM Arithmetic (Decimal)</span>
+      <span class="badge">SHA-256 Human Gate</span>
+      <a href="/api/docs" style="color: var(--accent); margin-left: 12px; font-size: 0.85rem;">Swagger API Docs ↗</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Sidebar: Alert Queue & Controls -->
+    <section>
+      <div class="card">
+        <h2>1. Select Queued Alert</h2>
+        <label for="alertSelect">Queued Transaction Monitoring Alerts</label>
+        <select id="alertSelect"></select>
+
+        <label for="modeSelect">Investigation Architecture</label>
+        <select id="modeSelect">
+          <option value="c2_multi">C2 — Multi-Agent Team (Supervisor + 4 Specialists)</option>
+          <option value="c1_single">C1 — Single-Agent ReAct + Bounded Replan</option>
+          <option value="c0_fixed">C0 — Fixed Baseline (7d / 3-hop, No Replan)</option>
+        </select>
+
+        <button class="btn-primary" onclick="startInvestigation()">▶ Run Live Investigation (SSE)</button>
+      </div>
+
+      <div class="card">
+        <h2>Memory Privacy (Forget API)</h2>
+        <label for="forgetCustId">Customer ID (`DELETE /api/v1/memory/{id}`)</label>
+        <input id="forgetCustId" value="CUST-ACC-IND-1042" />
+        <button style="background:#334155;color:#fff;width:100%" onclick="forgetCustomer()">🗑️ Wipe Customer Memory</button>
+        <div id="forgetMsg" style="font-size:0.8rem;color:var(--muted);margin-top:6px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Audit Trail</h2>
+        <div id="auditList" class="trace-box" style="max-height:240px;">Loading...</div>
+      </div>
+    </section>
+
+    <!-- Right Panel: Live Trace, Evidence & Cryptographic Approval Gate -->
+    <section>
+      <div class="card">
+        <h2>2. Live Investigation Trace Stream</h2>
+        <div id="traceLog" class="trace-box">Select an alert on the left and click "Run Live Investigation"...</div>
+      </div>
+
+      <div id="worksheetCard" class="card" style="display:none;">
+        <h2>3. Citation-Verified Disposition Worksheet</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+          <div>
+            <strong>Worksheet ID:</strong> <span id="wsId"></span> &nbsp;|&nbsp;
+            <strong>Recommended:</strong> <span id="wsDisp" class="badge"></span> &nbsp;|&nbsp;
+            <strong>Confidence:</strong> <span id="wsConf"></span> &nbsp;|&nbsp;
+            <strong>Replans:</strong> <span id="wsReplans"></span> &nbsp;|&nbsp;
+            <strong>Tool Calls:</strong> <span id="wsCalls"></span>
+          </div>
+        </div>
+
+        <p id="wsRationale" style="color:#d1d5db;font-size:0.9rem;"></p>
+
+        <h3 style="font-size:0.85rem;color:var(--muted);">Candidate Fund-Flow Paths (Python Decimal Computed)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Path ID</th>
+              <th>Account Chain</th>
+              <th>Hops</th>
+              <th>Outflow (INR)</th>
+              <th>Consolidated (INR)</th>
+              <th>Retained %</th>
+              <th>Span (d)</th>
+            </tr>
+          </thead>
+          <tbody id="pathsTable"></tbody>
+        </table>
+
+        <div class="grid-2" style="margin-top:14px;">
+          <div>
+            <h3 style="font-size:0.85rem;color:var(--muted);">Competing Hypotheses (H1 vs H2)</h3>
+            <div id="hypothesesBox" style="font-size:0.85rem;"></div>
+          </div>
+          <div>
+            <h3 style="font-size:0.85rem;color:var(--muted);">Regulatory Citations &amp; KYC Summary</h3>
+            <div id="citationsBox"></div>
+            <ul id="kycBox" style="font-size:0.82rem;color:#cbd5e1;padding-left:18px;margin-top:8px;"></ul>
+          </div>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:16px 0;" />
+
+        <h2>4. Mandatory Human Approval Gate (`interrupt()`)</h2>
+        <div style="font-size:0.82rem;color:var(--muted);">Canonical SHA-256 Payload Hash (any edit invalidates prior hash):</div>
+        <div id="hashBox" class="hash-pill"></div>
+
+        <div class="grid-2">
+          <div>
+            <label for="finalDecision">Analyst Final Disposition</label>
+            <select id="finalDecision">
+              <option value="escalate_str">ESCALATE_STR (Escalate for STR Review)</option>
+              <option value="close_benign">CLOSE_BENIGN (Close as Verified Benign)</option>
+              <option value="request_info">REQUEST_INFO (Insufficient Data / Request Logs)</option>
+            </select>
+          </div>
+          <div>
+            <label for="reviewerNotes">Analyst Review Notes (Input-Guardrail Protected)</label>
+            <input id="reviewerNotes" placeholder="e.g., Verified Day-11 consolidation &amp; KYC income mismatch" />
+          </div>
+        </div>
+
+        <label for="editRationale">Optional: Edit Worksheet Rationale (Triggers SHA-256 Re-Hash &amp; Re-Verification)</label>
+        <input id="editRationale" placeholder="Modify worksheet text and click 'Edit Worksheet' to test hash invalidation..." />
+
+        <div class="actions-row">
+          <button class="btn-approve" onclick="submitDecision('approve')">✅ Approve &amp; Commit (Exact Hash)</button>
+          <button class="btn-edit" onclick="submitDecision('edit')">✏️ Edit Worksheet (Invalidate Old Hash)</button>
+          <button class="btn-reject" onclick="submitDecision('reject')">⛔ Reject Disposition</button>
+        </div>
+
+        <div id="decisionBanner" class="status-banner"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let activeThreadId = null;
+    let activeWorksheetId = null;
+    let activePayloadHash = null;
+
+    async function loadAlerts() {
+      const res = await fetch('/api/v1/alerts');
+      const data = await res.json();
+      const sel = document.getElementById('alertSelect');
+      sel.innerHTML = '';
+      for (const a of data.alerts) {
+        const opt = document.createElement('option');
+        opt.value = a.alert_id;
+        opt.dataset.root = a.seed_account_id;
+        opt.dataset.amt = a.initial_amount_inr;
+        opt.textContent = `${a.alert_id} — INR ${Number(a.initial_amount_inr).toLocaleString('en-IN')} (${a.full_name || a.seed_account_id}) [${a.status}]`;
+        sel.appendChild(opt);
+      }
+    }
+
+    async function loadAuditLogs() {
+      const res = await fetch('/api/v1/audit-logs?limit=15');
+      const data = await res.json();
+      const box = document.getElementById('auditList');
+      box.textContent = data.audit_logs.map(
+        l => `[${l.created_at.slice(11,19)}] ${l.event_type} by ${l.actor} (${(l.payload_hash || '-').slice(0,10)})`
+      ).join('\n') || 'No audit logs yet.';
+    }
+
+    function logTrace(line) {
+      const box = document.getElementById('traceLog');
+      box.textContent += '\n' + line;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function startInvestigation() {
+      const sel = document.getElementById('alertSelect');
+      const opt = sel.options[sel.selectedIndex];
+      const alertId = sel.value;
+      const mode = document.getElementById('modeSelect').value;
+
+      document.getElementById('traceLog').textContent = `[START] Registering ${mode} investigation for ${alertId}...`;
+      document.getElementById('worksheetCard').style.display = 'none';
+      document.getElementById('decisionBanner').style.display = 'none';
+
+      const regRes = await fetch('/api/v1/investigations', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          alert_id: alertId,
+          root_account: opt?.dataset?.root || 'ACC-IND-1042',
+          total_amount_inr: Number(opt?.dataset?.amt || 900000),
+          mode: mode
+        })
+      });
+      const reg = await regRes.json();
+      activeThreadId = reg.thread_id;
+      logTrace(`[THREAD] ${activeThreadId} created. Connecting to SSE stream...`);
+
+      const es = new EventSource(`/api/v1/investigations/${activeThreadId}/stream?alert_id=${alertId}&mode=${mode}`);
+
+      es.addEventListener('plan_updated', e => {
+        const d = JSON.parse(e.data);
+        logTrace(`[PLAN] Params=${JSON.stringify(d.graph_params)} | Steps=${d.steps.length}`);
+      });
+
+      es.addEventListener('tool_called', e => {
+        const d = JSON.parse(e.data);
+        logTrace(`[TOOLS] Executed ${d.tool_calls_used} guarded MCP calls -> ${d.paths_found} paths, ${d.kyc_checked} KYC profiles`);
+      });
+
+      es.addEventListener('replan_triggered', e => {
+        const d = JSON.parse(e.data);
+        logTrace(`[REPLAN #${d.replan_count}] ${d.reason} -> New Params: ${JSON.stringify(d.new_params)}`);
+      });
+
+      es.addEventListener('interrupt_required', e => {
+        const d = JSON.parse(e.data);
+        logTrace(`[INTERRUPT] Paused at Human Approval Gate. SHA-256=${d.payload_hash.slice(0,18)}...`);
+        renderWorksheet(d);
+        es.close();
+        loadAuditLogs();
+      });
+
+      es.addEventListener('error', e => {
+        es.close();
+      });
+    }
+
+    function renderWorksheet(d) {
+      const ws = d.worksheet;
+      activeWorksheetId = d.worksheet_id;
+      activePayloadHash = d.payload_hash;
+
+      document.getElementById('worksheetCard').style.display = 'block';
+      document.getElementById('wsId').textContent = d.worksheet_id;
+      document.getElementById('wsDisp').textContent = d.recommended_disposition.toUpperCase();
+      document.getElementById('wsConf').textContent = Math.round(d.confidence_score * 100) + '%';
+      document.getElementById('wsReplans').textContent = d.replan_count;
+      document.getElementById('wsCalls').textContent = d.tool_calls_used;
+      document.getElementById('wsRationale').textContent = ws.recommendation_rationale;
+      document.getElementById('editRationale').value = ws.recommendation_rationale;
+      document.getElementById('finalDecision').value = d.recommended_disposition;
+      document.getElementById('hashBox').textContent = activePayloadHash;
+
+      const tbody = document.getElementById('pathsTable');
+      tbody.innerHTML = (ws.candidate_paths || []).map(p => `
+        <tr>
+          <td><code>${p.path_id}</code></td>
+          <td>${(p.nodes || []).join(' → ')}</td>
+          <td>${p.hop_count}</td>
+          <td>${p.total_outflow_inr || p.total_amount}</td>
+          <td>${p.total_consolidated_inr || '-'}</td>
+          <td>${p.retention_pct || '0.00'}%</td>
+          <td>${p.time_span_days}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="7">No multi-hop paths in window (see missing-hop / benign notes)</td></tr>';
+
+      document.getElementById('hypothesesBox').innerHTML = (ws.hypotheses || []).map(h => `
+        <div style="margin-bottom:8px;padding:8px;background:#0b1120;border-radius:6px;border:1px solid #1f2937;">
+          <strong>${h.label.toUpperCase()}</strong> (${Math.round(h.confidence * 100)}%) — ${h.explanation}
+          <div style="color:#9ca3af;font-size:0.78rem;margin-top:4px;">
+            + ${(h.supporting_evidence || []).join('; ') || 'None'}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('citationsBox').innerHTML = (ws.regulatory_citations || []).map(
+        c => `<span class="cite-tag">${c}</span>`
+      ).join('');
+
+      document.getElementById('kycBox').innerHTML = (ws.kyc_summaries || []).map(
+        k => `<li>${k}</li>`
+      ).join('');
+    }
+
+    async function submitDecision(action) {
+      const banner = document.getElementById('decisionBanner');
+      const payload = {
+        worksheet_id: activeWorksheetId,
+        action: action,
+        decision: document.getElementById('finalDecision').value,
+        approved_hash: activePayloadHash,
+        reviewer_id: 'analyst_console',
+        notes: document.getElementById('reviewerNotes').value
+      };
+      if (action === 'edit') {
+        payload.edited_fields = {
+          recommendation_rationale: document.getElementById('editRationale').value
+        };
+      }
+
+      const res = await fetch(`/api/v1/investigations/${activeThreadId}/decision`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json();
+      banner.style.display = 'block';
+
+      if (!res.ok) {
+        banner.style.background = '#7f1d1d';
+        banner.textContent = `❌ HTTP ${res.status}: ${out.detail || JSON.stringify(out)}`;
+      } else if (action === 'edit') {
+        activePayloadHash = out.payload_hash;
+        document.getElementById('hashBox').textContent = activePayloadHash;
+        document.getElementById('wsRationale').textContent = document.getElementById('editRationale').value;
+        banner.style.background = '#78350f';
+        banner.textContent = `✏️ Edited! Old hash (${out.previous_hash_invalidated.slice(0,12)}...) invalidated -> New SHA-256 (${out.payload_hash.slice(0,12)}...). Click Approve to commit.`;
+      } else if (action === 'reject') {
+        banner.style.background = '#7f1d1d';
+        banner.textContent = `⛔ Rejected: ${out.message}`;
+      } else {
+        banner.style.background = '#064e3b';
+        banner.textContent = `✅ Committed! Case Receipt: ${out.receipt?.case_id || 'OK'} (Audit ${out.receipt?.audit_entry_id || ''})`;
+      }
+      loadAlerts();
+      loadAuditLogs();
+    }
+
+    async function forgetCustomer() {
+      const cid = document.getElementById('forgetCustId').value.trim();
+      const res = await fetch(`/api/v1/memory/${encodeURIComponent(cid)}`, { method: 'DELETE' });
+      const out = await res.json();
+      document.getElementById('forgetMsg').textContent = `Deleted ${out.customer_id} (episodes removed: ${out.episodes_removed})`;
+      loadAuditLogs();
+    }
+
+    loadAlerts();
+    loadAuditLogs();
+  </script>
+</body>
+</html>

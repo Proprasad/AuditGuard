@@ -1,0 +1,130 @@
+{
+  "case_id": "CASE-0038",
+  "alert_id": "ALT-2026-0038",
+  "category": "charitable_donations",
+  "category_id": 7,
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "description": "Registered Section 80G NGO pooling donor contributions and disbursing relief",
+  "is_held_out": false,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0380",
+  "network_accounts": [
+    "ACC-INT-0381",
+    "ACC-INT-0382",
+    "ACC-INT-0383",
+    "ACC-DST-0387",
+    "ACC-DST-0388"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-9312590",
+      "sender_account": "ACC-INT-0381",
+      "receiver_account": "ACC-ROOT-0380",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:50:00Z",
+      "channel": "IMPS",
+      "memo": "Section 80G Flood Relief Donation"
+    },
+    {
+      "tx_id": "TXN-7718473",
+      "sender_account": "ACC-INT-0382",
+      "receiver_account": "ACC-ROOT-0380",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T11:54:00Z",
+      "channel": "NEFT",
+      "memo": "Section 80G Flood Relief Donation"
+    },
+    {
+      "tx_id": "TXN-2477398",
+      "sender_account": "ACC-INT-0383",
+      "receiver_account": "ACC-ROOT-0380",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-03T11:01:00Z",
+      "channel": "IMPS",
+      "memo": "Section 80G Flood Relief Donation"
+    },
+    {
+      "tx_id": "TXN-6423634",
+      "sender_account": "ACC-ROOT-0380",
+      "receiver_account": "ACC-DST-0387",
+      "amount_inr": 864000.0,
+      "timestamp": "2026-09-05T10:09:00Z",
+      "channel": "NEFT",
+      "memo": "Verified relief supply vendor payout"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0380": {
+      "account_id": "ACC-ROOT-0380",
+      "customer_id": "CUST-ACC-ROOT-0380",
+      "entity_name": "SevaTrust-38 Foundation",
+      "entity_type": "trust",
+      "pan": "ABCDE7622F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 25000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "NGO_80G",
+      "kyc_notes": "Active Section 80G & CSR-1 registered charitable trust"
+    },
+    "ACC-INT-0381": {
+      "account_id": "ACC-INT-0381",
+      "customer_id": "CUST-ACC-INT-0381",
+      "entity_name": "Donor-0381",
+      "entity_type": "individual",
+      "pan": "ABCDE9431F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2500000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0382": {
+      "account_id": "ACC-INT-0382",
+      "customer_id": "CUST-ACC-INT-0382",
+      "entity_name": "Donor-0382",
+      "entity_type": "individual",
+      "pan": "ABCDE1018F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2500000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0383": {
+      "account_id": "ACC-INT-0383",
+      "customer_id": "CUST-ACC-INT-0383",
+      "entity_name": "Donor-0383",
+      "entity_type": "individual",
+      "pan": "ABCDE9889F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2500000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0387": {
+      "account_id": "ACC-DST-0387",
+      "customer_id": "CUST-ACC-DST-0387",
+      "entity_name": "ReliefSupplies-38",
+      "entity_type": "company",
+      "pan": "ABCDE8569F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 15000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    }
+  }
+}

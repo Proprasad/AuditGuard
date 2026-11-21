@@ -1,0 +1,222 @@
+{
+  "case_id": "CASE-0026",
+  "alert_id": "ALT-2026-0026",
+  "category": "two_tier_layered",
+  "category_id": 5,
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": true,
+  "description": "4-hop chain across two intermediary tiers on day 9; initial 7d/3-hop scan fails -> replan",
+  "is_held_out": false,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0260",
+  "network_accounts": [
+    "ACC-INT-0261",
+    "ACC-INT-0262",
+    "ACC-INT-0263",
+    "ACC-DST-0267",
+    "ACC-DST-0268"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-4681284",
+      "sender_account": "ACC-ROOT-0260",
+      "receiver_account": "ACC-INT-0261",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:09:00Z",
+      "channel": "IMPS",
+      "memo": "Layer 1"
+    },
+    {
+      "tx_id": "TXN-9147720",
+      "sender_account": "ACC-INT-0261",
+      "receiver_account": "ACC-T2A-0261",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-05T10:56:00Z",
+      "channel": "NEFT",
+      "memo": "Layer 2"
+    },
+    {
+      "tx_id": "TXN-6639317",
+      "sender_account": "ACC-ROOT-0260",
+      "receiver_account": "ACC-INT-0262",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:44:00Z",
+      "channel": "UPI",
+      "memo": "Layer 1"
+    },
+    {
+      "tx_id": "TXN-8841505",
+      "sender_account": "ACC-INT-0262",
+      "receiver_account": "ACC-T2B-0262",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-05T09:47:00Z",
+      "channel": "RTGS",
+      "memo": "Layer 2"
+    },
+    {
+      "tx_id": "TXN-9961107",
+      "sender_account": "ACC-ROOT-0260",
+      "receiver_account": "ACC-INT-0263",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:44:00Z",
+      "channel": "NEFT",
+      "memo": "Layer 1"
+    },
+    {
+      "tx_id": "TXN-1454696",
+      "sender_account": "ACC-INT-0263",
+      "receiver_account": "ACC-T2A-0261",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-05T10:45:00Z",
+      "channel": "NEFT",
+      "memo": "Layer 2"
+    },
+    {
+      "tx_id": "TXN-8190929",
+      "sender_account": "ACC-T2A-0261",
+      "receiver_account": "ACC-T3A-0263",
+      "amount_inr": 580000.0,
+      "timestamp": "2026-09-09T11:49:00Z",
+      "channel": "RTGS",
+      "memo": "Layer 3"
+    },
+    {
+      "tx_id": "TXN-4048907",
+      "sender_account": "ACC-T3A-0263",
+      "receiver_account": "ACC-DST-0267",
+      "amount_inr": 570000.0,
+      "timestamp": "2026-09-11T11:03:00Z",
+      "channel": "NEFT",
+      "memo": "Final consolidation"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0260": {
+      "account_id": "ACC-ROOT-0260",
+      "customer_id": "CUST-ACC-ROOT-0260",
+      "entity_name": "ShellSource-26",
+      "entity_type": "individual",
+      "pan": "ABCDE5262F",
+      "risk_category": "high",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 380000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": "Multi-tier layering"
+    },
+    "ACC-INT-0261": {
+      "account_id": "ACC-INT-0261",
+      "customer_id": "CUST-ACC-INT-0261",
+      "entity_name": "TierNode-0261",
+      "entity_type": "individual",
+      "pan": "ABCDE7211F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0262": {
+      "account_id": "ACC-INT-0262",
+      "customer_id": "CUST-ACC-INT-0262",
+      "entity_name": "TierNode-0262",
+      "entity_type": "individual",
+      "pan": "ABCDE6363F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0263": {
+      "account_id": "ACC-INT-0263",
+      "customer_id": "CUST-ACC-INT-0263",
+      "entity_name": "TierNode-0263",
+      "entity_type": "individual",
+      "pan": "ABCDE4467F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-T2A-0261": {
+      "account_id": "ACC-T2A-0261",
+      "customer_id": "CUST-ACC-T2A-0261",
+      "entity_name": "TierNode-0261",
+      "entity_type": "individual",
+      "pan": "ABCDE8449F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-T2B-0262": {
+      "account_id": "ACC-T2B-0262",
+      "customer_id": "CUST-ACC-T2B-0262",
+      "entity_name": "TierNode-0262",
+      "entity_type": "individual",
+      "pan": "ABCDE6355F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-T3A-0263": {
+      "account_id": "ACC-T3A-0263",
+      "customer_id": "CUST-ACC-T3A-0263",
+      "entity_name": "TierNode-0263",
+      "entity_type": "individual",
+      "pan": "ABCDE6529F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0267": {
+      "account_id": "ACC-DST-0267",
+      "customer_id": "CUST-ACC-DST-0267",
+      "entity_name": "TierNode-0267",
+      "entity_type": "individual",
+      "pan": "ABCDE7211F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0268": {
+      "account_id": "ACC-DST-0268",
+      "customer_id": "CUST-ACC-DST-0268",
+      "entity_name": "TierNode-0268",
+      "entity_type": "individual",
+      "pan": "ABCDE5558F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 320000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

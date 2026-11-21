@@ -1,0 +1,162 @@
+{
+  "case_id": "CASE-0002",
+  "alert_id": "ALT-2026-0002",
+  "category": "clear_scatter_gather",
+  "category_id": 1,
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": false,
+  "description": "Standard 7-day, 3-hop scatter-gather network with KYC income mismatch",
+  "is_held_out": false,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0020",
+  "network_accounts": [
+    "ACC-INT-0021",
+    "ACC-INT-0022",
+    "ACC-INT-0023",
+    "ACC-DST-0027",
+    "ACC-DST-0028"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-3678638",
+      "sender_account": "ACC-ROOT-0020",
+      "receiver_account": "ACC-INT-0021",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T09:06:00Z",
+      "channel": "UPI",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-5661907",
+      "sender_account": "ACC-INT-0021",
+      "receiver_account": "ACC-DST-0027",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-04T10:32:00Z",
+      "channel": "RTGS",
+      "memo": "Consolidation"
+    },
+    {
+      "tx_id": "TXN-6647119",
+      "sender_account": "ACC-ROOT-0020",
+      "receiver_account": "ACC-INT-0022",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T10:00:00Z",
+      "channel": "NEFT",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-7374122",
+      "sender_account": "ACC-INT-0022",
+      "receiver_account": "ACC-DST-0028",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-04T09:28:00Z",
+      "channel": "NEFT",
+      "memo": "Consolidation"
+    },
+    {
+      "tx_id": "TXN-6770619",
+      "sender_account": "ACC-ROOT-0020",
+      "receiver_account": "ACC-INT-0023",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-03T10:36:00Z",
+      "channel": "IMPS",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-8707870",
+      "sender_account": "ACC-INT-0023",
+      "receiver_account": "ACC-DST-0027",
+      "amount_inr": 294000.0,
+      "timestamp": "2026-09-04T09:16:00Z",
+      "channel": "NEFT",
+      "memo": "Consolidation"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0020": {
+      "account_id": "ACC-ROOT-0020",
+      "customer_id": "CUST-ACC-ROOT-0020",
+      "entity_name": "Trader-2",
+      "entity_type": "individual",
+      "pan": "ABCDE7201F",
+      "risk_category": "high",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 420000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": "Unexplained high velocity"
+    },
+    "ACC-INT-0021": {
+      "account_id": "ACC-INT-0021",
+      "customer_id": "CUST-ACC-INT-0021",
+      "entity_name": "Holder-0021",
+      "entity_type": "individual",
+      "pan": "ABCDE2291F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 350000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0022": {
+      "account_id": "ACC-INT-0022",
+      "customer_id": "CUST-ACC-INT-0022",
+      "entity_name": "Holder-0022",
+      "entity_type": "individual",
+      "pan": "ABCDE5803F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 350000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0023": {
+      "account_id": "ACC-INT-0023",
+      "customer_id": "CUST-ACC-INT-0023",
+      "entity_name": "Holder-0023",
+      "entity_type": "individual",
+      "pan": "ABCDE6925F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 350000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0027": {
+      "account_id": "ACC-DST-0027",
+      "customer_id": "CUST-ACC-DST-0027",
+      "entity_name": "Holder-0027",
+      "entity_type": "individual",
+      "pan": "ABCDE4150F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 350000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0028": {
+      "account_id": "ACC-DST-0028",
+      "customer_id": "CUST-ACC-DST-0028",
+      "entity_name": "Holder-0028",
+      "entity_type": "individual",
+      "pan": "ABCDE2139F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 350000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

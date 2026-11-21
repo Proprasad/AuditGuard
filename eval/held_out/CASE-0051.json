@@ -1,0 +1,153 @@
+{
+  "case_id": "CASE-0051",
+  "alert_id": "ALT-2026-0051",
+  "category": "salary_disbursement",
+  "category_id": 9,
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "description": "MCA-registered employer account running recurring monthly payroll disbursement",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0510",
+  "network_accounts": [
+    "ACC-INT-0511",
+    "ACC-INT-0512",
+    "ACC-INT-0513",
+    "ACC-DST-0517",
+    "ACC-DST-0518"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-3217273",
+      "sender_account": "ACC-ROOT-0510",
+      "receiver_account": "ACC-INT-0511",
+      "amount_inr": 180000.0,
+      "timestamp": "2026-09-01T09:56:00Z",
+      "channel": "IMPS",
+      "memo": "Monthly NEFT Salary Payroll"
+    },
+    {
+      "tx_id": "TXN-9418719",
+      "sender_account": "ACC-ROOT-0510",
+      "receiver_account": "ACC-INT-0512",
+      "amount_inr": 180000.0,
+      "timestamp": "2026-09-01T11:20:00Z",
+      "channel": "IMPS",
+      "memo": "Monthly NEFT Salary Payroll"
+    },
+    {
+      "tx_id": "TXN-5311242",
+      "sender_account": "ACC-ROOT-0510",
+      "receiver_account": "ACC-INT-0513",
+      "amount_inr": 180000.0,
+      "timestamp": "2026-09-01T09:47:00Z",
+      "channel": "UPI",
+      "memo": "Monthly NEFT Salary Payroll"
+    },
+    {
+      "tx_id": "TXN-6682698",
+      "sender_account": "ACC-ROOT-0510",
+      "receiver_account": "ACC-DST-0517",
+      "amount_inr": 180000.0,
+      "timestamp": "2026-09-01T10:20:00Z",
+      "channel": "NEFT",
+      "memo": "Monthly NEFT Salary Payroll"
+    },
+    {
+      "tx_id": "TXN-2263313",
+      "sender_account": "ACC-ROOT-0510",
+      "receiver_account": "ACC-DST-0518",
+      "amount_inr": 180000.0,
+      "timestamp": "2026-09-01T11:04:00Z",
+      "channel": "RTGS",
+      "memo": "Monthly NEFT Salary Payroll"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0510": {
+      "account_id": "ACC-ROOT-0510",
+      "customer_id": "CUST-ACC-ROOT-0510",
+      "entity_name": "TechWorks-51 Solutions Pvt Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE4696F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 95000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "EMPLOYER",
+      "kyc_notes": "MCA & EPFO registered employer; 36m monthly payroll cadence"
+    },
+    "ACC-INT-0511": {
+      "account_id": "ACC-INT-0511",
+      "customer_id": "CUST-ACC-INT-0511",
+      "entity_name": "Employee-0511",
+      "entity_type": "individual",
+      "pan": "ABCDE7511F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0512": {
+      "account_id": "ACC-INT-0512",
+      "customer_id": "CUST-ACC-INT-0512",
+      "entity_name": "Employee-0512",
+      "entity_type": "individual",
+      "pan": "ABCDE6992F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0513": {
+      "account_id": "ACC-INT-0513",
+      "customer_id": "CUST-ACC-INT-0513",
+      "entity_name": "Employee-0513",
+      "entity_type": "individual",
+      "pan": "ABCDE2479F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0517": {
+      "account_id": "ACC-DST-0517",
+      "customer_id": "CUST-ACC-DST-0517",
+      "entity_name": "Employee-0517",
+      "entity_type": "individual",
+      "pan": "ABCDE7464F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0518": {
+      "account_id": "ACC-DST-0518",
+      "customer_id": "CUST-ACC-DST-0518",
+      "entity_name": "Employee-0518",
+      "entity_type": "individual",
+      "pan": "ABCDE1228F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 2200000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}

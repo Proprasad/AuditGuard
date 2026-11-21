@@ -1,0 +1,144 @@
+{
+  "case_id": "CASE-0033",
+  "alert_id": "ALT-2026-0033",
+  "category": "marketplace_payout",
+  "category_id": 6,
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "description": "Structurally scatter-gather, but active GST marketplace + verified seller settlement cadence",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0330",
+  "network_accounts": [
+    "ACC-INT-0331",
+    "ACC-INT-0332",
+    "ACC-INT-0333",
+    "ACC-DST-0337",
+    "ACC-DST-0338"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-2987287",
+      "sender_account": "ACC-ROOT-0330",
+      "receiver_account": "ACC-INT-0331",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:08:00Z",
+      "channel": "UPI",
+      "memo": "GST Marketplace weekly payout"
+    },
+    {
+      "tx_id": "TXN-4786401",
+      "sender_account": "ACC-ROOT-0330",
+      "receiver_account": "ACC-INT-0332",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:40:00Z",
+      "channel": "UPI",
+      "memo": "GST Marketplace weekly payout"
+    },
+    {
+      "tx_id": "TXN-8427625",
+      "sender_account": "ACC-ROOT-0330",
+      "receiver_account": "ACC-INT-0333",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T11:00:00Z",
+      "channel": "IMPS",
+      "memo": "GST Marketplace weekly payout"
+    },
+    {
+      "tx_id": "TXN-8194570",
+      "sender_account": "ACC-INT-0331",
+      "receiver_account": "ACC-DST-0337",
+      "amount_inr": 25000.0,
+      "timestamp": "2026-09-02T11:35:00Z",
+      "channel": "IMPS",
+      "memo": "Logistics escrow fee"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0330": {
+      "account_id": "ACC-ROOT-0330",
+      "customer_id": "CUST-ACC-ROOT-0330",
+      "entity_name": "BazaarHub-33 Pvt Ltd",
+      "entity_type": "company",
+      "pan": "ABCDE1986F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 48000000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MARKETPLACE",
+      "kyc_notes": "Verified GST e-commerce marketplace; 24m recurring seller payouts"
+    },
+    "ACC-INT-0331": {
+      "account_id": "ACC-INT-0331",
+      "customer_id": "CUST-ACC-INT-0331",
+      "entity_name": "VerifiedMerchant-0331",
+      "entity_type": "company",
+      "pan": "ABCDE2625F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 4500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-INT-0332": {
+      "account_id": "ACC-INT-0332",
+      "customer_id": "CUST-ACC-INT-0332",
+      "entity_name": "VerifiedMerchant-0332",
+      "entity_type": "company",
+      "pan": "ABCDE4404F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 4500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-INT-0333": {
+      "account_id": "ACC-INT-0333",
+      "customer_id": "CUST-ACC-INT-0333",
+      "entity_name": "VerifiedMerchant-0333",
+      "entity_type": "company",
+      "pan": "ABCDE4457F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 4500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-DST-0337": {
+      "account_id": "ACC-DST-0337",
+      "customer_id": "CUST-ACC-DST-0337",
+      "entity_name": "VerifiedMerchant-0337",
+      "entity_type": "company",
+      "pan": "ABCDE5335F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 4500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    },
+    "ACC-DST-0338": {
+      "account_id": "ACC-DST-0338",
+      "customer_id": "CUST-ACC-DST-0338",
+      "entity_name": "VerifiedMerchant-0338",
+      "entity_type": "company",
+      "pan": "ABCDE2330F",
+      "risk_category": "low",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 4500000.0,
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT",
+      "kyc_notes": ""
+    }
+  }
+}

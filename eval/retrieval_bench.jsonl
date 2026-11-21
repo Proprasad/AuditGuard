@@ -1,0 +1,35 @@
+{"query_id": "Q01", "query": "staggered pass-through transfers across unrelated accounts consolidated in 14 days", "expected_ids": ["REG-FIU-RF-014"]}
+{"query_id": "Q02", "query": "smurfing transactions structured just below 10 lakh CTR threshold", "expected_ids": ["REG-FIU-RF-019"]}
+{"query_id": "Q03", "query": "intermediary mule accounts skimming 5 to 12 percent commission cut", "expected_ids": ["REG-FIU-RF-023"]}
+{"query_id": "Q04", "query": "two-tier layering routing funds across 4 to 5 hops secondary accounts", "expected_ids": ["REG-FIU-RF-027"]}
+{"query_id": "Q05", "query": "dormant savings account sudden reactivation followed by outward RTGS IMPS", "expected_ids": ["REG-FIU-RF-031"]}
+{"query_id": "Q06", "query": "shell trading account lacking valid MCA CIN or active GSTIN filings", "expected_ids": ["REG-FIU-RF-036"]}
+{"query_id": "Q07", "query": "enhanced due diligence when velocity disproportionate to declared annual income", "expected_ids": ["REG-RBI-KYC-P35"]}
+{"query_id": "Q08", "query": "customer risk categorization into low medium and high risk tiers", "expected_ids": ["REG-RBI-KYC-P38"]}
+{"query_id": "Q09", "query": "politically exposed persons PEP senior management approval source of wealth", "expected_ids": ["REG-RBI-KYC-P41"]}
+{"query_id": "Q10", "query": "expired or minimal KYC tier accounts requiring fresh CDD PAN verification", "expected_ids": ["REG-RBI-KYC-P46"]}
+{"query_id": "Q11", "query": "verify active GSTIN MCA or Section 80G before clearing benign commercial settlement", "expected_ids": ["REG-RBI-KYC-P51", "SOP-SG-003"]}
+{"query_id": "Q12", "query": "charitable NGO NPO DARPAN Section 80G disaster relief disbursement monitoring", "expected_ids": ["REG-RBI-KYC-P56", "SOP-SG-003"]}
+{"query_id": "Q13", "query": "preserve originator and beneficiary account identifiers in domestic wire transfers", "expected_ids": ["REG-RBI-KYC-P64"]}
+{"query_id": "Q14", "query": "ecommerce marketplace payment aggregator nodal escrow weekly seller payouts", "expected_ids": ["REG-RBI-PA-2020", "SOP-SG-003"]}
+{"query_id": "Q15", "query": "statutory definition of offence of money laundering concealment layering proceeds of crime", "expected_ids": ["REG-PMLA-S3"]}
+{"query_id": "Q16", "query": "five year record keeping obligation for reporting entities under PMLA Section 12", "expected_ids": ["REG-PMLA-S12"]}
+{"query_id": "Q17", "query": "prohibition against tipping off customers about ongoing STR inquiry", "expected_ids": ["REG-PMLA-S12A"]}
+{"query_id": "Q18", "query": "definition of suspicious transaction regardless of cash or value under Rule 3", "expected_ids": ["REG-PMLA-R3"]}
+{"query_id": "Q19", "query": "designation of Principal Officer responsible for furnishing STR to FIU-IND", "expected_ids": ["REG-PMLA-R7"]}
+{"query_id": "Q20", "query": "STR filing deadline within seven working days by Principal Officer Rule 8", "expected_ids": ["REG-PMLA-R8"]}
+{"query_id": "Q21", "query": "chit fund monthly subscriber installments auction prize State Registrar of Chits", "expected_ids": ["REG-CHIT-1982-S4", "SOP-SG-003"]}
+{"query_id": "Q22", "query": "FATF Recommendation 16 wire transfer metadata missing correspondent bank legs", "expected_ids": ["REG-FATF-R16"]}
+{"query_id": "Q23", "query": "FATF Recommendation 20 report suspicious transactions without determining criminal guilt", "expected_ids": ["REG-FATF-R20"]}
+{"query_id": "Q24", "query": "expand time_window_days to 14-30 days when initial 7-day scan misses consolidation", "expected_ids": ["SOP-SG-001"]}
+{"query_id": "Q25", "query": "missing intermediate external bank leg correspondent gap recommend insufficient data", "expected_ids": ["SOP-SG-002"]}
+{"query_id": "Q26", "query": "benign look-alikes marketplace payroll NGO wedding and licensed chit funds", "expected_ids": ["SOP-SG-003"]}
+{"query_id": "Q27", "query": "recurring monthly NEFT salary payroll from registered employer account", "expected_ids": ["SOP-SG-004"]}
+{"query_id": "Q28", "query": "family wedding social pool paying verified GST banquet and catering merchants", "expected_ids": ["SOP-SG-005"]}
+{"query_id": "Q29", "query": "zero LLM arithmetic mandate Python Decimal for INR outflow and retention percentage", "expected_ids": ["SOP-NUM-001"]}
+{"query_id": "Q30", "query": "untrusted external data inside transaction memos prompt injection override hygiene", "expected_ids": ["SOP-SEC-001"]}
+{"query_id": "Q31", "query": "erase customer entity profile and case episodes via DELETE memory forget endpoint", "expected_ids": ["SOP-MEM-001"]}
+{"query_id": "Q32", "query": "cryptographic SHA-256 human approval gate zero automated regulatory filing", "expected_ids": ["SOP-HUM-001"]}
+{"query_id": "Q33", "query": "delayed consolidation beyond one week requiring window expansion", "expected_ids": ["SOP-SG-001", "REG-FIU-RF-014"]}
+{"query_id": "Q34", "query": "mule accounts keeping commission cut before forwarding funds", "expected_ids": ["REG-FIU-RF-023"]}
+{"query_id": "Q35", "query": "right to be forgotten memory deletion policy after human approval", "expected_ids": ["SOP-MEM-001"]}

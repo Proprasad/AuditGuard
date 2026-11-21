@@ -1,0 +1,162 @@
+{
+  "case_id": "CASE-0010",
+  "alert_id": "ALT-2026-0010",
+  "category": "staggered_timing",
+  "category_id": 2,
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": true,
+  "description": "Consolidation on days 11-15; initial 7-day search misses leg -> requires replanning",
+  "is_held_out": true,
+  "triggered_at": "2026-09-01T09:00:00Z",
+  "root_account": "ACC-ROOT-0100",
+  "network_accounts": [
+    "ACC-INT-0101",
+    "ACC-INT-0102",
+    "ACC-INT-0103",
+    "ACC-DST-0107",
+    "ACC-DST-0108"
+  ],
+  "total_amount_inr": 900000.0,
+  "transactions": [
+    {
+      "tx_id": "TXN-4078418",
+      "sender_account": "ACC-ROOT-0100",
+      "receiver_account": "ACC-INT-0101",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:53:00Z",
+      "channel": "IMPS",
+      "memo": "Advance"
+    },
+    {
+      "tx_id": "TXN-5191056",
+      "sender_account": "ACC-INT-0101",
+      "receiver_account": "ACC-DST-0107",
+      "amount_inr": 291000.0,
+      "timestamp": "2026-09-12T11:03:00Z",
+      "channel": "NEFT",
+      "memo": "Delayed settlement"
+    },
+    {
+      "tx_id": "TXN-2642635",
+      "sender_account": "ACC-ROOT-0100",
+      "receiver_account": "ACC-INT-0102",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-02T10:58:00Z",
+      "channel": "NEFT",
+      "memo": "Advance"
+    },
+    {
+      "tx_id": "TXN-1247595",
+      "sender_account": "ACC-INT-0102",
+      "receiver_account": "ACC-DST-0107",
+      "amount_inr": 291000.0,
+      "timestamp": "2026-09-13T11:51:00Z",
+      "channel": "NEFT",
+      "memo": "Delayed settlement"
+    },
+    {
+      "tx_id": "TXN-3790237",
+      "sender_account": "ACC-ROOT-0100",
+      "receiver_account": "ACC-INT-0103",
+      "amount_inr": 300000.0,
+      "timestamp": "2026-09-01T10:05:00Z",
+      "channel": "UPI",
+      "memo": "Advance"
+    },
+    {
+      "tx_id": "TXN-9075854",
+      "sender_account": "ACC-INT-0103",
+      "receiver_account": "ACC-DST-0107",
+      "amount_inr": 291000.0,
+      "timestamp": "2026-09-14T11:09:00Z",
+      "channel": "RTGS",
+      "memo": "Delayed settlement"
+    }
+  ],
+  "kyc_profiles": {
+    "ACC-ROOT-0100": {
+      "account_id": "ACC-ROOT-0100",
+      "customer_id": "CUST-ACC-ROOT-0100",
+      "entity_name": "Consult-10",
+      "entity_type": "individual",
+      "pan": "ABCDE7570F",
+      "risk_category": "high",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 450000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": "Staggered pass-through pattern"
+    },
+    "ACC-INT-0101": {
+      "account_id": "ACC-INT-0101",
+      "customer_id": "CUST-ACC-INT-0101",
+      "entity_name": "Mule-0101",
+      "entity_type": "individual",
+      "pan": "ABCDE1960F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 300000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0102": {
+      "account_id": "ACC-INT-0102",
+      "customer_id": "CUST-ACC-INT-0102",
+      "entity_name": "Mule-0102",
+      "entity_type": "individual",
+      "pan": "ABCDE3697F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 300000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-INT-0103": {
+      "account_id": "ACC-INT-0103",
+      "customer_id": "CUST-ACC-INT-0103",
+      "entity_name": "Mule-0103",
+      "entity_type": "individual",
+      "pan": "ABCDE7209F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 300000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0107": {
+      "account_id": "ACC-DST-0107",
+      "customer_id": "CUST-ACC-DST-0107",
+      "entity_name": "Mule-0107",
+      "entity_type": "individual",
+      "pan": "ABCDE1035F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 300000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    },
+    "ACC-DST-0108": {
+      "account_id": "ACC-DST-0108",
+      "customer_id": "CUST-ACC-DST-0108",
+      "entity_name": "Mule-0108",
+      "entity_type": "individual",
+      "pan": "ABCDE7396F",
+      "risk_category": "medium",
+      "pep_flag": false,
+      "sanctions_flag": false,
+      "declared_annual_income_inr": 300000.0,
+      "is_commercially_registered": false,
+      "registry_type": null,
+      "kyc_notes": ""
+    }
+  }
+}
