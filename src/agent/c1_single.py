@@ -436,6 +436,29 @@ async def draft_worksheet_node(
         f"Recommended disposition: {disposition.value} ({confidence:.0%} confidence) pending mandatory human review."
     )
 
+    from src.agent.llm_client import synthesize_investigation_narrative
+
+    llm_out = await synthesize_investigation_narrative(
+        alert_id=state.alert.alert_id,
+        disposition=disposition.value,
+        confidence=confidence,
+        paths_summary=[p.model_dump() for p in state.fund_flow_paths[:3]],
+        kyc_summaries=kyc_summaries,
+        citations=all_citations,
+        replan_count=state.replan_count,
+        fallback_rationale=rationale,
+        use_strong_model=False,
+        current_cost_usd=state.estimated_cost_usd,
+    )
+    rationale = llm_out["rationale"]
+    updated_hyps = list(state.active_hypotheses)
+    if llm_out["used_live_llm"]:
+        for h in updated_hyps:
+            if h.label == HypothesisLabel.SUSPICIOUS and llm_out["suspicious_explanation"]:
+                h.explanation = llm_out["suspicious_explanation"]
+            elif h.label == HypothesisLabel.BENIGN and llm_out["benign_explanation"]:
+                h.explanation = llm_out["benign_explanation"]
+
     draft_payload = {
         "alert_id": state.alert.alert_id,
         "recommended_disposition": disposition.value,
@@ -457,9 +480,9 @@ async def draft_worksheet_node(
     worksheet = DispositionWorksheet(
         worksheet_id=draft_result.get("worksheet_id", f"DWS-{state.alert.alert_id[-8:].upper()}"),
         alert_id=state.alert.alert_id,
-        investigator_agent="auditguard-c1",
+        investigator_agent=f"auditguard-c1 ({llm_out['model']})",
         candidate_paths=state.fund_flow_paths[:3],
-        hypotheses=state.active_hypotheses,
+        hypotheses=updated_hyps,
         regulatory_citations=all_citations,
         kyc_summaries=kyc_summaries,
         recommended_disposition=disposition,
@@ -467,9 +490,14 @@ async def draft_worksheet_node(
         confidence_score=confidence,
     )
 
+    new_cost = round(state.estimated_cost_usd + llm_out["cost_usd"], 6)
     return {
+        "active_hypotheses": updated_hyps,
         "worksheet": worksheet,
         "tool_calls_used": state.tool_calls_used + delta,
+        "total_tokens_used": state.total_tokens_used + llm_out["tokens_used"],
+        "estimated_cost_usd": new_cost,
+        "budget_remaining_usd": round(max(0.0, settings.max_tool_budget_usd - new_cost), 6),
         "is_complete": True,
         "current_node": "interrupt_required",
         "current_step": state.current_step + 1,

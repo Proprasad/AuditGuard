@@ -960,12 +960,73 @@ async function switchSidebarView(navName) {
       `;
     } else if (navName === "settings") {
       const cfg = await api.getConfigInfo();
+      const llm = cfg.llm || {};
+      const modelOptions = (llm.supported_models || ["openai/gpt-5-mini", "openai/gpt-4.1-mini"]).map(
+        (m) => `<option value="${esc(m)}" ${m === llm.c1_and_specialist_model ? "selected" : ""}>${esc(m)}</option>`
+      ).join("");
+      const supOptions = (llm.supported_models || ["openai/gpt-5-mini", "openai/gpt-4.1-mini"]).map(
+        (m) => `<option value="${esc(m)}" ${m === llm.c2_supervisor_model ? "selected" : ""}>${esc(m)}</option>`
+      ).join("");
+
       subView.innerHTML = `
+        <div class="panel-card" style="margin-bottom:14px;">
+          <div class="panel-header">
+            <h2 class="inv-title">OpenRouter Live LLM Configuration (Enable / Disable)</h2>
+            <span class="tag-badge ${llm.llm_enabled ? "tag-ok" : "tag-warn"}">
+              ${llm.llm_enabled ? "LIVE LLM ENABLED" : "OFFLINE ENGINE (LLM DISABLED)"}
+            </span>
+          </div>
+          <p style="color:#94a3b8;margin-top:0;font-size:12.5px;">
+            Key Status: <code>${esc(llm.key_preview || "not_configured")}</code> &nbsp;|&nbsp;
+            Endpoint: <code>${esc(llm.base_url || "https://openrouter.ai/api/v1")}</code>
+          </p>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px;">
+            <div>
+              <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">C1 Investigator / C2 Specialist Model</div>
+              <select id="llmFastModelSelect" class="ctrl-select" style="min-width:230px;">${modelOptions}</select>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">C2 Supervisor / Critic Model</div>
+              <select id="llmStrongModelSelect" class="ctrl-select" style="min-width:230px;">${supOptions}</select>
+            </div>
+            <button id="btnToggleLlm" class="btn-action ${llm.llm_enabled ? "btn-reject" : "btn-approve"}" style="padding:8px 14px;">
+              ${llm.llm_enabled ? "Disable Live LLM (Switch Offline)" : "Enable Live OpenRouter LLM"}
+            </button>
+            <button id="btnSaveModels" class="btn-action btn-run" style="padding:8px 14px;">Apply Selected Models</button>
+            <button id="btnPingLlm" class="btn-action" style="padding:8px 14px;">Test OpenRouter Key</button>
+          </div>
+          <div id="llmTestStatus" style="font-size:12px;color:#7dd3fc;"></div>
+        </div>
         <div class="panel-card">
           <div class="panel-header"><h2 class="inv-title">System Configuration &amp; Policy Bounds</h2></div>
           <pre style="background:#080d1a;padding:14px;border-radius:8px;border:1px solid #1b2845;color:#cbd5e1;font-family:var(--font-mono);overflow-x:auto;">${esc(JSON.stringify(cfg, null, 2))}</pre>
         </div>
       `;
+
+      document.getElementById("btnToggleLlm").addEventListener("click", async () => {
+        await api.updateLlmConfig({
+          enabled: !llm.llm_enabled,
+          model: document.getElementById("llmFastModelSelect").value,
+          strong_model: document.getElementById("llmStrongModelSelect").value,
+        });
+        switchNav("settings");
+      });
+      document.getElementById("btnSaveModels").addEventListener("click", async () => {
+        await api.updateLlmConfig({
+          model: document.getElementById("llmFastModelSelect").value,
+          strong_model: document.getElementById("llmStrongModelSelect").value,
+        });
+        switchNav("settings");
+      });
+      document.getElementById("btnPingLlm").addEventListener("click", async () => {
+        const box = document.getElementById("llmTestStatus");
+        const m = document.getElementById("llmFastModelSelect").value;
+        box.textContent = `Testing live OpenRouter connection with ${m}...`;
+        const res = await api.testLlmConnection(m);
+        box.textContent = res.ok
+          ? `Connected! Model: ${res.model} | Reply: "${res.reply}" | Tokens: ${res.tokens}`
+          : `Connection failed: ${res.error}`;
+      });
     }
   } catch (err) {
     subView.innerHTML = `<div class="panel-card" style="color:#fda4af;">Failed to load view: ${esc(err.message)}</div>`;

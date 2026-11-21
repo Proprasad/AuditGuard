@@ -101,6 +101,12 @@ class TokenRequest(BaseModel):
     role: str = "tier2_analyst"
 
 
+class LlmConfigUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    model: Optional[str] = None
+    strong_model: Optional[str] = None
+
+
 def _get_thread_record(thread_id: str) -> Optional[dict[str, Any]]:
     if thread_id in _threads:
         return _threads[thread_id]
@@ -408,15 +414,19 @@ async def get_analytics(_principal: dict = Depends(get_analyst_principal)):
 
 @app.get("/api/v1/config-info")
 async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
+    from src.agent.llm_client import get_llm_status
+
+    llm_info = get_llm_status()
     return {
         "version": "1.0.0",
         "environment": settings.environment,
         "mcp_transport": settings.mcp_transport,
         "auth_required": settings.auth_required,
+        "llm": llm_info,
         "models": {
-            "c1_investigator": settings.openai_model,
-            "c2_supervisor": settings.openai_strong_model,
-            "c2_specialists": settings.openai_model,
+            "c1_investigator": llm_info["c1_and_specialist_model"],
+            "c2_supervisor": llm_info["c2_supervisor_model"],
+            "c2_specialists": llm_info["c1_and_specialist_model"],
         },
         "budgets": {
             "max_tool_calls": settings.max_tool_calls,
@@ -430,6 +440,31 @@ async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
             "min_intermediaries": [2, 10],
         },
     }
+
+
+@app.post("/api/v1/config/llm")
+async def update_llm_config(req: LlmConfigUpdateRequest, principal: dict = Depends(get_analyst_principal)):
+    from src.agent.llm_client import set_runtime_llm_config
+
+    updated = set_runtime_llm_config(enabled=req.enabled, model=req.model, strong_model=req.strong_model)
+    append_audit_log(
+        thread_id="system-config",
+        event_type="llm_config_updated",
+        actor=principal["sub"],
+        details={
+            "llm_enabled": updated["llm_enabled"],
+            "c1_and_specialist_model": updated["c1_and_specialist_model"],
+            "c2_supervisor_model": updated["c2_supervisor_model"],
+        },
+    )
+    return updated
+
+
+@app.post("/api/v1/config/llm/test")
+async def test_llm_connection(model: Optional[str] = None, _principal: dict = Depends(get_analyst_principal)):
+    from src.agent.llm_client import ping_openrouter
+
+    return await ping_openrouter(model=model)
 
 
 # ---------------------------------------------------------------------------

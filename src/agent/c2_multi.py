@@ -255,6 +255,26 @@ async def reporter_critic(
         f"Benign Investigator confidence: {benign_conf:.0%}. Citations: {', '.join(citations[:3])}."
     )
 
+    from src.agent.llm_client import synthesize_investigation_narrative
+
+    llm_out = await synthesize_investigation_narrative(
+        alert_id=alert.alert_id,
+        disposition=disposition.value,
+        confidence=max(susp_conf, benign_final),
+        paths_summary=[p.model_dump() for p in paths[:3]],
+        kyc_summaries=kyc_summaries,
+        citations=citations,
+        replan_count=replan_count,
+        fallback_rationale=rationale,
+        use_strong_model=True,
+    )
+    rationale = llm_out["rationale"]
+    if llm_out["used_live_llm"]:
+        if llm_out["suspicious_explanation"]:
+            hypotheses[0].explanation = llm_out["suspicious_explanation"]
+        if llm_out["benign_explanation"]:
+            hypotheses[1].explanation = llm_out["benign_explanation"]
+
     draft_payload = {
         "alert_id": alert.alert_id,
         "recommended_disposition": disposition.value,
@@ -273,7 +293,7 @@ async def reporter_critic(
     worksheet = DispositionWorksheet(
         worksheet_id=draft_res.get("worksheet_id", f"DWS-{alert.alert_id[-8:].upper()}"),
         alert_id=alert.alert_id,
-        investigator_agent="auditguard-c2",
+        investigator_agent=f"auditguard-c2 ({llm_out['model']})",
         candidate_paths=paths[:3],
         hypotheses=hypotheses,
         regulatory_citations=citations,
@@ -283,7 +303,14 @@ async def reporter_critic(
         confidence_score=max(susp_conf, benign_final),
     )
 
-    return {"agent": "reporter_critic", "worksheet": worksheet, "tool_calls": d_call}
+    return {
+        "agent": "reporter_critic",
+        "worksheet": worksheet,
+        "tool_calls": d_call,
+        "tokens_used": llm_out["tokens_used"],
+        "cost_usd": llm_out["cost_usd"],
+        "llm_model": llm_out["model"],
+    }
 
 
 async def run_multi_agent(
@@ -379,6 +406,9 @@ async def run_multi_agent(
     state.worksheet = report_result["worksheet"]
     state.active_hypotheses = state.worksheet.hypotheses
     state.tool_calls_used = total_calls
+    state.total_tokens_used = report_result.get("tokens_used", 0)
+    state.estimated_cost_usd = report_result.get("cost_usd", 0.0)
+    state.budget_remaining_usd = round(max(0.0, 0.15 - state.estimated_cost_usd), 6)
     state.workflow_steps = [
         {"step": 1, "name": "Alert Intake & Validation", "status": "completed", "duration_ms": 6.0},
         {"step": 2, "name": "Investigation Planning", "status": "completed", "duration_ms": 8.0},

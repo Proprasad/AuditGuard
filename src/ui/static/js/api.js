@@ -68,6 +68,18 @@ export class AuditGuardAPI {
     return this._json("/api/v1/config-info");
   }
 
+  updateLlmConfig(body) {
+    return this._json("/api/v1/config/llm", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  testLlmConnection(model = "") {
+    const qs = model ? `?model=${encodeURIComponent(model)}` : "";
+    return this._json(`/api/v1/config/llm/test${qs}`, { method: "POST" });
+  }
+
   issueToken(username = "analyst_04", role = "tier2_analyst") {
     return this._json("/api/v1/auth/token", {
       method: "POST",

@@ -18,11 +18,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # LLM / OpenRouter
+    # LLM / OpenRouter (Toggleable via LLM_ENABLED=true / false)
+    llm_enabled: bool = False
+    openrouter_api_key: SecretStr = Field(default=SecretStr("sk-placeholder"))
     openai_api_key: SecretStr = Field(default=SecretStr("sk-placeholder"))
-    openai_base_url: Optional[str] = None
-    openai_model: str = "gpt-4o-mini"
-    openai_strong_model: str = "gpt-4o"
+    openai_base_url: str = "https://openrouter.ai/api/v1"
+    openai_model: str = "openai/gpt-5-mini"
+    openai_strong_model: str = "openai/gpt-5-mini"
 
     # Persistence
     sqlite_db_path: str = "data/auditguard.db"
@@ -82,6 +84,16 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         return self.database_url.replace("+asyncpg", "")
+
+    @property
+    def resolved_llm_api_key(self) -> str:
+        or_key = self.openrouter_api_key.get_secret_value().strip()
+        if or_key and not or_key.endswith("placeholder"):
+            return or_key
+        oa_key = self.openai_api_key.get_secret_value().strip()
+        if oa_key and not oa_key.endswith("placeholder"):
+            return oa_key
+        return ""
 
 
 @lru_cache

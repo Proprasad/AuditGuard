@@ -15,7 +15,17 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 
 STATIC_DIR = Path("src/ui/static")
-DYNAMIC_IDS = {"regSearchInput", "btnRegSearch", "regResultsTable"}
+DYNAMIC_IDS = {
+    "regSearchInput",
+    "btnRegSearch",
+    "regResultsTable",
+    "btnToggleLlm",
+    "llmFastModelSelect",
+    "llmStrongModelSelect",
+    "btnSaveModels",
+    "btnPingLlm",
+    "llmTestStatus",
+}
 
 
 def test_every_static_dom_id_in_app_js_exists_in_index_html():
@@ -84,3 +94,22 @@ def test_sse_stream_emits_complete_workbench_telemetry():
     assert len(st["transactions"]) == 6
     assert len(st["workflow_steps"]) == 7
     assert len(st["agent_runs"]) == 4
+
+
+def test_llm_config_toggle_and_secret_masking():
+    client = TestClient(app)
+    r1 = client.post("/api/v1/config/llm", json={"enabled": False, "model": "openai/gpt-5-mini"})
+    assert r1.status_code == 200
+    data1 = r1.json()
+    assert data1["c1_and_specialist_model"] == "openai/gpt-5-mini"
+    # Full API secret must never appear in API payload
+    assert len(data1["key_preview"]) <= 20
+
+    r2 = client.post("/api/v1/config/llm", json={"enabled": True, "strong_model": "anthropic/claude-haiku-5.5"})
+    assert r2.status_code == 200
+    assert r2.json()["c2_supervisor_model"] == "anthropic/claude-haiku-5.5"
+    # Reset runtime override back to None/env default
+    from src.agent import llm_client
+    llm_client._runtime_enabled_override = None
+    llm_client._runtime_model_override = None
+    llm_client._runtime_strong_model_override = None
