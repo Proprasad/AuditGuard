@@ -1,0 +1,43 @@
+{
+  "frozen": true,
+  "frozen_before_held_out_eval": true,
+  "split_source": "data/synthetic/dev (20 cases; zero held-out cases accessed)",
+  "lessons": [
+    {
+      "lesson_id": "LES-665C2A",
+      "trigger_precondition": "Outbound scatter legs present within 7 days but zero consolidation legs",
+      "observed_failure": "Predicted request_info instead of escalate_str due to narrow 7-day window",
+      "actionable_rule": "Expand time_window_days to 14-30 days before concluding no consolidation exists.",
+      "status": "approved",
+      "reviewer_rationale": "APPROVED: Generalizable temporal heuristic verified on dev split (recovers Day-11+ staggered consolidation).",
+      "created_at": "2026-11-21T20:09:35.498913+00:00"
+    },
+    {
+      "lesson_id": "LES-4B89EC",
+      "trigger_precondition": "Consolidated inflow is 5-12% lower than distributed outflow",
+      "observed_failure": "Predicted request_info instead of escalate_str with tight amount_tolerance",
+      "actionable_rule": "Widen amount_tolerance to 0.15 and compute exact Decimal retained fee percentage.",
+      "status": "approved",
+      "reviewer_rationale": "APPROVED: Mule intermediaries routinely retain 5-12% commissions (REG-FIU-RF-023); widening tolerance within [0.01, 0.25] policy bounds is safe.",
+      "created_at": "2026-11-21T20:09:35.530974+00:00"
+    },
+    {
+      "lesson_id": "LES-8D21B4",
+      "trigger_precondition": "Intermediaries transfer funds to secondary accounts instead of final beneficiary",
+      "observed_failure": "Predicted request_info instead of escalate_str with max_hops=3",
+      "actionable_rule": "Increase max_hops to 4-5 when intermediaries forward to secondary accounts.",
+      "status": "approved",
+      "reviewer_rationale": "APPROVED: Two-tier scatter-gather topologies require 4-5 hops within policy ceiling max_hops<=5.",
+      "created_at": "2026-11-21T20:09:35.551200+00:00"
+    },
+    {
+      "lesson_id": "LES-REJ-001",
+      "trigger_precondition": "Entity name contains Pvt Ltd or Foundation",
+      "observed_failure": "Over-escalated corporate account",
+      "actionable_rule": "Always close accounts with Pvt Ltd in entity_name as CLOSE_BENIGN without registry lookup.",
+      "status": "rejected",
+      "reviewer_rationale": "REJECTED: Overfitted lexical shortcut. Shell companies routinely incorporate under 'Pvt Ltd' names; SOP-SG-003 mandates active MCA/GST/80G commercial registry verification.",
+      "created_at": "2026-11-21T20:09:35.574314+00:00"
+    }
+  ]
+}
