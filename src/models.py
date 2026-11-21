@@ -215,6 +215,11 @@ class InvestigationState(BaseModel):
     active_hypotheses: list[Hypothesis] = Field(default_factory=list)
     critiques: list[str] = Field(default_factory=list)
 
+    # Structured Workflow, Agent Activity & Deterministic Flow Summary (UI Workbench)
+    workflow_steps: list[dict[str, Any]] = Field(default_factory=list)
+    agent_runs: list[dict[str, Any]] = Field(default_factory=list)
+    flow_summary: dict[str, Any] = Field(default_factory=dict)
+
     # Output
     worksheet: Optional[DispositionWorksheet] = None
     human_decision: Optional[DispositionDecision] = None

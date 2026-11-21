@@ -12,6 +12,17 @@ def test_workbench_ui_health_and_metrics():
     ui = client.get("/")
     assert ui.status_code == 200
     assert "AuditGuard" in ui.text
+    assert "/static/js/app.js" in ui.text
+
+    for asset in (
+        "/static/css/tokens.css",
+        "/static/css/workbench.css",
+        "/static/js/api.js",
+        "/static/js/graph-view.js",
+        "/static/js/charts.js",
+        "/static/js/app.js",
+    ):
+        assert client.get(asset).status_code == 200
 
     r = client.get("/health")
     assert r.status_code == 200
@@ -20,6 +31,26 @@ def test_workbench_ui_health_and_metrics():
     m = client.get("/metrics")
     assert m.status_code == 200
     assert "auditguard_investigations_total" in m.text
+
+
+def test_workbench_navigation_and_export_endpoints():
+    assert client.get("/api/v1/cases").status_code == 200
+    assert client.get("/api/v1/customers").json()["total"] >= 5
+    assert client.get("/api/v1/regulations").json()["total"] >= 32
+    assert client.get("/api/v1/regulations?q=staggered+layering").json()["total"] >= 1
+    assert client.get("/api/v1/analytics").status_code == 200
+    assert client.get("/api/v1/config-info").json()["budgets"]["max_tool_calls"] == 15
+
+    run_resp = client.post("/api/v1/investigations/run", json={"alert_id": "ALT-2026-0508", "mode": "c2_multi"}).json()
+    tid = run_resp["thread_id"]
+    st = client.get(f"/api/v1/investigations/{tid}/state").json()["state"]
+    assert st["flow_summary"]["accounts_involved"] >= 4
+    assert len(st["workflow_steps"]) == 7
+    assert len(st["agent_runs"]) == 4
+
+    exp = client.get(f"/api/v1/investigations/{tid}/export")
+    assert exp.status_code == 200
+    assert "ALT-2026-0508" in exp.text
 
 
 def test_jwt_auth_issue_and_forged_token_rejection():

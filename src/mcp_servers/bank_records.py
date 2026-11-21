@@ -433,7 +433,8 @@ def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT a.alert_id, a.seed_account_id, a.triggered_at, a.rule_triggered,
-                   a.initial_amount_inr, a.status, c.full_name, c.risk_rating
+                   a.initial_amount_inr, a.network_accounts_json, a.status,
+                   c.customer_id, c.full_name, c.risk_rating
             FROM alerts a
             LEFT JOIN accounts acc ON a.seed_account_id = acc.account_id
             LEFT JOIN customers c ON acc.customer_id = c.customer_id
@@ -444,7 +445,12 @@ def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
             """,
             (limit,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["network_accounts"] = json.loads(d.pop("network_accounts_json", "[]") or "[]")
+        out.append(d)
+    return out
 
 
 if __name__ == "__main__":

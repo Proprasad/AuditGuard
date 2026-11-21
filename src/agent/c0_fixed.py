@@ -132,8 +132,38 @@ async def run_fixed_pipeline(alert: Alert) -> InvestigationState:
         confidence_score=confidence,
     )
 
+    from src.agent.telemetry import compute_network_flow_summary
+
+    state.transactions = transactions_raw
     state.fund_flow_paths = paths
     state.kyc_profiles = [kyc]
+    state.flow_summary = compute_network_flow_summary(root_account, transactions_raw, paths, [kyc])
+    state.evidence_registry = {
+        **{t["tx_id"]: t for t in transactions_raw if t.get("tx_id")},
+        f"KYC-{root_account}": kyc,
+        **{c["clause_id"]: c for c in reg.get("clauses", [])},
+    }
+    state.workflow_steps = [
+        {"step": 1, "name": "Alert Intake & Validation", "status": "completed", "duration_ms": 8},
+        {"step": 2, "name": "Fixed Sequence Setup (No Agent Plan)", "status": "completed", "duration_ms": 4},
+        {"step": 3, "name": "Fixed Graph & KYC Scan (7d / 3-hop)", "status": "completed", "duration_ms": 18},
+        {"step": 4, "name": "Rule-Based Synthesis", "status": "completed", "duration_ms": 5},
+        {"step": 5, "name": "Verification (Deterministic)", "status": "completed", "duration_ms": 4},
+        {"step": 6, "name": "Human Approval", "status": "waiting_approval", "duration_ms": 0},
+        {"step": 7, "name": "Case Commit & Reporting", "status": "pending", "duration_ms": 0},
+    ]
+    state.agent_runs = [
+        {
+            "agent_id": "c0_pipeline",
+            "agent_name": "Fixed Deterministic Pipeline (C0)",
+            "task": "Static 7d/3-hop scan without replanning or commercial registry checks",
+            "status": "completed",
+            "started_at": utc_now_iso(),
+            "duration_ms": 39,
+            "tool_calls": calls,
+            "summary": rationale,
+        }
+    ]
     state.worksheet = worksheet
     state.tool_calls_used = calls
     state.current_node = "completed"

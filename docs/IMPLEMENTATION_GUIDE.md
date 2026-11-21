@@ -53,6 +53,10 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 
 Once started, open:
 - **Interactive Compliance Analyst Workbench:** `http://127.0.0.1:8000/`
+  - **9 Sidebar Views:** `Investigation`, `Alerts Queue`, `Cases`, `Customers` (with Forget API), `Graph Explorer`, `Regulatory KB` (Hybrid RAG search), `Audit Trail`, `Analytics`, `Settings`.
+  - **Interactive Transaction Network Graph:** Hierarchical, Force-Directed & Circular layouts; pan, wheel-zoom, node drag, account search filter, candidate-path focus, and click-to-inspect node/edge evidence.
+  - **Decimal Financial Charts:** Donut flow conservation summary & cumulative multi-day timeline.
+  - **Cryptographic Human Gate:** Approve & Commit, Edit Worksheet (re-verifies & invalidates old SHA-256), and Reject.
 - **Swagger OpenAPI Docs:** `http://127.0.0.1:8000/api/docs`
 - **Health Check:** `http://127.0.0.1:8000/health`
 - **Prometheus Metrics:** `http://127.0.0.1:8000/metrics`
