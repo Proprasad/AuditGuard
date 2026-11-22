@@ -16,7 +16,7 @@ async def test_mid_run_crash_and_exact_resume():
         alert_id="ALT-2026-0412",
         rule_name="SCATTER_GATHER_900K",
         root_account="ACC-IND-1042",
-        total_amount_inr=900_000.0,
+        total_amount_inr="900000.00",
         risk_level=RiskLevel.HIGH,
     )
 

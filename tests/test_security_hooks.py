@@ -1,4 +1,5 @@
 """T5: Security Hooks, RBAC & Guardrail Tests"""
+from src.config import get_policy
 from src.guardrails.guardrails import apply_input_guardrails, apply_output_guardrails
 from src.guardrails.hooks import pre_tool_hook, post_tool_hook
 
@@ -30,12 +31,13 @@ def test_rbac_blocks_flow_tracer_from_case_actions():
 
 
 def test_budget_cap_blocks_excess_calls():
+    ledger = get_policy().new_ledger()
+    ledger.preload(calls=get_policy().budgets.max_tool_calls)
     decision = pre_tool_hook(
         agent_role="c1_single",
         tool_name="get_kyc_profile",
         params={"account_id": "ACC-1"},
-        tool_calls_used=15,
-        max_tool_calls=15,
+        ledger=ledger,
     )
     assert decision.allowed is False
     assert decision.error_code == "BUDGET_EXCEEDED"

@@ -1,19 +1,28 @@
 """
 Pre-Tool & Post-Tool Enforcement Hooks
-- Pre-tool: RBAC allow-list, global call & cost budget, policy bounds validator
+- Pre-tool: RBAC allow-list, policy-bound validation (from PolicyConfig), BudgetLedger enforcement
 - Post-tool: PII scrubber, <untrusted_data> tagging, structured audit logging
 """
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from src.config import get_policy
+from src.core.policy import BudgetLedger
 from src.guardrails.guardrails import mask_pii, tag_untrusted
 
-# Per-agent RBAC tool allow-lists (Section 8.1)
+# Per-agent RBAC tool allow-lists (enforced at the execution layer, never by prompt text)
 AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
+    "c0_fixed": {
+        "get_alert_context",
+        "find_candidate_fund_flows",
+        "get_kyc_profile",
+        "search_regulations",
+        "draft_disposition_report",
+    },
     "c1_single": {
         "search_regulations",
         "get_clause_by_id",
@@ -26,7 +35,7 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "get_counterparty_history",
         "check_commercial_registry",
         "draft_disposition_report",
-        "submit_case_disposition",  # Gated behind interrupt() + HMAC token
+        "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
     "flow_tracer": {
         "find_candidate_fund_flows",
@@ -50,7 +59,7 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "compute_flow_conservation",
         "compare_graph_runs",
         "draft_disposition_report",
-        "submit_case_disposition",  # Gated behind interrupt() + HMAC token
+        "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
 }
 
@@ -64,39 +73,10 @@ class HookDecision(BaseModel):
 
 
 def validate_graph_bounds(params: dict[str, Any]) -> HookDecision:
-    """Enforce backend policy bounds on graph-engine parameters."""
-    if "time_window_days" in params:
-        tw = params["time_window_days"]
-        if not (1 <= tw <= 30):
-            return HookDecision(
-                allowed=False,
-                error_code="POLICY_BOUNDS_EXCEEDED",
-                message=f"time_window_days={tw} outside allowed [1, 30]",
-            )
-    if "max_hops" in params:
-        mh = params["max_hops"]
-        if not (2 <= mh <= 5):
-            return HookDecision(
-                allowed=False,
-                error_code="POLICY_BOUNDS_EXCEEDED",
-                message=f"max_hops={mh} outside allowed [2, 5]",
-            )
-    if "amount_tolerance" in params:
-        at = params["amount_tolerance"]
-        if not (0.01 <= at <= 0.25):
-            return HookDecision(
-                allowed=False,
-                error_code="POLICY_BOUNDS_EXCEEDED",
-                message=f"amount_tolerance={at} outside allowed [0.01, 0.25]",
-            )
-    if "min_intermediaries" in params:
-        mi = params["min_intermediaries"]
-        if not (2 <= mi <= 10):
-            return HookDecision(
-                allowed=False,
-                error_code="POLICY_BOUNDS_EXCEEDED",
-                message=f"min_intermediaries={mi} outside allowed [2, 10]",
-            )
+    """Enforce policy bounds (config/models.yaml) on graph-engine parameters."""
+    violations = get_policy().validate_graph_params(params)
+    if violations:
+        return HookDecision(allowed=False, error_code="POLICY_BOUNDS_EXCEEDED", message="; ".join(violations))
     return HookDecision(allowed=True)
 
 
@@ -104,17 +84,11 @@ def pre_tool_hook(
     agent_role: str,
     tool_name: str,
     params: dict[str, Any],
-    tool_calls_used: int = 0,
-    max_tool_calls: int = 15,
-    token_cost_usd: float = 0.0,
-    max_cost_usd: float = 0.15,
+    ledger: Optional[BudgetLedger] = None,
     has_human_approval_token: bool = False,
 ) -> HookDecision:
-    """
-    Enforce RBAC, call/cost budget, and parameter bounds before any MCP tool runs.
-    """
-    allowed_tools = AGENT_TOOL_ALLOWLIST.get(agent_role, set())
-    if tool_name not in allowed_tools:
+    """Enforce RBAC, parameter bounds and the per-run budget ledger before any MCP tool runs."""
+    if tool_name not in AGENT_TOOL_ALLOWLIST.get(agent_role, set()):
         return HookDecision(
             allowed=False,
             error_code="RBAC_DENIED",
@@ -125,27 +99,18 @@ def pre_tool_hook(
         return HookDecision(
             allowed=False,
             error_code="APPROVAL_REQUIRED",
-            message="submit_case_disposition requires a verified human approval token post-interrupt()",
-        )
-
-    if tool_calls_used >= max_tool_calls:
-        return HookDecision(
-            allowed=False,
-            error_code="BUDGET_EXCEEDED",
-            message=f"Tool call budget exhausted ({tool_calls_used}/{max_tool_calls})",
-        )
-
-    if token_cost_usd >= max_cost_usd:
-        return HookDecision(
-            allowed=False,
-            error_code="BUDGET_EXCEEDED",
-            message=f"Cost budget exhausted (${token_cost_usd:.4f}/${max_cost_usd:.2f})",
+            message="submit_case_disposition requires a verified human approval token",
         )
 
     if tool_name == "find_candidate_fund_flows":
-        bounds_check = validate_graph_bounds(params)
-        if not bounds_check.allowed:
-            return bounds_check
+        bounds = validate_graph_bounds(params)
+        if not bounds.allowed:
+            return bounds
+
+    if ledger is not None:
+        verdict = ledger.try_consume_tool_call()
+        if not verdict.allowed:
+            return HookDecision(allowed=False, error_code=verdict.error_code, message=verdict.message)
 
     return HookDecision(allowed=True)
 
@@ -179,7 +144,7 @@ def post_tool_hook(
         audit_log.append({
             "event_type": "tool_executed",
             "tool_name": tool_name,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
     return sanitized

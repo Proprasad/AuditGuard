@@ -26,20 +26,23 @@ def generate_data() -> None:
 
 @app.command("investigate")
 def investigate(
-    alert_id: str = typer.Argument("ALT-2026-0412", help="Alert ID to investigate"),
+    alert_id: str = typer.Argument(..., help="Alert ID from the operational DB"),
     mode: str = typer.Option("c1_single", help="Agent mode: c0_fixed | c1_single | c2_multi"),
-    root_account: str = typer.Option("ACC-IND-1042", help="Seed account ID"),
-    amount_inr: float = typer.Option(900000.0, help="Alert amount in INR"),
 ) -> None:
     """Run an end-to-end investigation locally and output the verified DispositionWorksheet."""
+    from src.mcp_servers.bank_records import get_alert_record
     from src.models import Alert, RiskLevel
 
+    rec = get_alert_record(alert_id)
+    if rec is None:
+        typer.echo(f"INVALID_ALERT_ID: {alert_id!r} not found in the operational database")
+        raise typer.Exit(code=1)
     alert = Alert(
-        alert_id=alert_id,
-        rule_name="SCATTER_GATHER",
-        root_account=root_account,
-        network_accounts=[],
-        total_amount_inr=amount_inr,
+        alert_id=rec["alert_id"],
+        rule_name=rec["rule_name"],
+        root_account=rec["root_account"],
+        network_accounts=rec["network_accounts"],
+        total_amount_inr=rec["total_amount_inr"],
         risk_level=RiskLevel.HIGH,
     )
 
@@ -55,7 +58,7 @@ def investigate(
 
     state = asyncio.run(_run())
     if state.worksheet:
-        typer.echo(json.dumps(state.worksheet.model_dump(), indent=2, default=str))
+        typer.echo(json.dumps(state.worksheet.model_dump(mode="json"), indent=2))
     else:
         typer.echo("Investigation completed without worksheet.")
 

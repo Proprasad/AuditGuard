@@ -20,15 +20,26 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from src.core.canonical import loads_json, to_money
+
 _DB_LOCK = threading.RLock()
 _DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[2] / "data" / "auditguard.db"
+SCHEMA_VERSION = 2
+_REFERENCE_TABLES_DROP_ORDER = ("transactions", "alerts", "accounts", "commercial_registry", "customers")
+DEFAULT_SEED_INCOME = Decimal("500000.00")
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _m(value: Any) -> Decimal:
+    """Exact money from seed fixtures (JSON is loaded with Decimal; python literals are repr-exact)."""
+    return to_money(str(value) if isinstance(value, float) else value)
 
 
 def get_sqlite_path() -> Path:
@@ -53,7 +64,7 @@ CREATE TABLE IF NOT EXISTS customers (
     synthetic_pan_hash TEXT UNIQUE NOT NULL,
     kyc_tier TEXT CHECK (kyc_tier IN ('FULL', 'MINIMAL', 'EXPIRED')),
     occupation TEXT NOT NULL,
-    declared_annual_income_inr NUMERIC NOT NULL,
+    declared_annual_income_inr TEXT NOT NULL,
     risk_rating TEXT CHECK (risk_rating IN ('LOW', 'MEDIUM', 'HIGH')),
     onboarding_date TEXT NOT NULL,
     kyc_notes TEXT
@@ -81,7 +92,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     txn_id TEXT PRIMARY KEY,
     from_account_id TEXT REFERENCES accounts(account_id),
     to_account_id TEXT REFERENCES accounts(account_id),
-    amount_inr NUMERIC NOT NULL CHECK (amount_inr > 0),
+    amount_inr TEXT NOT NULL,
     txn_timestamp TEXT NOT NULL,
     channel TEXT CHECK (channel IN ('IMPS', 'NEFT', 'RTGS', 'UPI')),
     memo_text TEXT
@@ -92,7 +103,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     seed_account_id TEXT REFERENCES accounts(account_id),
     triggered_at TEXT NOT NULL,
     rule_triggered TEXT NOT NULL,
-    initial_amount_inr NUMERIC NOT NULL,
+    initial_amount_inr TEXT NOT NULL,
     network_accounts_json TEXT NOT NULL DEFAULT '[]',
     status TEXT DEFAULT 'OPEN'
 );
@@ -106,6 +117,8 @@ CREATE TABLE IF NOT EXISTS worksheets (
     reviewer_id TEXT,
     reviewer_decision TEXT,
     reviewer_notes TEXT,
+    thread_id TEXT,
+    revision INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -119,6 +132,17 @@ CREATE TABLE IF NOT EXISTS cases (
     payload_hash TEXT NOT NULL,
     approver_id TEXT NOT NULL,
     committed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS approval_tokens (
+    token_id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    worksheet_id TEXT NOT NULL,
+    worksheet_sha256 TEXT NOT NULL,
+    hmac_token TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    consumed_at TEXT,
+    consumed_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -176,6 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_txn_from ON transactions(from_account_id, txn_tim
 CREATE INDEX IF NOT EXISTS idx_txn_to ON transactions(to_account_id, txn_timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_thread ON audit_logs(thread_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_cust ON case_episodes(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_worksheet_thread_revision ON worksheets(thread_id, revision) WHERE thread_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_approval_worksheet ON approval_tokens(worksheet_id);
 """
 
 
@@ -198,15 +224,34 @@ def get_db() -> Iterator[sqlite3.Connection]:
 _initialized_paths: set[str] = set()
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Schema v2: money columns are exact TEXT; worksheets gain (thread_id, revision); approval_tokens added."""
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if version >= SCHEMA_VERSION:
+        return
+    existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "alerts" in existing:  # legacy NUMERIC money columns -> reference data is re-seeded from fixtures
+        for table in _REFERENCE_TABLES_DROP_ORDER:
+            conn.execute(f"DROP TABLE IF EXISTS {table}")  # noqa: S608 - fixed internal table names
+    if "worksheets" in existing:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(worksheets)").fetchall()}
+        if "thread_id" not in cols:
+            conn.execute("ALTER TABLE worksheets ADD COLUMN thread_id TEXT")
+        if "revision" not in cols:
+            conn.execute("ALTER TABLE worksheets ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+
+
 def init_db(force: bool = False) -> Path:
-    """Create canonical tables if they do not exist."""
+    """Create canonical tables if they do not exist (and migrate legacy schemas)."""
     db_path = get_sqlite_path()
     key = str(db_path.resolve())
     if key in _initialized_paths and not force:
         return db_path
 
     with get_db() as conn:
+        _migrate(conn)
         conn.executescript(SQLITE_DDL)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         # Seed simulated Indian banks
         banks = [
             ("BNK-HDFC", "HDFC Bank Synthetic", "HDFC0"),
@@ -245,7 +290,7 @@ def _upsert_case_into_db(conn: sqlite3.Connection, case: dict[str, Any]) -> None
         risk = str(kyc.get("risk_category", "MEDIUM")).upper()
         if risk not in ("LOW", "MEDIUM", "HIGH"):
             risk = "MEDIUM"
-        income = float(kyc.get("declared_annual_income_inr", 500000.0))
+        income = str(_m(kyc.get("declared_annual_income_inr", DEFAULT_SEED_INCOME)))
         entity_type_raw = str(kyc.get("entity_type", "individual")).lower()
         occupation = kyc.get("occupation") or entity_type_raw
         notes = kyc.get("kyc_notes", "")
@@ -314,7 +359,7 @@ def _upsert_case_into_db(conn: sqlite3.Connection, case: dict[str, Any]) -> None
                 tx["tx_id"],
                 tx["sender_account"],
                 tx["receiver_account"],
-                float(tx["amount_inr"]),
+                str(_m(tx["amount_inr"])),
                 tx["timestamp"],
                 ch,
                 tx.get("memo") or "",
@@ -330,9 +375,9 @@ def _upsert_case_into_db(conn: sqlite3.Connection, case: dict[str, Any]) -> None
         (
             case["alert_id"],
             root_acc,
-            case.get("triggered_at") or "2026-11-01T10:00:00Z",
+            case["triggered_at"],
             case.get("rule_name", "SCATTER_GATHER"),
-            float(case["total_amount_inr"]),
+            str(_m(case["total_amount_inr"])),
             json.dumps(net_accs),
         ),
     )
@@ -352,7 +397,7 @@ def seed_operational_db(dev_dir: Optional[Path] = None) -> int:
     with get_db() as conn:
         if target_dev.exists():
             for fp in sorted(target_dev.glob("*.json")):
-                case = json.loads(fp.read_text(encoding="utf-8"))
+                case = loads_json(fp.read_text(encoding="utf-8"))
                 if case.get("is_held_out"):
                     continue
                 _upsert_case_into_db(conn, case)

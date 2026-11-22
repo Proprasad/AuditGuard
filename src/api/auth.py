@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from fastapi import Header, HTTPException
 
-from src.config import settings
+from src.config import get_api_secret, settings
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -37,7 +37,7 @@ def create_jwt_token(subject: str, role: str = "tier2_analyst", expires_in_secon
         "iss": "auditguard-api",
     }
     signing_input = f"{_b64url_encode(json.dumps(header).encode())}.{_b64url_encode(json.dumps(payload).encode())}"
-    secret = settings.api_secret_key.get_secret_value().encode()
+    secret = get_api_secret().encode()
     sig = hmac.new(secret, signing_input.encode("ascii"), hashlib.sha256).digest()
     return f"{signing_input}.{_b64url_encode(sig)}"
 
@@ -48,7 +48,7 @@ def verify_jwt_token(token: str) -> dict[str, Any]:
     if len(parts) != 3:
         raise ValueError("Malformed JWT")
     signing_input = f"{parts[0]}.{parts[1]}"
-    secret = settings.api_secret_key.get_secret_value().encode()
+    secret = get_api_secret().encode()
     expected_sig = _b64url_encode(hmac.new(secret, signing_input.encode("ascii"), hashlib.sha256).digest())
     if not hmac.compare_digest(parts[2], expected_sig):
         raise ValueError("Invalid JWT signature")

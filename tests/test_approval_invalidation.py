@@ -50,5 +50,5 @@ def test_deterministic_verifier_blocks_guilt_claims():
     assert vr.passed is False
     assert vr.checks["no_prohibited_claims"] is False
 
-    ok, detail = verify_inr_math("900000.00", "855000.00", tolerance=0.05)
+    ok, detail = verify_inr_math("900000.00", "855000.00", tolerance="0.05")
     assert ok is True

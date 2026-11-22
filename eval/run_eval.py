@@ -11,12 +11,15 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 
 import typer
 import yaml
 
+from src.config import get_policy
+from src.core.canonical import loads_json
 from src.guardrails.guardrails import apply_input_guardrails, apply_output_guardrails, mask_pii
 from src.guardrails.hooks import pre_tool_hook
 from src.guardrails.verifier import verify_worksheet
@@ -66,7 +69,7 @@ def load_cases(split: str = "dev") -> list[dict[str, Any]]:
     case_dir = Path("eval/held_out") if split == "held_out" else Path("data/synthetic/dev")
     cases = []
     for f in sorted(case_dir.glob("*.json")):
-        cases.append(json.loads(f.read_text(encoding="utf-8")))
+        cases.append(loads_json(f.read_text(encoding="utf-8")))
     return cases
 
 
@@ -206,12 +209,13 @@ async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, An
                 )
                 is_blocked = not s.success
         elif cat == "policy_bounds":
+            ledger = get_policy().new_ledger()
+            ledger.preload(calls=atk.get("budget_exhausted_calls", 0), cost_usd=Decimal(str(atk.get("budget_exhausted_cost", 0))))
             dec = pre_tool_hook(
                 agent_role="c1_single",
                 tool_name=atk["tool"],
                 params=atk.get("params", {}),
-                tool_calls_used=atk.get("budget_exhausted_calls", 0),
-                token_cost_usd=atk.get("budget_exhausted_cost", 0.0),
+                ledger=ledger,
             )
             is_blocked = not dec.allowed
         elif cat == "guilt_or_pii":

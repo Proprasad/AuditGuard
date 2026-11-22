@@ -92,10 +92,6 @@ export class AuditGuardAPI {
       method: "POST",
       body: JSON.stringify({
         alert_id: alertObj.alert_id,
-        rule_name: alertObj.rule_triggered || "SCATTER_GATHER",
-        root_account: alertObj.seed_account_id || "ACC-IND-1042",
-        network_accounts: alertObj.network_accounts || [],
-        total_amount_inr: Number(alertObj.initial_amount_inr || 900000),
         mode,
       }),
     });

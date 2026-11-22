@@ -22,7 +22,8 @@ from typing import Any, Optional
 import httpx
 from dotenv import dotenv_values
 
-from src.config import settings
+from src.config import get_policy, settings
+from src.core.policy import BudgetLedger
 from src.guardrails.guardrails import apply_output_guardrails
 
 SUPPORTED_OPENROUTER_MODELS: list[str] = [
@@ -145,9 +146,9 @@ def is_live_llm_active() -> bool:
 
 
 def get_active_models() -> tuple[str, str]:
-    dotenv_map = _live_dotenv()
-    fast_m = _runtime_model_override or os.getenv("OPENAI_MODEL") or dotenv_map.get("OPENAI_MODEL") or settings.openai_model
-    strong_m = _runtime_strong_model_override or os.getenv("OPENAI_STRONG_MODEL") or dotenv_map.get("OPENAI_STRONG_MODEL") or settings.openai_strong_model
+    policy = get_policy()
+    fast_m = _runtime_model_override or policy.model_for("c1_investigator").model_id
+    strong_m = _runtime_strong_model_override or policy.model_for("c2_supervisor").model_id
     return fast_m, strong_m
 
 
@@ -237,13 +238,13 @@ async def synthesize_investigation_narrative(
     replan_count: int,
     fallback_rationale: str,
     use_strong_model: bool = False,
-    current_cost_usd: float = 0.0,
+    ledger: BudgetLedger,
 ) -> dict[str, Any]:
     """
     When `is_live_llm_active()` is True and within budget, call OpenRouter to generate
     evidence-grounded rationale & hypothesis summaries; otherwise return fallback cleanly.
     """
-    if not is_live_llm_active() or current_cost_usd >= settings.max_tool_budget_usd:
+    if not is_live_llm_active() or not ledger.check_llm_allowed().allowed:
         return {
             "used_live_llm": False,
             "model": "offline-deterministic",
@@ -304,7 +305,7 @@ async def synthesize_investigation_narrative(
         "model": chosen_model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Verified investigation evidence:\n{json.dumps(user_evidence, indent=2)}"},
+            {"role": "user", "content": f"Verified investigation evidence:\n{json.dumps(user_evidence, indent=2, default=str)}"},
         ],
         "max_tokens": 1600,
     }
@@ -326,7 +327,8 @@ async def synthesize_investigation_narrative(
         comp_toks = int(usage.get("completion_tokens", 0))
         total_toks = int(usage.get("total_tokens", prompt_toks + comp_toks))
         # Conservative blended OpenRouter mini-tier estimate ($0.40/1M input, $1.60/1M output)
-        est_cost = round((prompt_toks * 0.0000004) + (comp_toks * 0.0000016), 6)
+        est_cost = get_policy().estimate_cost_usd(chosen_model, prompt_toks, comp_toks)
+        ledger.record_llm_usage(prompt_toks, comp_toks, est_cost)
 
         # Strip optional markdown code fences or surrounding prose if present
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_content, flags=re.IGNORECASE | re.DOTALL).strip()

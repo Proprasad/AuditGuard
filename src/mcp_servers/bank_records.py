@@ -19,12 +19,14 @@ import contextvars
 import hashlib
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
+from src.core.canonical import dec_str, to_money
 from src.db.database import get_db, init_db, seed_operational_db
 
 mcp = FastMCP(
@@ -116,7 +118,7 @@ def _query_alert_transactions_sql(conn, seed_acc: str, net_accs: list[str]) -> l
             "tx_id": r["txn_id"],
             "sender_account": r["from_account_id"],
             "receiver_account": r["to_account_id"],
-            "amount_inr": float(r["amount_inr"]),
+            "amount_inr": dec_str(to_money(r["amount_inr"])),
             "currency": "INR",
             "timestamp": r["txn_timestamp"],
             "channel": r["channel"],
@@ -142,7 +144,7 @@ async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
             "triggered_at": overlay.get("triggered_at", "2026-09-01T09:00:00Z"),
             "root_account": overlay["root_account"],
             "network_accounts": overlay["network_accounts"],
-            "total_amount_inr": float(overlay["total_amount_inr"]),
+            "total_amount_inr": dec_str(to_money(overlay["total_amount_inr"])),
             "transactions": overlay["transactions"],
             "risk_level": "high",
         }
@@ -163,7 +165,7 @@ async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
                 "triggered_at": alert_row["triggered_at"],
                 "root_account": seed_acc,
                 "network_accounts": net_accs,
-                "total_amount_inr": float(alert_row["initial_amount_inr"]),
+                "total_amount_inr": dec_str(to_money(alert_row["initial_amount_inr"])),
                 "transactions": txs,
                 "alert_status": alert_row["status"],
                 "risk_level": "high",
@@ -182,7 +184,7 @@ async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
                 "triggered_at": wt_row["triggered_at"],
                 "root_account": seed_acc,
                 "network_accounts": net_accs,
-                "total_amount_inr": float(wt_row["initial_amount_inr"]),
+                "total_amount_inr": dec_str(to_money(wt_row["initial_amount_inr"])),
                 "transactions": txs,
                 "risk_level": "high",
             }
@@ -227,7 +229,7 @@ async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[
             "tx_id": r["txn_id"],
             "sender_account": r["from_account_id"],
             "receiver_account": r["to_account_id"],
-            "amount_inr": float(r["amount_inr"]),
+            "amount_inr": dec_str(to_money(r["amount_inr"])),
             "timestamp": r["txn_timestamp"],
             "channel": r["channel"],
             "memo": r["memo_text"],
@@ -281,7 +283,7 @@ async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
             "bank_name": row["bank_name"],
             "kyc_tier": row["kyc_tier"],
             "risk_category": str(row["risk_rating"]).lower(),
-            "declared_annual_income_inr": float(row["declared_annual_income_inr"]),
+            "declared_annual_income_inr": dec_str(to_money(row["declared_annual_income_inr"])),
             "is_commercially_registered": is_reg,
             "registry_type": row["registry_type"],
             "kyc_notes": row["kyc_notes"] or "",
@@ -299,7 +301,7 @@ async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
         "entity_type": "individual",
         "pan": f"ABCDE{1000 + (digest % 8999)}F",
         "risk_category": "high" if "ROOT" in params.account_id else "medium",
-        "declared_annual_income_inr": 450000.0,
+        "declared_annual_income_inr": "450000.00",
         "is_commercially_registered": False,
         "pep_flag": False,
         "sanctions_flag": False,
@@ -321,7 +323,7 @@ async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[
             "account_id": params.account_id,
             "counterparty_id": params.counterparty_id,
             "total_transactions": len(txs),
-            "total_amount_inr": sum(float(t.get("amount_inr", 0)) for t in txs),
+            "total_amount_inr": dec_str(sum((to_money(t.get("amount_inr", "0")) for t in txs), Decimal("0.00"))),
             "transactions": txs,
         }
 
@@ -345,7 +347,7 @@ async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[
         "account_id": params.account_id,
         "counterparty_id": params.counterparty_id,
         "total_transactions": len(txs),
-        "total_amount_inr": sum(float(t.get("amount_inr", 0)) for t in txs),
+        "total_amount_inr": dec_str(sum((to_money(t.get("amount_inr", "0")) for t in txs), Decimal("0.00"))),
         "transactions": txs,
     }
 
@@ -426,6 +428,24 @@ async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dic
     }
 
 
+def get_alert_record(alert_id: str) -> Optional[dict[str, Any]]:
+    """Trusted alert lookup from the operational DB (no fallbacks; None if the alert does not exist)."""
+    _ensure_operational_db()
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "alert_id": row["alert_id"],
+        "rule_name": row["rule_triggered"],
+        "root_account": row["seed_account_id"],
+        "network_accounts": json.loads(row["network_accounts_json"] or "[]"),
+        "total_amount_inr": to_money(row["initial_amount_inr"]),
+        "triggered_at": row["triggered_at"],
+        "status": row["status"],
+    }
+
+
 def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
     """Helper for Analyst UI dashboard to list open/queued alerts from SQLite/Postgres."""
     _ensure_operational_db()
@@ -439,8 +459,7 @@ def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
             LEFT JOIN accounts acc ON a.seed_account_id = acc.account_id
             LEFT JOIN customers c ON acc.customer_id = c.customer_id
             ORDER BY
-              CASE WHEN a.alert_id IN ('ALT-2026-0412', 'ALT-2026-0508') THEN 0 ELSE 1 END,
-              a.alert_id ASC
+              a.triggered_at DESC, a.alert_id ASC
             LIMIT ?
             """,
             (limit,),

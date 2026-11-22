@@ -7,9 +7,9 @@ import { formatINR, formatINRCompact } from "./api.js";
 
 export function renderDonutChart(containerEl, flowSummary) {
   if (!containerEl) return;
-  const total = Number(flowSummary?.total_outflow_num || 0);
-  const cons = Number(flowSummary?.total_consolidated_num || 0);
-  const ret = Number(flowSummary?.total_retained_num || 0);
+  const total = Number(flowSummary?.total_outflow_inr || 0);
+  const cons = Number(flowSummary?.total_consolidated_inr || 0);
+  const ret = Number(flowSummary?.total_retained_inr || 0);
   const consPct = Number(flowSummary?.consolidated_pct || 0);
   const retPct = Number(flowSummary?.retained_pct || 0);
 

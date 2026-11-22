@@ -63,7 +63,7 @@ def test_sse_stream_emits_complete_workbench_telemetry():
     client = TestClient(app)
     reg = client.post(
         "/api/v1/investigations",
-        json={"alert_id": "ALT-2026-0412", "mode": "c2_multi", "total_amount_inr": 900000},
+        json={"alert_id": "ALT-2026-0412", "mode": "c2_multi"},
     ).json()
     tid = reg["thread_id"]
 

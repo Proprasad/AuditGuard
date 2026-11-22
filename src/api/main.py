@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, AsyncGenerator, Optional
 
@@ -22,7 +25,8 @@ from pydantic import BaseModel
 from starlette.responses import Response
 
 from src.api.auth import create_jwt_token, get_analyst_principal
-from src.config import settings
+from src.config import get_policy, reload_policy, settings, validate_startup
+from src.core.canonical import to_money
 from src.db.database import (
     append_audit_log,
     get_db,
@@ -74,12 +78,28 @@ CITATIONS_VERIFIED = Counter(
 # ---------------------------------------------------------------------------
 # FastAPI App & Static Assets Mount
 # ---------------------------------------------------------------------------
+logger = logging.getLogger("auditguard.api")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema."""
+    for warning in validate_startup():
+        logger.warning("startup warning (dev/test only): %s", warning)
+    policy = reload_policy()
+    init_db()
+    logger.info("PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s)", policy.config_version,
+                policy.budgets.max_tool_calls, policy.budgets.max_cost_usd_per_case)
+    yield
+
+
 app = FastAPI(
     title="AuditGuard API",
     description="Evidence-Grounded AI Investigation System for Ambiguous Fund-Flow Networks",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -156,6 +176,17 @@ async def _execute_mode(alert: Alert, mode: str, thread_id: str, resume: bool = 
         return await run_multi_agent(alert, thread_id=thread_id)
     from src.agent.c1_single import run_investigation
     return await run_investigation(alert, mode=mode, thread_id=thread_id, resume=resume)
+
+
+def _alert_from_db(alert_id: str) -> Alert:
+    """Alerts always come from the trusted operational DB (no client-supplied account/amount, no fallbacks)."""
+    rec = bank_records.get_alert_record(alert_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"INVALID_ALERT_ID: alert {alert_id!r} not found")
+    return Alert(
+        alert_id=rec["alert_id"], rule_name=rec["rule_name"], root_account=rec["root_account"],
+        network_accounts=rec["network_accounts"], total_amount_inr=rec["total_amount_inr"], risk_level=RiskLevel.HIGH,
+    )
 
 
 def _canonical_worksheet_hash(worksheet) -> str:
@@ -244,11 +275,11 @@ async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> Asyn
             "message": f"Deterministic Decimal & citation verification passed (SHA-256={payload_hash[:12]}...)",
         })
 
-        state_dump = final_state.model_dump()
+        state_dump = final_state.model_dump(mode="json")
         rec = {
             "thread_id": thread_id,
             "alert_id": alert.alert_id,
-            "alert": alert.model_dump(),
+            "alert": alert.model_dump(mode="json"),
             "mode": mode,
             "status": "interrupt_required",
             "worksheet_id": worksheet.worksheet_id if worksheet else None,
@@ -281,7 +312,7 @@ async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> Asyn
                 "replan_count": final_state.replan_count,
                 "tool_calls_used": final_state.tool_calls_used,
                 "duration_seconds": round(duration, 3),
-                "worksheet": worksheet.model_dump(),
+                "worksheet": worksheet.model_dump(mode="json"),
                 "state": state_dump,
                 "message": "Human approval required — review evidence and Approve, Edit, or Reject.",
             })
@@ -432,14 +463,16 @@ async def get_analytics(_principal: dict = Depends(get_analyst_principal)):
             SELECT
               (SELECT COUNT(*) FROM alerts) AS total_alerts,
               (SELECT COUNT(*) FROM transactions) AS total_transactions,
-              (SELECT COALESCE(SUM(amount_inr), 0) FROM transactions) AS total_tx_volume_inr,
               (SELECT COUNT(*) FROM cases) AS total_committed_cases,
               (SELECT COUNT(*) FROM audit_logs) AS total_audit_events,
               (SELECT COUNT(*) FROM checkpoints) AS total_threads
             """
         ).fetchone()
+        volume = sum((to_money(r[0]) for r in conn.execute("SELECT amount_inr FROM transactions").fetchall()), Decimal("0.00"))
+    summary = dict(totals) if totals else {}
+    summary["total_tx_volume_inr"] = format(volume, "f")
     return {
-        "summary": dict(totals) if totals else {},
+        "summary": summary,
         "alerts_by_status": alert_counts,
         "cases_by_disposition": disp_counts,
     }
@@ -450,6 +483,7 @@ async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
     from src.agent.llm_client import get_llm_status
 
     llm_info = get_llm_status()
+    policy = get_policy()
     return {
         "version": "1.0.0",
         "environment": settings.environment,
@@ -462,16 +496,12 @@ async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
             "c2_specialists": llm_info["c1_and_specialist_model"],
         },
         "budgets": {
-            "max_tool_calls": settings.max_tool_calls,
-            "max_replans": settings.max_replans,
-            "max_cost_usd_per_case": settings.max_tool_budget_usd,
+            "max_tool_calls": policy.budgets.max_tool_calls,
+            "max_replans": policy.budgets.max_replans,
+            "max_critique_retries": policy.budgets.max_critique_retries,
+            "max_cost_usd_per_case": str(policy.budgets.max_cost_usd_per_case),
         },
-        "graph_policy_bounds": {
-            "time_window_days": [1, 30],
-            "max_hops": [2, 5],
-            "amount_tolerance": [0.01, 0.25],
-            "min_intermediaries": [2, 10],
-        },
+        "graph_policy_bounds": policy.graph_bounds.model_dump(mode="json"),
     }
 
 
@@ -505,23 +535,16 @@ async def test_llm_connection(model: Optional[str] = None, _principal: dict = De
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/investigations", response_model=InvestigateResponse)
 async def start_investigation(request: InvestigateRequest, principal: dict = Depends(get_analyst_principal)):
-    guard = apply_input_guardrails(f"{request.alert_id} {request.rule_name}")
+    guard = apply_input_guardrails(request.alert_id)
     if not guard.allowed:
         raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
 
-    alert = Alert(
-        alert_id=request.alert_id,
-        rule_name=request.rule_name,
-        root_account=request.root_account,
-        network_accounts=request.network_accounts,
-        total_amount_inr=request.total_amount_inr,
-        risk_level=RiskLevel.HIGH,
-    )
+    alert = _alert_from_db(request.alert_id)
     thread_id = f"thr-{uuid.uuid4().hex[:12]}"
     rec = {
         "thread_id": thread_id,
         "alert_id": request.alert_id,
-        "alert": alert.model_dump(),
+        "alert": alert.model_dump(mode="json"),
         "status": "running",
         "mode": request.agent_mode,
         "analyst": principal["sub"],
@@ -533,25 +556,18 @@ async def start_investigation(request: InvestigateRequest, principal: dict = Dep
         mode=request.agent_mode,
         current_node="registered",
         status="running",
-        state_dict={"alert": alert.model_dump(), "thread_id": thread_id},
+        state_dict={"alert": alert.model_dump(mode="json"), "thread_id": thread_id},
     )
     return InvestigateResponse(thread_id=thread_id, alert_id=request.alert_id, status="investigation_started")
 
 
 @app.post("/api/v1/investigations/run", response_model=InvestigateResponse)
 async def run_investigation_sync(request: InvestigateRequest, principal: dict = Depends(get_analyst_principal)):
-    guard = apply_input_guardrails(f"{request.alert_id} {request.rule_name}")
+    guard = apply_input_guardrails(request.alert_id)
     if not guard.allowed:
         raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
 
-    alert = Alert(
-        alert_id=request.alert_id,
-        rule_name=request.rule_name,
-        root_account=request.root_account,
-        network_accounts=request.network_accounts,
-        total_amount_inr=request.total_amount_inr,
-        risk_level=RiskLevel.HIGH,
-    )
+    alert = _alert_from_db(request.alert_id)
     thread_id = f"thr-{uuid.uuid4().hex[:12]}"
     t0 = time.perf_counter()
     final_state = await _execute_mode(alert, request.agent_mode, thread_id=thread_id)
@@ -577,12 +593,12 @@ async def run_investigation_sync(request: InvestigateRequest, principal: dict = 
 
     worksheet = final_state.worksheet
     payload_hash = _canonical_worksheet_hash(worksheet)
-    state_dump = final_state.model_dump()
+    state_dump = final_state.model_dump(mode="json")
 
     rec = {
         "thread_id": thread_id,
         "alert_id": request.alert_id,
-        "alert": alert.model_dump(),
+        "alert": alert.model_dump(mode="json"),
         "mode": request.agent_mode,
         "status": "interrupt_required",
         "worksheet_id": worksheet.worksheet_id if worksheet else None,
@@ -628,12 +644,12 @@ async def resume_investigation(thread_id: str, _principal: dict = Depends(get_an
     final_state = await _execute_mode(alert, cp["mode"], thread_id=thread_id, resume=True)
     worksheet = final_state.worksheet
     payload_hash = _canonical_worksheet_hash(worksheet)
-    state_dump = final_state.model_dump()
+    state_dump = final_state.model_dump(mode="json")
 
     _threads[thread_id] = {
         "thread_id": thread_id,
         "alert_id": alert.alert_id,
-        "alert": alert.model_dump(),
+        "alert": alert.model_dump(mode="json"),
         "mode": cp["mode"],
         "status": "interrupt_required",
         "worksheet_id": worksheet.worksheet_id if worksheet else None,
@@ -658,14 +674,9 @@ async def stream_investigation(thread_id: str, alert_id: Optional[str] = None, m
         alert = Alert(**stored["alert"])
         resolved_mode = mode or stored.get("mode", "c1_single")
     else:
-        alert = Alert(
-            alert_id=alert_id or "ALT-2026-0412",
-            rule_name="SCATTER_GATHER",
-            root_account="ACC-IND-1042",
-            network_accounts=["ACC-IND-2011", "ACC-IND-2044", "ACC-IND-2089", "ACC-IND-9001"],
-            total_amount_inr=900_000.0,
-            risk_level=RiskLevel.HIGH,
-        )
+        if not alert_id:
+            raise HTTPException(status_code=422, detail="alert_id is required for an unregistered thread")
+        alert = _alert_from_db(alert_id)
         resolved_mode = mode or "c1_single"
 
     return StreamingResponse(
@@ -692,7 +703,7 @@ async def submit_human_decision(
     if thread.get("status") == "committed":
         raise HTTPException(status_code=409, detail="ALREADY_COMMITTED")
 
-    reviewer = request.reviewer_id or principal["sub"]
+    reviewer = principal["sub"]
     worksheet_id = request.worksheet_id or thread.get("worksheet_id")
 
     # ── Branch 1: Edit Worksheet (Invalidates Old SHA-256 Hash!) ─────────────
@@ -773,6 +784,8 @@ async def submit_human_decision(
         }
 
     # ── Branch 3: Approve & Commit (Exact SHA-256 Match Required) ────────────
+    if request.decision is None:
+        raise HTTPException(status_code=422, detail="decision is required to approve")
     expected_hash = thread.get("payload_hash")
     if expected_hash and request.approved_hash and request.approved_hash != expected_hash:
         raise HTTPException(status_code=403, detail="APPROVAL_HASH_MISMATCH")

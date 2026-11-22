@@ -21,9 +21,10 @@ import uuid
 from typing import Any, Optional
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.config import settings
+from src.config import get_hmac_secret
+from src.core.canonical import canonical_sha256, dumps_json
 from src.db.database import append_audit_log, get_db, init_db, utc_now_iso
 
 mcp = FastMCP(
@@ -37,10 +38,7 @@ _worksheets: dict[str, dict[str, Any]] = {}
 
 
 def _hmac_key() -> bytes:
-    env_secret = os.getenv("HMAC_SECRET")
-    if env_secret:
-        return env_secret.encode()
-    return settings.hmac_secret.get_secret_value().encode()
+    return get_hmac_secret()
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +86,7 @@ class SubmitCaseDispositionOutput(BaseModel):
 # Cryptographic SHA-256 & HMAC Helpers
 # ---------------------------------------------------------------------------
 def _compute_payload_hash(content: dict[str, Any]) -> str:
-    canonical = json.dumps(content, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical_sha256(content)
 
 
 def _generate_approval_token(payload_hash: str) -> str:
@@ -140,7 +137,7 @@ def update_worksheet_content(worksheet_id: str, updated_fields: dict[str, Any], 
             SET content_json = ?, payload_hash = ?, status = 'pending_review', updated_at = ?
             WHERE worksheet_id = ?
             """,
-            (json.dumps(new_content, default=str), new_hash, utc_now_iso(), worksheet_id),
+            (dumps_json(new_content), new_hash, utc_now_iso(), worksheet_id),
         )
 
     append_audit_log(
@@ -216,7 +213,7 @@ async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispos
             (worksheet_id, alert_id, content_json, payload_hash, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'pending_review', ?, ?)
             """,
-            (worksheet_id, params.alert_id, json.dumps(content, default=str), payload_hash, now, now),
+            (worksheet_id, params.alert_id, dumps_json(content), payload_hash, now, now),
         )
 
     append_audit_log(
@@ -294,7 +291,7 @@ async def submit_case_disposition(params: SubmitCaseDispositionInput) -> SubmitC
                 alert_id,
                 params.worksheet_id,
                 params.reviewer_decision,
-                json.dumps(ws["content"], default=str),
+                dumps_json(ws["content"]),
                 current_hash,
                 params.reviewer_id,
                 now,

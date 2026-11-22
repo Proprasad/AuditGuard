@@ -72,7 +72,7 @@ async function init() {
 
   // Auto-load showcase alert ALT-2026-0412 (or first alert) on boot so the workbench is alive immediately
   if (state.alerts.length > 0) {
-    const preferred = state.alerts.find((a) => a.alert_id === "ALT-2026-0412") || state.alerts[0];
+    const preferred = state.alerts[0];
     document.getElementById("headerAlertSelect").value = preferred.alert_id;
     state.selectedAlert = preferred;
     await runLiveInvestigation();
@@ -362,7 +362,7 @@ function renderFullInvestigationState() {
     riskBadge.textContent = "Ambiguous";
   }
 
-  document.getElementById("kpiTotalFlow").textContent = formatINR(fs.total_outflow_num || state.selectedAlert?.initial_amount_inr || 0);
+  document.getElementById("kpiTotalFlow").textContent = formatINR(fs.total_outflow_inr || state.selectedAlert?.initial_amount_inr || 0);
   document.getElementById("kpiPathsCount").textContent = String(fs.paths_detected ?? (ws.candidate_paths || []).length);
   document.getElementById("kpiMaxHops").textContent = String(fs.max_hops ?? 0);
   document.getElementById("kpiAccountsCount").textContent = String(fs.accounts_involved ?? 0);
@@ -400,7 +400,7 @@ function renderFullInvestigationState() {
   const pathSel = document.getElementById("graphPathSelect");
   pathSel.innerHTML = `<option value="all">All Paths (${(ws.candidate_paths || []).length})</option>` +
     (ws.candidate_paths || [])
-      .map((p) => `<option value="${esc(p.path_id)}">Path ${esc(p.path_id)} (${p.hop_count} hops · ${formatINR(p.total_amount)})</option>`)
+      .map((p) => `<option value="${esc(p.path_id)}">Path ${esc(p.path_id)} (${p.hop_count} hops · ${formatINR(p.total_outflow_inr)})</option>`)
       .join("");
 
   graphView.setData({
@@ -734,7 +734,6 @@ async function handleDecision(action) {
     action,
     decision: action === "edit" ? document.getElementById("editDispositionSelect").value : currentDisp,
     approved_hash: state.payloadHash,
-    reviewer_id: "Prasad_Tier2",
     notes,
   };
 
