@@ -9,7 +9,7 @@
       "id": 1,
       "title": "Investigations Completed by Mode & Disposition",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
@@ -21,20 +21,34 @@
     },
     {
       "id": 2,
-      "title": "Investigation Latency (P50 & P95 Seconds)",
+      "title": "Average & P95 Investigation Latency (Seconds)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(auditguard_investigation_duration_seconds_bucket[5m])))",
-          "legendFormat": "p95 ({{mode}})",
+          "expr": "sum by (mode) (auditguard_investigation_duration_seconds_sum) / clamp_min(sum by (mode) (auditguard_investigation_duration_seconds_count), 1)",
+          "legendFormat": "avg ({{mode}})",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le, mode) (rate(auditguard_investigation_duration_seconds_bucket[5m])))",
-          "legendFormat": "p50 ({{mode}})",
+          "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(auditguard_investigation_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 ({{mode}})",
           "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Live Log Flow Rate by Stream (agent_flow / audit_trail / http_api)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum by (stream_type) (count_over_time({service_name=\"auditguard\"}[1m]))",
+          "legendFormat": "{{stream_type}}",
+          "refId": "A"
         }
       ]
     },
@@ -42,7 +56,7 @@
       "id": 3,
       "title": "Guarded FastMCP Tool Calls by Mode",
       "type": "stat",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
@@ -56,7 +70,7 @@
       "id": 4,
       "title": "Regulatory Citations Verified (Passed vs Failed)",
       "type": "stat",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
@@ -65,14 +79,37 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 5,
+      "title": "Live Agent Investigation Flow, MCP Tool & Cryptographic Audit Logs (Loki)",
+      "type": "logs",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"auditguard\"}",
+          "refId": "A"
+        }
+      ]
     }
   ],
-  "refresh": "10s",
+  "refresh": "5s",
   "schemaVersion": 39,
-  "tags": ["auditguard", "aml", "mcp"],
+  "tags": ["auditguard", "aml", "mcp", "loki"],
   "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": { "from": "now-30m", "to": "now" },
   "title": "AuditGuard — Agentic AML Investigation Observability",
   "uid": "auditguard-aml-main",
-  "version": 1
+  "version": 2
 }

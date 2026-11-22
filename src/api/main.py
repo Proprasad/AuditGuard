@@ -37,6 +37,7 @@ from src.guardrails.guardrails import apply_input_guardrails
 from src.guardrails.verifier import verify_worksheet
 from src.mcp_servers import bank_records, case_actions, compliance_kb
 from src.memory.store import memory_store
+from src.observability.loki_shipper import emit_loki_log
 from src.models import (
     Alert,
     DispositionDecision,
@@ -88,6 +89,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def loki_http_request_logger(request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/v1/"):
+        ms = round((time.perf_counter() - t0) * 1000, 1)
+        emit_loki_log(
+            stream_type="http_api",
+            event="api_request",
+            message=f"{request.method} {path} -> {response.status_code} ({ms}ms)",
+            level="WARN" if response.status_code >= 400 else "INFO",
+            extra={"method": request.method, "path": path, "status_code": response.status_code, "duration_ms": ms},
+        )
+    return response
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "ui" / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -150,6 +168,18 @@ def _canonical_worksheet_hash(worksheet) -> str:
 async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> AsyncGenerator[str, None]:
     def _sse(event: str, data: dict[str, Any]) -> str:
         payload = {"event": event, "timestamp": utc_now_iso(), **data}
+        emit_loki_log(
+            stream_type="agent_flow",
+            event=event,
+            message=f"[{mode.upper()} | {alert.alert_id}] {event}: {data.get('message', '')}",
+            level="ERROR" if event == "error" else "INFO",
+            extra={
+                "thread_id": thread_id,
+                "alert_id": alert.alert_id,
+                "mode": mode,
+                "category": data.get("category", ""),
+            },
+        )
         return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
 
     yield _sse("started", {
@@ -523,8 +553,27 @@ async def run_investigation_sync(request: InvestigateRequest, principal: dict = 
         risk_level=RiskLevel.HIGH,
     )
     thread_id = f"thr-{uuid.uuid4().hex[:12]}"
+    t0 = time.perf_counter()
     final_state = await _execute_mode(alert, request.agent_mode, thread_id=thread_id)
+    dur = time.perf_counter() - t0
+    INVESTIGATION_DURATION.labels(mode=request.agent_mode).observe(dur)
     TOOL_CALLS_TOTAL.labels(mode=request.agent_mode).inc(final_state.tool_calls_used)
+    emit_loki_log(
+        stream_type="agent_flow",
+        event="sync_investigation_completed",
+        message=(
+            f"[{request.agent_mode.upper()} | {request.alert_id}] Completed in {round(dur*1000,1)}ms "
+            f"(calls={final_state.tool_calls_used}, replans={final_state.replan_count}, "
+            f"disp={final_state.worksheet.recommended_disposition.value if final_state.worksheet else 'none'})"
+        ),
+        extra={
+            "thread_id": thread_id,
+            "alert_id": request.alert_id,
+            "mode": request.agent_mode,
+            "tool_calls": final_state.tool_calls_used,
+            "replan_count": final_state.replan_count,
+        },
+    )
 
     worksheet = final_state.worksheet
     payload_hash = _canonical_worksheet_hash(worksheet)

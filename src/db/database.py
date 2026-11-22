@@ -512,7 +512,25 @@ def append_audit_log(
             """,
             (case_id, thread_id, event_type, actor, payload_hash, json.dumps(details, default=str), utc_now_iso()),
         )
-        return int(cur.lastrowid or 0)
+        log_id = int(cur.lastrowid or 0)
+
+    from src.observability.loki_shipper import emit_loki_log
+
+    emit_loki_log(
+        stream_type="audit_trail",
+        event=event_type,
+        message=f"[AUDIT #{log_id}] {event_type} by {actor} (thread={thread_id})",
+        level="INFO",
+        extra={
+            "log_id": log_id,
+            "thread_id": thread_id,
+            "actor": actor,
+            "case_id": case_id,
+            "payload_hash": payload_hash,
+            "details": details,
+        },
+    )
+    return log_id
 
 
 def list_audit_logs(thread_id: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
