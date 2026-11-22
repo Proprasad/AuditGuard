@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AuditGuard — Evidence-Grounded AML Investigation &amp; Human Approval Workbench</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/workbench.css" />
+  <link rel="stylesheet" href="/static/css/tokens.css?v=1.2.0" />
+  <link rel="stylesheet" href="/static/css/workbench.css?v=1.2.0" />
 </head>
 <body>
   <!-- ═══════════════════════ A. TOP NAVIGATION BAR ═══════════════════════ -->
@@ -23,6 +23,9 @@
     </div>
 
     <div class="topbar-actions">
+      <button id="llmStatusPill" class="health-pill" style="cursor:pointer;background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.35);color:#7dd3fc;" title="Click to open Settings &amp; toggle Live OpenRouter LLM ON/OFF">
+        LLM: Checking...
+      </button>
       <div id="healthPill" class="health-pill" title="Backend &amp; Database Status">
         <span class="health-dot"></span> System Healthy
       </div>
@@ -408,6 +411,6 @@
     </div>
   </div>
 
-  <script type="module" src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/app.js?v=1.2.0"></script>
 </body>
 </html>

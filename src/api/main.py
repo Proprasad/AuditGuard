@@ -269,7 +269,10 @@ async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> Asyn
 async def analyst_workbench():
     ui_file = STATIC_DIR / "index.html"
     if ui_file.exists():
-        return HTMLResponse(ui_file.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            ui_file.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return HTMLResponse("<h1>AuditGuard API Running</h1><p>Visit <a href='/api/docs'>/api/docs</a></p>")
 
 

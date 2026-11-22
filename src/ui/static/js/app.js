@@ -3,9 +3,9 @@
  * Coordinates all 9 Sidebar Views, 5 Center Workspace Tabs, Live SSE Trace Streaming,
  * Interactive Transaction Graph, Decimal Charts, Evidence Inspector, and SHA-256 Human Gate.
  */
-import { AuditGuardAPI, formatINR } from "./api.js";
-import { TransactionGraphView } from "./graph-view.js";
-import { renderDonutChart, renderTimelineChart } from "./charts.js";
+import { AuditGuardAPI, formatINR } from "./api.js?v=1.2.0";
+import { TransactionGraphView } from "./graph-view.js?v=1.2.0";
+import { renderDonutChart, renderTimelineChart } from "./charts.js?v=1.2.0";
 
 const api = new AuditGuardAPI();
 
@@ -79,17 +79,36 @@ async function init() {
   }
 }
 
+function updateTopbarLlmPill(llm) {
+  const pill = document.getElementById("llmStatusPill");
+  if (!pill || !llm) return;
+  if (llm.llm_enabled) {
+    const shortM = String(llm.c1_and_specialist_model || "live").split("/").pop();
+    pill.style.background = "rgba(16,185,129,0.14)";
+    pill.style.borderColor = "rgba(16,185,129,0.45)";
+    pill.style.color = "#6ee7b7";
+    pill.innerHTML = `<span class="health-dot"></span> LLM: Live (${esc(shortM)})`;
+  } else {
+    pill.style.background = "rgba(245,158,11,0.14)";
+    pill.style.borderColor = "rgba(245,158,11,0.45)";
+    pill.style.color = "#fcd34d";
+    pill.innerHTML = `<span class="health-dot" style="background:#f59e0b;box-shadow:none;"></span> LLM: Offline ($0)`;
+  }
+}
+
 async function refreshHealthAndCatalog() {
   try {
-    const [health, alertData, regData] = await Promise.all([
+    const [health, alertData, regData, cfgData] = await Promise.all([
       api.getHealth(),
       api.getAlerts(50),
       api.getRegulations(),
+      api.getConfigInfo(),
     ]);
 
     const hp = document.getElementById("healthPill");
     hp.innerHTML = `<span class="health-dot"></span> System Healthy`;
     document.getElementById("sidebarVersion").textContent = `v${health.version || "1.0.0"}`;
+    updateTopbarLlmPill(cfgData.llm);
 
     state.alerts = alertData.alerts || [];
     const openCount = alertData.open_count ?? state.alerts.length;
@@ -117,6 +136,12 @@ async function refreshHealthAndCatalog() {
 
 /* ── Event Bindings ──────────────────────────────────────────────────────── */
 function bindUIEvents() {
+  // Topbar LLM Status Pill -> Opens Settings
+  const llmPill = document.getElementById("llmStatusPill");
+  if (llmPill) {
+    llmPill.addEventListener("click", () => switchSidebarView("settings"));
+  }
+
   // Left Sidebar Navigation
   document.querySelectorAll(".nav-item[data-nav]").forEach((item) => {
     item.addEventListener("click", () => switchSidebarView(item.getAttribute("data-nav")));
@@ -1003,20 +1028,49 @@ async function switchSidebarView(navName) {
         </div>
       `;
 
-      document.getElementById("btnToggleLlm").addEventListener("click", async () => {
-        await api.updateLlmConfig({
-          enabled: !llm.llm_enabled,
-          model: document.getElementById("llmFastModelSelect").value,
-          strong_model: document.getElementById("llmStrongModelSelect").value,
-        });
-        switchNav("settings");
+      document.getElementById("btnToggleLlm").addEventListener("click", async (ev) => {
+        const btn = ev.currentTarget;
+        const box = document.getElementById("llmTestStatus");
+        btn.disabled = true;
+        btn.textContent = "Updating...";
+        try {
+          const updated = await api.updateLlmConfig({
+            enabled: !llm.llm_enabled,
+            model: document.getElementById("llmFastModelSelect").value,
+            strong_model: document.getElementById("llmStrongModelSelect").value,
+          });
+          updateTopbarLlmPill(updated);
+          await switchSidebarView("settings");
+          const msgBox = document.getElementById("llmTestStatus");
+          if (msgBox) {
+            msgBox.style.color = updated.llm_enabled ? "#6ee7b7" : "#fcd34d";
+            msgBox.textContent = updated.llm_enabled
+              ? `✓ Live OpenRouter LLM Enabled (${updated.c1_and_specialist_model}) — synced to .env`
+              : "✓ Live LLM Disabled — Running Offline Deterministic Engine ($0.00/case) — synced to .env";
+          }
+        } catch (err) {
+          btn.disabled = false;
+          if (box) {
+            box.style.color = "#fda4af";
+            box.textContent = `Failed to update LLM mode: ${err.message}`;
+          }
+        }
       });
-      document.getElementById("btnSaveModels").addEventListener("click", async () => {
-        await api.updateLlmConfig({
+      document.getElementById("btnSaveModels").addEventListener("click", async (ev) => {
+        const btn = ev.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "Applying...";
+        const updated = await api.updateLlmConfig({
           model: document.getElementById("llmFastModelSelect").value,
           strong_model: document.getElementById("llmStrongModelSelect").value,
         });
-        switchNav("settings");
+        updateTopbarLlmPill(updated);
+        await switchSidebarView("settings");
+        const msgBox = document.getElementById("llmTestStatus");
+        if (msgBox) {
+          msgBox.style.color = "#6ee7b7";
+          msgBox.textContent = `✓ Saved models (${updated.c1_and_specialist_model} / ${updated.c2_supervisor_model}) — synced to .env`;
+        }
       });
       document.getElementById("btnPingLlm").addEventListener("click", async () => {
         const box = document.getElementById("llmTestStatus");

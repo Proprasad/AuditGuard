@@ -16,9 +16,11 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+from dotenv import dotenv_values
 
 from src.config import settings
 from src.guardrails.guardrails import apply_output_guardrails
@@ -57,14 +59,59 @@ _runtime_model_override: Optional[str] = None
 _runtime_strong_model_override: Optional[str] = None
 
 
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _live_dotenv() -> dict[str, str]:
+    """Read `.env` fresh from disk so manual edits to `.env` apply without restarting Uvicorn."""
+    if _ENV_PATH.exists():
+        raw = dotenv_values(_ENV_PATH)
+        return {k: str(v) for k, v in raw.items() if v is not None}
+    return {}
+
+
+def _sync_flag_to_dotenv(
+    enabled: Optional[bool] = None,
+    model: Optional[str] = None,
+    strong_model: Optional[str] = None,
+) -> None:
+    """Sync UI toggle changes back to local `.env` (skipped during pytest runs)."""
+    if os.getenv("PYTEST_CURRENT_TEST") or not _ENV_PATH.exists():
+        return
+    try:
+        text = _ENV_PATH.read_text(encoding="utf-8")
+        updates: dict[str, str] = {}
+        if enabled is not None:
+            updates["LLM_ENABLED"] = "true" if enabled else "false"
+        if model:
+            updates["OPENAI_MODEL"] = model
+        if strong_model:
+            updates["OPENAI_STRONG_MODEL"] = strong_model
+
+        for key, val in updates.items():
+            pattern = re.compile(rf"^{key}=.*$", flags=re.MULTILINE)
+            if pattern.search(text):
+                text = pattern.sub(f"{key}={val}", text)
+            else:
+                text = text.rstrip("\n") + f"\n{key}={val}\n"
+        _ENV_PATH.write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _resolve_api_key() -> str:
-    env_or = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if env_or and not env_or.endswith("placeholder"):
-        return env_or
-    env_oa = os.getenv("OPENAI_API_KEY", "").strip()
-    if env_oa and not env_oa.endswith("placeholder"):
-        return env_oa
-    return settings.resolved_llm_api_key
+    dotenv_map = _live_dotenv()
+    for candidate in (
+        os.getenv("OPENROUTER_API_KEY", ""),
+        dotenv_map.get("OPENROUTER_API_KEY", ""),
+        os.getenv("OPENAI_API_KEY", ""),
+        dotenv_map.get("OPENAI_API_KEY", ""),
+        settings.resolved_llm_api_key,
+    ):
+        c = candidate.strip()
+        if c and not c.endswith("placeholder"):
+            return c
+    return ""
 
 
 def _mask_key(key: str) -> str:
@@ -87,16 +134,20 @@ def is_live_llm_active() -> bool:
     if _runtime_enabled_override is not None:
         return _runtime_enabled_override
 
-    env_flag = os.getenv("LLM_ENABLED")
-    if env_flag is not None:
-        return env_flag.strip().lower() in ("1", "true", "yes", "on")
+    dotenv_map = _live_dotenv()
+    raw_flag = os.getenv("LLM_ENABLED")
+    if raw_flag is None:
+        raw_flag = dotenv_map.get("LLM_ENABLED")
+    if raw_flag is not None:
+        return raw_flag.strip().lower() in ("1", "true", "yes", "on")
 
     return bool(settings.llm_enabled)
 
 
 def get_active_models() -> tuple[str, str]:
-    fast_m = _runtime_model_override or os.getenv("OPENAI_MODEL") or settings.openai_model
-    strong_m = _runtime_strong_model_override or os.getenv("OPENAI_STRONG_MODEL") or settings.openai_strong_model
+    dotenv_map = _live_dotenv()
+    fast_m = _runtime_model_override or os.getenv("OPENAI_MODEL") or dotenv_map.get("OPENAI_MODEL") or settings.openai_model
+    strong_m = _runtime_strong_model_override or os.getenv("OPENAI_STRONG_MODEL") or dotenv_map.get("OPENAI_STRONG_MODEL") or settings.openai_strong_model
     return fast_m, strong_m
 
 
@@ -112,6 +163,7 @@ def set_runtime_llm_config(
         _runtime_model_override = model.strip()
     if strong_model:
         _runtime_strong_model_override = strong_model.strip()
+    _sync_flag_to_dotenv(enabled=enabled, model=model, strong_model=strong_model)
     return get_llm_status()
 
 

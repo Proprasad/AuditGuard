@@ -37,6 +37,7 @@ def test_every_static_dom_id_in_app_js_exists_in_index_html():
 
     missing = referenced_ids - html_ids - DYNAMIC_IDS
     assert not missing, f"DOM IDs referenced in app.js missing from index.html: {missing}"
+    assert "switchNav(" not in app_js, "app.js must call switchSidebarView(), not undefined switchNav()"
 
 
 def test_all_9_sidebar_navs_and_5_center_tabs_present():
