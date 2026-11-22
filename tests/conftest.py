@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 OPERATIONAL_DB = (Path(__file__).resolve().parents[1] / "data" / "auditguard.db").resolve()
+# Recorded when conftest is imported - i.e. BEFORE test-module collection imports the application.
+_OPERATIONAL_DB_MTIME_AT_START = OPERATIONAL_DB.stat().st_mtime_ns if OPERATIONAL_DB.exists() else None
 
 
 def _reset_process_singletons() -> None:
@@ -39,7 +41,7 @@ def _reset_process_singletons() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _operational_db_untouched() -> Iterator[None]:
-    before = OPERATIONAL_DB.stat().st_mtime_ns if OPERATIONAL_DB.exists() else None
+    before = _OPERATIONAL_DB_MTIME_AT_START
     yield
     after = OPERATIONAL_DB.stat().st_mtime_ns if OPERATIONAL_DB.exists() else None
     assert before == after, "test-suite modified data/auditguard.db (isolation breach)"

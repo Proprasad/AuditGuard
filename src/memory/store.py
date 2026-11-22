@@ -64,8 +64,10 @@ class LongTermMemoryStore:
         self._case_episodes: dict[str, list[dict[str, Any]]] = {}
         self._reflexion_playbook: dict[str, ReflexionLesson] = {}
         self._playbook_frozen: bool = False
-        if self._persist:
-            init_db()
+
+    def _db(self):  # lazily initialised: importing this module must never touch any database file
+        init_db()
+        return get_db()
 
     # ── Entity Profiles ───────────────────────────────────────────────────────
     def save_entity_profile(self, customer_id: str, profile: dict[str, Any]) -> None:
@@ -73,7 +75,7 @@ class LongTermMemoryStore:
         rec = {**profile, "customer_id": customer_id, "updated_at": now}
         self._entity_profiles[customer_id] = rec
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO entity_profiles (customer_id, profile_json, updated_at) VALUES (?, ?, ?)",
                     (customer_id, json.dumps(rec, default=str), now),
@@ -81,7 +83,7 @@ class LongTermMemoryStore:
 
     def get_entity_profile(self, customer_id: str) -> Optional[dict[str, Any]]:
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 row = conn.execute(
                     "SELECT profile_json FROM entity_profiles WHERE customer_id = ?", (customer_id,)
                 ).fetchone()
@@ -97,7 +99,7 @@ class LongTermMemoryStore:
         rec = {**episode, "archived_at": now}
         self._case_episodes.setdefault(customer_id, []).append(rec)
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 conn.execute(
                     "INSERT INTO case_episodes (customer_id, episode_json, archived_at) VALUES (?, ?, ?)",
                     (customer_id, json.dumps(rec, default=str), now),
@@ -106,7 +108,7 @@ class LongTermMemoryStore:
 
     def get_case_episodes(self, customer_id: str) -> list[dict[str, Any]]:
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 rows = conn.execute(
                     "SELECT episode_json FROM case_episodes WHERE customer_id = ? ORDER BY episode_id ASC",
                     (customer_id,),
@@ -117,7 +119,7 @@ class LongTermMemoryStore:
     # ── Reflexion Playbook ────────────────────────────────────────────────────
     def is_playbook_frozen(self) -> bool:
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 row = conn.execute("SELECT flag_value FROM system_flags WHERE flag_key = 'playbook_frozen'").fetchone()
                 return bool(row and row["flag_value"] == "true")
         return self._playbook_frozen
@@ -125,7 +127,7 @@ class LongTermMemoryStore:
     def freeze_playbook(self) -> None:
         self._playbook_frozen = True
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO system_flags (flag_key, flag_value) VALUES ('playbook_frozen', 'true')"
                 )
@@ -135,7 +137,7 @@ class LongTermMemoryStore:
             return False
         self._reflexion_playbook[lesson.lesson_id] = lesson
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO reflexion_playbook
@@ -159,7 +161,7 @@ class LongTermMemoryStore:
             return False
         status = "approved" if approve else "rejected"
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 cur = conn.execute(
                     "UPDATE reflexion_playbook SET status = ?, reviewer_rationale = ? WHERE lesson_id = ?",
                     (status, rationale, lesson_id),
@@ -175,13 +177,13 @@ class LongTermMemoryStore:
 
     def list_all_lessons(self) -> list[ReflexionLesson]:
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 rows = conn.execute("SELECT * FROM reflexion_playbook ORDER BY created_at ASC").fetchall()
                 return [ReflexionLesson(**dict(r)) for r in rows]
         return list(self._reflexion_playbook.values())
 
     def retrieve_top_lessons(self, query: str, top_k: int = 3) -> list[ReflexionLesson]:
-        approved = [l for l in self.list_all_lessons() if l.status == "approved"]
+        approved = [les for les in self.list_all_lessons() if les.status == "approved"]
         words = set(query.lower().split())
         scored = []
         for lesson in approved:
@@ -189,14 +191,14 @@ class LongTermMemoryStore:
             overlap = sum(1 for w in words if w in text)
             scored.append((overlap, lesson))
         scored.sort(key=lambda x: -x[0])
-        return [l for _, l in scored[:top_k]]
+        return [les for _, les in scored[:top_k]]
 
     # ── Forget API (Section 11.1) ─────────────────────────────────────────────
     def forget_customer(self, customer_id: str) -> dict[str, Any]:
         profile_removed = self._entity_profiles.pop(customer_id, None) is not None
         episodes_removed = len(self._case_episodes.pop(customer_id, []))
         if self._persist:
-            with get_db() as conn:
+            with self._db() as conn:
                 c1 = conn.execute("DELETE FROM entity_profiles WHERE customer_id = ?", (customer_id,))
                 c2 = conn.execute("DELETE FROM case_episodes WHERE customer_id = ?", (customer_id,))
                 profile_removed = profile_removed or (c1.rowcount > 0)
