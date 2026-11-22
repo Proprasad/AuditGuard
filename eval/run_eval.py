@@ -24,6 +24,42 @@ from src.mcp_servers import bank_records, case_actions
 
 app = typer.Typer()
 
+OPERATIONAL_DB = (Path(__file__).resolve().parents[1] / "data" / "auditguard.db").resolve()
+
+
+def assert_isolated_eval_db() -> Path:
+    """Raise immediately if the active DB is the operational `data/auditguard.db`."""
+    from src.db import database
+
+    resolved = database.get_sqlite_path().resolve()
+    if resolved == OPERATIONAL_DB:
+        raise RuntimeError(
+            f"Evaluation refused: SQLITE_DB_PATH resolves to the operational DB ({OPERATIONAL_DB}). "
+            "Evaluations must run on an isolated temporary database."
+        )
+    return resolved
+
+
+def prepare_isolated_eval_db() -> Path:
+    """Create a dedicated temp evaluation DB (seeded with dev fixtures only) and activate it."""
+    import os
+    import tempfile
+
+    from src.db import database
+
+    configured = os.getenv("SQLITE_DB_PATH")
+    if configured and Path(configured).resolve() == OPERATIONAL_DB:
+        raise RuntimeError(
+            f"Evaluation refused: SQLITE_DB_PATH={configured!r} resolves to the operational DB ({OPERATIONAL_DB})."
+        )
+    if not configured:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="auditguard_eval_"))
+        os.environ["SQLITE_DB_PATH"] = str(tmp_dir / "eval_auditguard.db")
+    database._initialized_paths.clear()
+    database.init_db()
+    database.seed_operational_db()
+    return assert_isolated_eval_db()
+
 
 def load_cases(split: str = "dev") -> list[dict[str, Any]]:
     """Load cases from `data/synthetic/dev` or isolated `eval/held_out`."""
@@ -62,6 +98,7 @@ async def run_case(
     memory_enabled: bool = True,
 ) -> dict[str, Any]:
     """Run a single case using scoped evaluation overlay (preserving strict held-out DB isolation)."""
+    assert_isolated_eval_db()
     from src.models import Alert, RiskLevel
 
     alert = Alert(
@@ -119,6 +156,7 @@ async def run_case(
 
 async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, Any]:
     """Execute Experiment E2 across all 32 red-team attacks + clean cases."""
+    assert_isolated_eval_db()
     attacks = json.loads(Path("eval/red_team/attacks.json").read_text(encoding="utf-8"))
     blocked_count = 0
 
@@ -222,6 +260,8 @@ def run(
     limit: int = typer.Option(0, help="Limit number of cases (0 = all)"),
 ):
     """Run unified evaluation experiments E1–E4."""
+    eval_db = prepare_isolated_eval_db()
+    typer.echo(f"Isolated evaluation DB: {eval_db}")
     cfg_name = config.replace(".yaml", "")
     if Path(config).exists():
         cfg_file = Path(config)
