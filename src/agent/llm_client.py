@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,43 +25,28 @@ from dotenv import dotenv_values
 
 from src.config import get_policy, settings
 from src.core.policy import BudgetLedger
+from src.db.database import get_db, init_db
 from src.guardrails.guardrails import apply_output_guardrails
 
-SUPPORTED_OPENROUTER_MODELS: list[str] = [
-    "openai/gpt-5-mini",
-    "openai/gpt-6-luna",
-    "openai/gpt-5-nano",
-    "openai/gpt-5.4-nano",
-    "openai/gpt-4.1-mini",
-    "openai/gpt-4.1-nano",
-    "openai/gpt-4o-mini",
-    "openai/gpt-oss-120b",
-    "anthropic/claude-haiku-5.5",
-    "anthropic/claude-3-haiku",
-    "google/gemini-3.1-flash-lite",
-    "google/gemma-4-31b-it",
-    "qwen/qwen3.7-plus",
-    "qwen/qwen3.6-plus",
-    "qwen/qwen3.8-27b",
-    "qwen/qwen3.5-35b-a3b",
-    "qwen/qwen3.5-9b",
-    "deepseek/deepseek-v4-flash",
-    "deepseek/deepseek-chat",
-    "z-ai/glm-5.3",
-    "z-ai/glm-5.3-flash",
-    "meta-llama/llama-3.3-70b-instruct",
-    "meta-llama/llama-3.1-70b-instruct",
-    "meta-llama/llama-3.1-8b-instruct",
-    "amazon/nova-lite-v1",
-]
 
-# Runtime overrides controllable from `POST /api/v1/config/llm` (Workbench Settings UI)
-_runtime_enabled_override: Optional[bool] = None
-_runtime_model_override: Optional[str] = None
-_runtime_strong_model_override: Optional[str] = None
+FLAG_ENABLED, FLAG_MODEL, FLAG_STRONG_MODEL = "llm_enabled", "llm_model", "llm_strong_model"
 
 
-_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+def _flag(key: str) -> Optional[str]:
+    """Runtime admin selections live in the DB (`system_flags`), consistent across workers; never in .env."""
+    try:
+        init_db()
+        with get_db() as conn:
+            row = conn.execute("SELECT flag_value FROM system_flags WHERE flag_key = ?", (key,)).fetchone()
+        return str(row["flag_value"]) if row else None
+    except sqlite3.Error:
+        return None
+
+
+def _set_flag(key: str, value: str) -> None:
+    init_db()
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO system_flags (flag_key, flag_value) VALUES (?, ?)", (key, value))
 
 
 def _live_dotenv() -> dict[str, str]:
@@ -69,35 +55,6 @@ def _live_dotenv() -> dict[str, str]:
         raw = dotenv_values(_ENV_PATH)
         return {k: str(v) for k, v in raw.items() if v is not None}
     return {}
-
-
-def _sync_flag_to_dotenv(
-    enabled: Optional[bool] = None,
-    model: Optional[str] = None,
-    strong_model: Optional[str] = None,
-) -> None:
-    """Sync UI toggle changes back to local `.env` (skipped during pytest runs)."""
-    if os.getenv("PYTEST_CURRENT_TEST") or not _ENV_PATH.exists():
-        return
-    try:
-        text = _ENV_PATH.read_text(encoding="utf-8")
-        updates: dict[str, str] = {}
-        if enabled is not None:
-            updates["LLM_ENABLED"] = "true" if enabled else "false"
-        if model:
-            updates["OPENAI_MODEL"] = model
-        if strong_model:
-            updates["OPENAI_STRONG_MODEL"] = strong_model
-
-        for key, val in updates.items():
-            pattern = re.compile(rf"^{key}=.*$", flags=re.MULTILINE)
-            if pattern.search(text):
-                text = pattern.sub(f"{key}={val}", text)
-            else:
-                text = text.rstrip("\n") + f"\n{key}={val}\n"
-        _ENV_PATH.write_text(text, encoding="utf-8")
-    except Exception:
-        pass
 
 
 def _resolve_api_key() -> str:
@@ -132,8 +89,9 @@ def is_live_llm_active() -> bool:
     if not key:
         return False
 
-    if _runtime_enabled_override is not None:
-        return _runtime_enabled_override
+    runtime_flag = _flag(FLAG_ENABLED)
+    if runtime_flag is not None:
+        return runtime_flag == "true"
 
     dotenv_map = _live_dotenv()
     raw_flag = os.getenv("LLM_ENABLED")
@@ -147,8 +105,8 @@ def is_live_llm_active() -> bool:
 
 def get_active_models() -> tuple[str, str]:
     policy = get_policy()
-    fast_m = _runtime_model_override or policy.model_for("c1_investigator").model_id
-    strong_m = _runtime_strong_model_override or policy.model_for("c2_supervisor").model_id
+    fast_m = _flag(FLAG_MODEL) or policy.model_for("c1_investigator").model_id
+    strong_m = _flag(FLAG_STRONG_MODEL) or policy.model_for("c2_supervisor").model_id
     return fast_m, strong_m
 
 
@@ -157,14 +115,17 @@ def set_runtime_llm_config(
     model: Optional[str] = None,
     strong_model: Optional[str] = None,
 ) -> dict[str, Any]:
-    global _runtime_enabled_override, _runtime_model_override, _runtime_strong_model_override
+    """Persist an admin LLM selection in the DB. Models must be in PolicyConfig.allowed_models (ValueError otherwise)."""
+    policy = get_policy()
+    for slug in (model, strong_model):
+        if slug is not None and not policy.is_allowed_model(slug):
+            raise ValueError(f"model {slug!r} is not in the allowed model list")
     if enabled is not None:
-        _runtime_enabled_override = bool(enabled)
+        _set_flag(FLAG_ENABLED, "true" if enabled else "false")
     if model:
-        _runtime_model_override = model.strip()
+        _set_flag(FLAG_MODEL, model)
     if strong_model:
-        _runtime_strong_model_override = strong_model.strip()
-    _sync_flag_to_dotenv(enabled=enabled, model=model, strong_model=strong_model)
+        _set_flag(FLAG_STRONG_MODEL, strong_model)
     return get_llm_status()
 
 
@@ -180,7 +141,7 @@ def get_llm_status() -> dict[str, Any]:
         "base_url": os.getenv("OPENAI_BASE_URL") or settings.openai_base_url,
         "c1_and_specialist_model": fast_m,
         "c2_supervisor_model": strong_m,
-        "supported_models": SUPPORTED_OPENROUTER_MODELS,
+        "supported_models": list(get_policy().allowed_models),
     }
 
 
@@ -239,6 +200,7 @@ async def synthesize_investigation_narrative(
     fallback_rationale: str,
     use_strong_model: bool = False,
     ledger: BudgetLedger,
+    verifier_feedback: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """
     When `is_live_llm_active()` is True and within budget, call OpenRouter to generate
@@ -293,6 +255,7 @@ async def synthesize_investigation_narrative(
         ],
         "kyc_and_commercial_registry": kyc_summaries[:4],
         "verified_citations": citations[:5],
+        "previous_draft_failed_verification": verifier_feedback or [],
     }
 
     headers = {

@@ -1,6 +1,6 @@
 """
-JWT Authentication & Role-Based Analyst Context (Zero External C-Crypto Dependencies)
-Implements RFC 7519 HS256 JWT signing & verification using Python stdlib (`hmac`, `hashlib`, `base64`).
+JWT (HS256, stdlib only) with issuer/audience/expiry/role validation, plus the principal + role dependencies.
+`AUTH_REQUIRED=true` by default: every protected route needs a valid Bearer token and a sufficient role.
 """
 from __future__ import annotations
 
@@ -9,11 +9,18 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Optional
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
+from src.api.users import ROLE_RANK, ROLES
 from src.config import get_api_secret, settings
+
+ISSUER = "auditguard-api"
+AUDIENCE = "auditguard-api-clients"
+TOKEN_TTL_SECONDS = 3600
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -21,61 +28,68 @@ def _b64url_encode(data: bytes) -> str:
 
 
 def _b64url_decode(segment: str) -> bytes:
-    padding = "=" * (-len(segment) % 4)
-    return base64.urlsafe_b64decode(segment + padding)
+    return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
 
 
-def create_jwt_token(subject: str, role: str = "tier2_analyst", expires_in_seconds: int = 86400) -> str:
-    """Issue a signed HS256 Bearer JWT token."""
-    header = {"alg": "HS256", "typ": "JWT"}
+def _sign(signing_input: str) -> str:
+    return _b64url_encode(hmac.new(get_api_secret().encode(), signing_input.encode("ascii"), hashlib.sha256).digest())
+
+
+def create_jwt_token(subject: str, role: str, expires_in_seconds: int = TOKEN_TTL_SECONDS) -> str:
+    if role not in ROLES:
+        raise ValueError(f"unknown role {role!r}")
     now = int(time.time())
-    payload = {
-        "sub": subject,
-        "role": role,
-        "iat": now,
-        "exp": now + expires_in_seconds,
-        "iss": "auditguard-api",
-    }
+    header = {"alg": "HS256", "typ": "JWT"}
+    payload = {"sub": subject, "role": role, "iat": now, "exp": now + expires_in_seconds, "iss": ISSUER, "aud": AUDIENCE}
     signing_input = f"{_b64url_encode(json.dumps(header).encode())}.{_b64url_encode(json.dumps(payload).encode())}"
-    secret = get_api_secret().encode()
-    sig = hmac.new(secret, signing_input.encode("ascii"), hashlib.sha256).digest()
-    return f"{signing_input}.{_b64url_encode(sig)}"
+    return f"{signing_input}.{_sign(signing_input)}"
 
 
 def verify_jwt_token(token: str) -> dict[str, Any]:
-    """Verify signature and expiration of an HS256 JWT token."""
     parts = token.split(".")
     if len(parts) != 3:
         raise ValueError("Malformed JWT")
-    signing_input = f"{parts[0]}.{parts[1]}"
-    secret = get_api_secret().encode()
-    expected_sig = _b64url_encode(hmac.new(secret, signing_input.encode("ascii"), hashlib.sha256).digest())
-    if not hmac.compare_digest(parts[2], expected_sig):
+    if json.loads(_b64url_decode(parts[0])).get("alg") != "HS256":
+        raise ValueError("Unsupported JWT algorithm")
+    if not hmac.compare_digest(parts[2], _sign(f"{parts[0]}.{parts[1]}")):
         raise ValueError("Invalid JWT signature")
-
-    payload = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+    payload = json.loads(_b64url_decode(parts[1]))
     if int(payload.get("exp", 0)) < int(time.time()):
         raise ValueError("JWT expired")
+    if payload.get("iss") != ISSUER or payload.get("aud") != AUDIENCE:
+        raise ValueError("JWT issuer/audience mismatch")
+    if payload.get("role") not in ROLES or not payload.get("sub"):
+        raise ValueError("JWT missing subject/role")
     return payload
 
 
-async def get_analyst_principal(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
-    """
-    FastAPI dependency:
-    - If an Authorization Bearer header is provided, strictly validates it (401 on invalid/expired).
-    - If omitted: permits `dev_analyst` when `AUTH_REQUIRED=false` (local dev convenience),
-      or raises `401 UNAUTHORIZED` when `AUTH_REQUIRED=true`.
-    """
+@dataclass(frozen=True)
+class Principal:
+    sub: str
+    role: str
+
+    def at_least(self, minimum: str) -> bool:
+        return ROLE_RANK[self.role] >= ROLE_RANK[minimum]
+
+
+async def get_principal(authorization: Optional[str] = Header(default=None)) -> Principal:
     if authorization:
         if not authorization.lower().startswith("bearer "):
-            raise HTTPException(status_code=401, detail="UNAUTHORIZED: Invalid Authorization header scheme")
-        raw_token = authorization.split(" ", 1)[1].strip()
+            raise HTTPException(status_code=401, detail="UNAUTHORIZED: invalid Authorization scheme")
         try:
-            return verify_jwt_token(raw_token)
-        except Exception as exc:
+            claims = verify_jwt_token(authorization.split(" ", 1)[1].strip())
+        except (ValueError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=401, detail=f"UNAUTHORIZED: {exc}") from exc
-
+        return Principal(sub=str(claims["sub"]), role=str(claims["role"]))
     if settings.auth_required:
-        raise HTTPException(status_code=401, detail="UNAUTHORIZED: Bearer JWT required")
+        raise HTTPException(status_code=401, detail="UNAUTHORIZED: Bearer token required")
+    return Principal(sub="dev_user", role="admin")  # only reachable with AUTH_REQUIRED=false (dev/test)
 
-    return {"sub": "analyst_local", "role": "tier2_analyst"}
+
+def require_role(minimum: str) -> Callable[..., Any]:
+    async def dependency(principal: Principal = Depends(get_principal)) -> Principal:
+        if not principal.at_least(minimum):
+            raise HTTPException(status_code=403, detail=f"FORBIDDEN: role '{minimum}' or higher required")
+        return principal
+
+    return dependency

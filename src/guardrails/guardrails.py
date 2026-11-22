@@ -1,20 +1,18 @@
 """
-Input/Output Guardrails — AuditGuard Security Layer
-- PII masking (synthetic PAN/account digits)
-- Prompt injection detection
-- Output scrubbing
+Input/Output Guardrails - AuditGuard Security Layer
+- PII masking (synthetic PAN / account / phone / Aadhaar / GSTIN)
+- Unicode-normalised prompt-injection detection (NFKC, case-fold, zero-width strip, confusable fold)
+- Untrusted-data containment: payloads are XML-escaped so `</untrusted_data>` breakout is impossible
+- Output screening for guilt assertions (shared normalised families from `src.core.verifier`)
 """
 from __future__ import annotations
 
+import html
 import re
-from typing import Any
+import unicodedata
 
 from pydantic import BaseModel
 
-
-# ---------------------------------------------------------------------------
-# PII Patterns (India-specific synthetic data)
-# ---------------------------------------------------------------------------
 PII_PATTERNS = {
     "pan": re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b"),
     "account_number": re.compile(r"\b\d{9,18}\b"),
@@ -23,18 +21,37 @@ PII_PATTERNS = {
     "gstin": re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b"),
 }
 
-INJECTION_PATTERNS = [
-    re.compile(r"ignore previous instructions", re.IGNORECASE),
-    re.compile(r"you are now", re.IGNORECASE),
-    re.compile(r"forget your", re.IGNORECASE),
-    re.compile(r"<\|im_start\|>", re.IGNORECASE),
-    re.compile(r"system prompt:", re.IGNORECASE),
-    re.compile(r"jailbreak", re.IGNORECASE),
-    re.compile(r"DAN mode", re.IGNORECASE),
-    re.compile(r"pretend you", re.IGNORECASE),
-    re.compile(r"act as if", re.IGNORECASE),
-    re.compile(r"override.*instructions", re.IGNORECASE),
+_ZERO_WIDTH = {ord(c): None for c in "\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e"}
+# Common Cyrillic / Greek look-alikes folded to Latin so homoglyph evasion does not bypass detection.
+_CONFUSABLES = {ord(k): v for k, v in {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s", "ј": "j",
+    "ԁ": "d", "ɡ": "g", "һ": "h", "ո": "n", "ս": "u", "ν": "v", "ο": "o", "ι": "i", "α": "a", "ρ": "p",
+    "τ": "t", "κ": "k", "μ": "m", "Ι": "i", "Ο": "o", "Α": "a", "Ε": "e",
+}.items()}
+
+_VERB = r"(?:ignore|disregard|forget|override|bypass|skip|discard|neglect)"
+_QUALIFIER = r"(?:previous|prior|above|earlier|preceding|system|all|any|your|the|these|those)"
+_NOUN = r"(?:instructions?|rules?|prompts?|guidelines?|context|directives?|constraints?|safeguards?|policies)"
+
+COMMON_INJECTION_PATTERNS = [
+    re.compile(rf"\b{_VERB}\b.{{0,40}}\b{_QUALIFIER}\b.{{0,30}}\b{_NOUN}\b"),
+    re.compile(r"\bforget your\b"),
+    re.compile(r"\byou are now\b"),
+    re.compile(r"\b(?:new|updated|revised|real|actual) (?:instructions?|directives?|rules?|task)\s*:"),
+    re.compile(r"\bsystem (?:prompt|message|override|instruction)s?\b"),
+    re.compile(r"<\|?\s*(?:im_start|im_end|system|assistant)\b"),
+    re.compile(r"</?\s*untrusted_data\b"),
+    re.compile(r"\bjailbreak\b|\bdan mode\b|\bdeveloper mode\b"),
+    re.compile(r"\bpretend (?:you|to be)\b|\bact as (?:if|an?|the)\b"),
 ]
+# Extra structural-override patterns applied only to external data (tool outputs / memos / KYC notes).
+EXTERNAL_ONLY_PATTERNS = [
+    re.compile(r"\b(?:mark|close|classify|set|label|treat|flag) (?:this |the )?(?:case|alert|account|transaction)?\s*(?:as )?"
+               r"(?:close_benign|benign|legitimate|safe|cleared)\b"),
+    re.compile(r"\bapprove(?: and|&)? ?commit\b|\bauto[- ]?approve\b|\bsubmit_case_disposition\b"),
+    re.compile(r"\b(?:reveal|print|show|leak|disclose|exfiltrate) (?:your |the )?(?:system prompt|api key|secret|hidden instructions)\b"),
+]
+INJECTION_PATTERNS = COMMON_INJECTION_PATTERNS  # public alias (input-side list)
 
 
 class GuardrailResult(BaseModel):
@@ -45,73 +62,74 @@ class GuardrailResult(BaseModel):
     injection_detected: bool = False
 
 
+def normalize_for_detection(text: str) -> str:
+    folded = unicodedata.normalize("NFKC", text).translate(_ZERO_WIDTH).translate(_CONFUSABLES).casefold()
+    return re.sub(r"[\s_]+", " ", folded).strip()
+
+
+def matched_injection_patterns(text: str, external: bool = False) -> list[str]:
+    normalised = normalize_for_detection(text)
+    patterns = COMMON_INJECTION_PATTERNS + (EXTERNAL_ONLY_PATTERNS if external else [])
+    return [p.pattern for p in patterns if p.search(normalised)]
+
+
+def detect_injection(text: str, external: bool = False) -> bool:
+    return bool(matched_injection_patterns(text, external))
+
+
 def mask_pii(text: str) -> tuple[str, list[str]]:
     """Replace PII with masked versions. Returns (masked_text, found_pii_types)."""
-    found = []
+    found: list[str] = []
     masked = text
-
     for pii_type, pattern in PII_PATTERNS.items():
         if pattern.search(masked):
             found.append(pii_type)
-            # Mask but preserve length hint
-            def _mask_match(m):
-                v = m.group(0)
-                return f"[{pii_type.upper()}:{v[:2]}***{v[-2:]}]"
-            masked = pattern.sub(_mask_match, masked)
 
+            def _mask_match(m: re.Match[str], kind: str = pii_type) -> str:
+                v = m.group(0)
+                return f"[{kind.upper()}:{v[:2]}***{v[-2:]}]"
+
+            masked = pattern.sub(_mask_match, masked)
     return masked, found
 
 
-def detect_injection(text: str) -> bool:
-    """Return True if any injection pattern is detected."""
-    return any(pat.search(text) for pat in INJECTION_PATTERNS)
+_WRAPPER = re.compile(r'^<untrusted_data(?: source="[^"]*")?>(.*)</untrusted_data>$', re.DOTALL)
 
 
-def tag_untrusted(text: str) -> str:
-    """Wrap external data in <untrusted_data> tags."""
-    return f"<untrusted_data>{text}</untrusted_data>"
+def wrap_untrusted_data(value: str, source_id: str = "unknown") -> str:
+    """XML-escape (`&`, `<`, `>`) the payload and wrap it so containment cannot be broken from inside."""
+    safe_source = re.sub(r"[^A-Za-z0-9_.:\-]", "_", source_id)[:80] or "unknown"
+    return f'<untrusted_data source="{safe_source}">{html.escape(value, quote=False)}</untrusted_data>'
+
+
+def unwrap_untrusted_data(value: str) -> str:
+    """Inverse of `wrap_untrusted_data` (for passing a plain identifier back into a parameterised tool call)."""
+    match = _WRAPPER.match(value)
+    return html.unescape(match.group(1)) if match else value
+
+
+def tag_untrusted(text: str, source_id: str = "unknown") -> str:
+    return wrap_untrusted_data(text, source_id)
 
 
 def apply_input_guardrails(text: str, is_external_data: bool = False) -> GuardrailResult:
-    """
-    Apply input guardrails:
-    1. PII masking
-    2. Injection detection
-    3. Untrusted data tagging (for transaction memos, KYC text)
-    """
-    # Injection check first
-    if detect_injection(text):
+    if detect_injection(text, external=is_external_data):
         return GuardrailResult(
             allowed=False,
             scrubbed_text="[BLOCKED: Prompt injection detected]",
             blocked_reason="prompt_injection_detected",
             injection_detected=True,
         )
-
-    # PII masking
     scrubbed, pii_found = mask_pii(text)
-
-    # Tag external data
     if is_external_data:
-        scrubbed = tag_untrusted(scrubbed)
-
-    return GuardrailResult(
-        allowed=True,
-        scrubbed_text=scrubbed,
-        pii_found=pii_found,
-    )
+        scrubbed = wrap_untrusted_data(scrubbed, "external_input")
+    return GuardrailResult(allowed=True, scrubbed_text=scrubbed, pii_found=pii_found)
 
 
 def apply_output_guardrails(text: str) -> GuardrailResult:
-    """
-    Apply output guardrails:
-    1. Remove any PII that may have leaked through
-    2. Check for prohibited guilt assertions
-    """
-    from src.guardrails.verifier import PROHIBITED_PHRASES, check_prohibited_claims
+    from src.core.verifier import check_prohibited_claims
 
     scrubbed, pii_found = mask_pii(text)
-
     prohibited = check_prohibited_claims(scrubbed)
     if prohibited:
         return GuardrailResult(
@@ -120,9 +138,4 @@ def apply_output_guardrails(text: str) -> GuardrailResult:
             blocked_reason=f"prohibited_claims: {prohibited}",
             pii_found=pii_found,
         )
-
-    return GuardrailResult(
-        allowed=True,
-        scrubbed_text=scrubbed,
-        pii_found=pii_found,
-    )
+    return GuardrailResult(allowed=True, scrubbed_text=scrubbed, pii_found=pii_found)

@@ -13,19 +13,18 @@ from decimal import Decimal
 from math import ceil
 from typing import Any, Literal, Optional
 
-from src.agent.llm_client import synthesize_investigation_narrative
+from src.agent.drafting import draft_and_verify, security_notes
 from src.agent.tooling import GuardedToolbox, is_error
 from src.config import get_policy
 from src.core.adapters import flow_paths_from_result, graph_tx_payload, is_registered, kyc_summaries
 from src.core.canonical import to_money, to_ratio
 from src.core.policy import BudgetLedger, PolicyConfig
 from src.db.database import load_checkpoint, save_checkpoint, utc_now_iso
-from src.guardrails.verifier import verify_worksheet
+from src.guardrails.guardrails import unwrap_untrusted_data
 from src.memory.store import memory_store, trim_messages_with_summary
 from src.models import (
     Alert,
     DispositionDecision,
-    DispositionWorksheet,
     GraphParams,
     Hypothesis,
     HypothesisLabel,
@@ -48,10 +47,10 @@ class RunContext:
     policy: PolicyConfig
 
 
-def new_context(role: str = ROLE) -> RunContext:
+def new_context(role: str = ROLE, thread_id: str = "unbound") -> RunContext:
     policy = get_policy()
     ledger = policy.new_ledger()
-    return RunContext(GuardedToolbox(role, ledger), ledger, policy)
+    return RunContext(GuardedToolbox(role, ledger, thread_id), ledger, policy)
 
 
 def _as_state(raw: InvestigationState | dict[str, Any]) -> InvestigationState:
@@ -142,7 +141,7 @@ async def _collect_identity_evidence(
             continue
         registry[kyc.get("evidence_id", f"KYC-{acc}")] = kyc
         reg = await ctx.toolbox.call(
-            "bank-records", "check_commercial_registry", {"entity_name": kyc.get("entity_name", acc), "account_id": acc}
+            "bank-records", "check_commercial_registry", {"entity_name": unwrap_untrusted_data(str(kyc.get("entity_name", acc))), "account_id": acc}
         )
         if is_error(reg):
             degraded.append(f"Commercial registry unavailable for {acc}: {reg.get('error_code') or reg.get('error')}")
@@ -362,60 +361,25 @@ async def draft_worksheet_node(
     disposition, confidence = decide_disposition(state.active_hypotheses, state.degraded_evidence)
     citations = sorted({c for h in state.active_hypotheses for c in h.regulatory_citations})
     summaries = kyc_summaries(state.kyc_profiles, limit=5)
+    degraded = sorted({*state.degraded_evidence, *security_notes(ctx.toolbox)})
     rationale = (
         f"Analyzed {len(state.fund_flow_paths)} candidate path(s) across {state.replan_count + 1} bounded graph pass(es) "
         f"(replans={state.replan_count}, tool_calls={ctx.ledger.calls_used}) and {len(state.kyc_profiles)} KYC/registry records. "
         f"Recommended disposition: {disposition.value} ({confidence:.0%} confidence) pending mandatory human review."
     )
-    if state.degraded_evidence:
-        rationale += " Degraded evidence: " + "; ".join(state.degraded_evidence)
-
-    llm_out = await synthesize_investigation_narrative(
-        alert_id=state.alert.alert_id, disposition=disposition.value, confidence=confidence,
-        paths_summary=[p.model_dump(mode="json") for p in state.fund_flow_paths[:3]], kyc_summaries=summaries,
-        citations=citations, replan_count=state.replan_count, fallback_rationale=rationale,
-        use_strong_model=False, ledger=ctx.ledger,
-    )
-    rationale = llm_out["rationale"]
-    hypotheses = list(state.active_hypotheses)
-    if llm_out["used_live_llm"]:
-        for hyp in hypotheses:
-            override = llm_out["suspicious_explanation"] if hyp.label == HypothesisLabel.SUSPICIOUS else llm_out["benign_explanation"]
-            if override:
-                hyp.explanation = override
-
-    draft_payload = {
-        "alert_id": state.alert.alert_id,
-        "recommended_disposition": disposition.value,
-        "recommendation_rationale": rationale,
-        "confidence_score": confidence,
-        "candidate_paths": [p.model_dump() for p in state.fund_flow_paths[:3]],
-        "regulatory_citations": citations or ["REG-FIU-RF-014"],
-        "kyc_summaries": summaries,
-    }
-    if deterministic_verifier:
-        verification = verify_worksheet(draft_payload, evidence_registry=state.evidence_registry)
-        if not verification.passed:
-            rationale = f"[VERIFIER WARNING: {verification.errors}] " + rationale
-            draft_payload["recommendation_rationale"] = rationale
-
-    draft = await ctx.toolbox.call("case-actions", "draft_disposition_report", draft_payload)
-    worksheet = DispositionWorksheet(
-        worksheet_id=draft.get("worksheet_id", ""),
-        alert_id=state.alert.alert_id,
-        investigator_agent=f"auditguard-c1 ({llm_out['model']})",
-        candidate_paths=state.fund_flow_paths[:3],
-        hypotheses=hypotheses,
-        regulatory_citations=draft_payload["regulatory_citations"],
-        kyc_summaries=summaries,
-        recommended_disposition=disposition,
-        recommendation_rationale=rationale,
-        confidence_score=confidence,
-        payload_hash=draft.get("payload_hash", ""),
+    if degraded:
+        rationale += " Degraded evidence: " + "; ".join(degraded)
+    outcome = await draft_and_verify(
+        box=ctx.toolbox, ledger=ctx.ledger, alert=state.alert, agent_label="auditguard-c1", thread_id=state.thread_id,
+        disposition=disposition, confidence=confidence, paths=state.fund_flow_paths, hypotheses=state.active_hypotheses,
+        citations=citations, summaries=summaries, registry=state.evidence_registry, replan_count=state.replan_count,
+        base_rationale=rationale, degraded=degraded, use_strong_model=False, verify=deterministic_verifier,
     )
     return {
-        "worksheet": worksheet,
-        "active_hypotheses": hypotheses,
+        "worksheet": outcome.worksheet,
+        "active_hypotheses": outcome.worksheet.hypotheses,
+        "degraded_evidence": degraded,
+        "error": "verification_failed" if outcome.verification_failed else None,
         "is_complete": True,
         "current_node": "interrupt_required",
         "current_step": state.current_step + 1,
@@ -475,6 +439,7 @@ async def run_investigation(
         ctx.ledger.preload(calls=state.tool_calls_used, cost_usd=state.estimated_cost_usd, replans=state.replan_count)
     else:
         state = InvestigationState(thread_id=thread_id or f"thr-{alert.alert_id.lower()}", alert=alert)
+    ctx.toolbox.thread_id = state.thread_id
 
     def persist(st: InvestigationState, status: str = "running") -> None:
         save_checkpoint(

@@ -5,6 +5,7 @@ Pre-Tool & Post-Tool Enforcement Hooks
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -12,7 +13,7 @@ from pydantic import BaseModel
 
 from src.config import get_policy
 from src.core.policy import BudgetLedger
-from src.guardrails.guardrails import mask_pii, tag_untrusted
+from src.guardrails.guardrails import mask_pii, matched_injection_patterns, wrap_untrusted_data
 
 # Per-agent RBAC tool allow-lists (enforced at the execution layer, never by prompt text)
 AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
@@ -63,7 +64,9 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
     },
 }
 
-UNTRUSTED_TEXT_FIELDS = {"memo", "memo_text", "kyc_notes", "business_description", "text"}
+UNTRUSTED_TEXT_FIELDS = {"memo", "memo_text", "kyc_notes", "business_description", "entity_name", "counterparty_name", "text"}
+# Curated internal regulatory corpus: still escaped/wrapped, but not injection-screened (SOP text quotes the attack phrases).
+TRUSTED_CORPUS_TOOLS = {"search_regulations", "get_clause_by_id"}
 
 
 class HookDecision(BaseModel):
@@ -115,36 +118,68 @@ def pre_tool_hook(
     return HookDecision(allowed=True)
 
 
+def _identifier(container: dict[str, Any], tool_name: str) -> str:
+    for key in ("evidence_id", "tx_id", "txn_id", "clause_id", "account_id"):
+        if container.get(key):
+            return str(container[key])
+    return tool_name
+
+
 def post_tool_hook(
     tool_name: str,
     result: Any,
     audit_log: list[dict[str, Any]] | None = None,
+    flags: list[dict[str, Any]] | None = None,
 ) -> Any:
     """
-    Post-tool middleware:
-    1. Scrub synthetic PII before telemetry/LLM context
-    2. Wrap untrusted text fields (memos, KYC notes, retrieved passages) in <untrusted_data>
-    3. Append structured audit entry
+    Post-tool middleware applied to EVERY tool output before it can reach agent state / an LLM:
+    1. PII scrubbing
+    2. Every external text field is XML-escaped and wrapped in <untrusted_data source="...">
+    3. Unicode-normalised injection detection: matching content is WITHHELD (replaced by a hash placeholder),
+       the enclosing record is flagged (`injection_flagged`) and the detection is appended to `flags`
     """
-    def _sanitize(obj: Any, key: str = "") -> Any:
+    detections = flags if flags is not None else []
+    trusted_corpus = tool_name in TRUSTED_CORPUS_TOOLS
+
+    def sanitize_dict(container: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        ident = _identifier(container, tool_name)
+        flagged = False
+        for key, value in container.items():
+            if isinstance(value, str) and key in UNTRUSTED_TEXT_FIELDS:
+                if value.startswith("<untrusted_data"):
+                    out[key] = value
+                    continue
+                patterns = [] if trusted_corpus else matched_injection_patterns(value, external=True)
+                if patterns:
+                    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+                    detections.append({"tool": tool_name, "source": f"{ident}.{key}", "field": key,
+                                       "patterns": patterns, "content_sha256": digest})
+                    out[key] = wrap_untrusted_data(f"[WITHHELD: possible prompt-injection sha256:{digest}]", f"{ident}.{key}")
+                    flagged = True
+                else:
+                    scrubbed, _ = mask_pii(value)
+                    out[key] = wrap_untrusted_data(scrubbed, f"{ident}.{key}")
+            else:
+                out[key] = sanitize(value)
+        if flagged:
+            out["injection_flagged"] = True
+        return out
+
+    def sanitize(obj: Any) -> Any:
         if isinstance(obj, dict):
-            return {k: _sanitize(v, k) for k, v in obj.items()}
+            return sanitize_dict(obj)
         if isinstance(obj, list):
-            return [_sanitize(item, key) for item in obj]
+            return [sanitize(item) for item in obj]
         if isinstance(obj, str):
-            scrubbed, _ = mask_pii(obj)
-            if key in UNTRUSTED_TEXT_FIELDS and scrubbed and not scrubbed.startswith("<untrusted_data>"):
-                return tag_untrusted(scrubbed)
-            return scrubbed
+            return mask_pii(obj)[0]
         return obj
 
-    sanitized = _sanitize(result)
-
+    sanitized = sanitize(result)
     if audit_log is not None:
         audit_log.append({
             "event_type": "tool_executed",
             "tool_name": tool_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
-
     return sanitized

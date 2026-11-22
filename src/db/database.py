@@ -18,13 +18,14 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
-from src.core.canonical import loads_json, to_money
+from src.core.canonical import dumps_json, loads_json, to_money
 
 _DB_LOCK = threading.RLock()
 _DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[2] / "data" / "auditguard.db"
@@ -134,6 +135,21 @@ CREATE TABLE IF NOT EXISTS cases (
     committed_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('analyst', 'senior_reviewer', 'admin')),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS investigation_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS approval_tokens (
     token_id TEXT PRIMARY KEY,
     thread_id TEXT NOT NULL,
@@ -202,6 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_thread ON audit_logs(thread_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_cust ON case_episodes(customer_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_worksheet_thread_revision ON worksheets(thread_id, revision) WHERE thread_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_approval_worksheet ON approval_tokens(worksheet_id);
+CREATE INDEX IF NOT EXISTS idx_events_thread ON investigation_events(thread_id, event_id);
 """
 
 
@@ -252,6 +269,7 @@ def init_db(force: bool = False) -> Path:
         _migrate(conn)
         conn.executescript(SQLITE_DDL)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute("PRAGMA journal_mode = WAL")
         # Seed simulated Indian banks
         banks = [
             ("BNK-HDFC", "HDFC Bank Synthetic", "HDFC0"),
@@ -555,11 +573,12 @@ def append_audit_log(
             INSERT INTO audit_logs (case_id, thread_id, event_type, actor, payload_hash, details_json, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (case_id, thread_id, event_type, actor, payload_hash, json.dumps(details, default=str), utc_now_iso()),
+            (case_id, thread_id, event_type, actor, payload_hash, dumps_json(details), utc_now_iso()),
         )
         log_id = int(cur.lastrowid or 0)
 
     from src.observability.loki_shipper import emit_loki_log
+    from src.observability.redaction import redact_for_logs
 
     emit_loki_log(
         stream_type="audit_trail",
@@ -572,7 +591,7 @@ def append_audit_log(
             "actor": actor,
             "case_id": case_id,
             "payload_hash": payload_hash,
-            "details": details,
+            "details": redact_for_logs(details),
         },
     )
     return log_id
@@ -594,3 +613,85 @@ def list_audit_logs(thread_id: Optional[str] = None, limit: int = 50) -> list[di
             d["details"] = json.loads(d.pop("details_json", "{}"))
             out.append(d)
         return out
+
+
+# ---------------------------------------------------------------------------
+# Privilege-separated connections
+# ---------------------------------------------------------------------------
+def _db_uri(read_only: bool) -> str:
+    return get_sqlite_path().resolve().as_uri() + ("?mode=ro" if read_only else "")
+
+
+@contextmanager
+def get_ro_db(timeout_s: float = 5.0) -> Iterator[sqlite3.Connection]:
+    """Read-only connection (`mode=ro` + `PRAGMA query_only`) with a statement deadline for read-path MCP tools."""
+    conn = sqlite3.connect(_db_uri(read_only=True), uri=True, timeout=timeout_s)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON")
+    deadline = time.monotonic() + timeout_s
+    conn.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 10_000)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+_WRITE_ACTIONS = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
+_DDL_ACTIONS = {
+    getattr(sqlite3, name)
+    for name in dir(sqlite3)
+    if name.startswith(("SQLITE_CREATE_", "SQLITE_DROP_", "SQLITE_ALTER_"))
+}
+
+
+@contextmanager
+def get_scoped_db(allowed_write_tables: Iterable[str]) -> Iterator[sqlite3.Connection]:
+    """Read-write connection whose SQL authorizer DENIES writes/DDL outside `allowed_write_tables`."""
+    allowed = frozenset(allowed_write_tables)
+
+    def authorizer(action: int, arg1: Optional[str], _arg2: Optional[str], _db: Optional[str], _src: Optional[str]) -> int:
+        if action in _WRITE_ACTIONS and arg1 not in allowed:
+            return sqlite3.SQLITE_DENY
+        if action in _DDL_ACTIONS:
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    with _DB_LOCK:
+        conn = sqlite3.connect(str(get_sqlite_path()), timeout=15.0)
+        conn.row_factory = sqlite3.Row
+        conn.set_authorizer(authorizer)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Durable, replayable investigation event log (read-only SSE subscribers never re-execute a run)
+# ---------------------------------------------------------------------------
+def append_event(thread_id: str, event: str, payload: dict[str, Any]) -> int:
+    init_db()
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO investigation_events (thread_id, event, payload_json, created_at) VALUES (?, ?, ?, ?)",
+            (thread_id, event, dumps_json(payload), utc_now_iso()),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def read_events(thread_id: str, after_id: int = 0) -> list[dict[str, Any]]:
+    init_db()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT event_id, event, payload_json, created_at FROM investigation_events "
+            "WHERE thread_id = ? AND event_id > ? ORDER BY event_id ASC",
+            (thread_id, after_id),
+        ).fetchall()
+    return [
+        {"event_id": r["event_id"], "event": r["event"], "created_at": r["created_at"], **json.loads(r["payload_json"])}
+        for r in rows
+    ]

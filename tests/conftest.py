@@ -18,15 +18,8 @@ _OPERATIONAL_DB_MTIME_AT_START = OPERATIONAL_DB.stat().st_mtime_ns if OPERATIONA
 
 
 def _reset_process_singletons() -> None:
-    from src.agent import llm_client
-    from src.mcp_servers import bank_records, case_actions
     from src.memory.store import memory_store
 
-    bank_records._db_seeded = False
-    case_actions._worksheets.clear()
-    llm_client._runtime_enabled_override = None
-    llm_client._runtime_model_override = None
-    llm_client._runtime_strong_model_override = None
     memory_store._entity_profiles.clear()
     memory_store._case_episodes.clear()
     memory_store._reflexion_playbook.clear()

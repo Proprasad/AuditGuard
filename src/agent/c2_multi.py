@@ -18,18 +18,17 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict
 
 from src.agent.c1_single import decide_disposition, widened_params
-from src.agent.llm_client import synthesize_investigation_narrative
+from src.agent.drafting import draft_and_verify, security_notes
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import GuardedToolbox, is_error
 from src.config import get_policy
 from src.core.adapters import flow_paths_from_result, graph_tx_payload, kyc_summaries
 from src.core.policy import BudgetLedger
 from src.db.database import save_checkpoint, utc_now_iso
-from src.guardrails.verifier import verify_worksheet
+from src.guardrails.guardrails import unwrap_untrusted_data
 from src.memory.store import memory_store
 from src.models import (
     Alert,
-    DispositionWorksheet,
     FundFlowPath,
     GraphParams,
     Hypothesis,
@@ -90,7 +89,7 @@ async def benign_investigator(alert: Alert, root: str, network: list[str], box: 
         if is_error(kyc):
             degraded.append(f"KYC unavailable for {acc}: {kyc.get('error_code') or kyc.get('error')}")
             continue
-        reg = await box.call("bank-records", "check_commercial_registry", {"entity_name": kyc.get("entity_name", acc), "account_id": acc})
+        reg = await box.call("bank-records", "check_commercial_registry", {"entity_name": unwrap_untrusted_data(str(kyc.get("entity_name", acc))), "account_id": acc})
         if is_error(reg):
             degraded.append(f"Registry unavailable for {acc}: {reg.get('error_code') or reg.get('error')}")
             reg = {}
@@ -154,8 +153,8 @@ async def reporter_critic(
     paths: list[FundFlowPath] = flow["paths"]
     multi_hop = [p for p in paths if p.hop_count >= 2]
     benign_conf = benign["benign_confidence"]
-    degraded = list(benign["degraded"]) + list(reg["degraded"]) + ([flow["finding"]] if flow.get("error") else [])
-    citations = reg["citations"] or ["REG-FIU-RF-014"]
+    degraded = sorted({*benign["degraded"], *reg["degraded"], *([flow["finding"]] if flow.get("error") else []), *security_notes(box)})
+    citations = list(reg["citations"])
 
     if benign_conf >= 0.7:
         susp_conf, benign_final = 0.16, benign_conf
@@ -168,40 +167,17 @@ async def reporter_critic(
     summaries = kyc_summaries(benign["kyc_profiles"], limit=4)
     rationale = (
         f"C2 Multi-Agent Team: Flow Tracer reconstructed {len(paths)} path(s) ({len(multi_hop)} multi-hop, replans={replan_count}). "
-        f"Benign Investigator confidence: {benign_conf:.0%}. Citations: {', '.join(citations[:3])}."
+        f"Benign Investigator confidence: {benign_conf:.0%}. Citations: {', '.join(citations[:3]) or 'none retrieved'}."
     )
     if degraded:
         rationale += " Degraded evidence: " + "; ".join(degraded)
-
-    llm_out = await synthesize_investigation_narrative(
-        alert_id=alert.alert_id, disposition=disposition.value, confidence=confidence,
-        paths_summary=[p.model_dump(mode="json") for p in paths[:3]], kyc_summaries=summaries, citations=citations,
-        replan_count=replan_count, fallback_rationale=rationale, use_strong_model=True, ledger=ledger,
+    outcome = await draft_and_verify(
+        box=box, ledger=ledger, alert=alert, agent_label="auditguard-c2", thread_id=box.thread_id, disposition=disposition,
+        confidence=confidence, paths=paths, hypotheses=hypotheses, citations=citations, summaries=summaries,
+        registry=registry, replan_count=replan_count, base_rationale=rationale, degraded=degraded, use_strong_model=True,
     )
-    rationale = llm_out["rationale"]
-    if llm_out["used_live_llm"]:
-        if llm_out["suspicious_explanation"]:
-            hypotheses[0].explanation = llm_out["suspicious_explanation"]
-        if llm_out["benign_explanation"]:
-            hypotheses[1].explanation = llm_out["benign_explanation"]
-
-    payload = {
-        "alert_id": alert.alert_id, "recommended_disposition": disposition.value, "recommendation_rationale": rationale,
-        "confidence_score": confidence, "candidate_paths": [p.model_dump() for p in paths[:3]],
-        "regulatory_citations": citations, "kyc_summaries": summaries,
-    }
-    vr = verify_worksheet(payload, evidence_registry=registry)
-    if not vr.passed:
-        payload["recommendation_rationale"] = f"[VERIFIER WARNING: {vr.errors}] " + rationale
-    draft = await box.call("case-actions", "draft_disposition_report", payload)
-    worksheet = DispositionWorksheet(
-        worksheet_id=draft.get("worksheet_id", ""), alert_id=alert.alert_id,
-        investigator_agent=f"auditguard-c2 ({llm_out['model']})", candidate_paths=paths[:3], hypotheses=hypotheses,
-        regulatory_citations=citations, kyc_summaries=summaries, recommended_disposition=disposition,
-        recommendation_rationale=payload["recommendation_rationale"], confidence_score=confidence,
-        payload_hash=draft.get("payload_hash", ""),
-    )
-    return {"agent": "reporter_critic", "worksheet": worksheet}
+    return {"agent": "reporter_critic", "worksheet": outcome.worksheet, "verification_failed": outcome.verification_failed,
+            "degraded": degraded}
 
 
 def _evidence_registry(flow: dict[str, Any], benign: dict[str, Any], reg: dict[str, Any]) -> dict[str, Any]:
@@ -243,8 +219,9 @@ async def run_multi_agent(
         "5. [Supervisor -> Reporter & Critic] Deterministic verification & SHA-256 worksheet",
     ], graph_params=params)
 
-    tracer, investigator = GuardedToolbox("flow_tracer", ledger), GuardedToolbox("benign_investigator", ledger)
-    analyst, reporter = GuardedToolbox("regulatory_analyst", ledger), GuardedToolbox("reporter_critic", ledger)
+    tid = state.thread_id
+    tracer, investigator = GuardedToolbox("flow_tracer", ledger, tid), GuardedToolbox("benign_investigator", ledger, tid)
+    analyst, reporter = GuardedToolbox("regulatory_analyst", ledger, tid), GuardedToolbox("reporter_critic", ledger, tid)
 
     t0 = time.perf_counter()
     flow = await flow_tracer(alert, params, tracer, limit=5)
@@ -276,7 +253,8 @@ async def run_multi_agent(
 
     state.transactions, state.fund_flow_paths = flow["transactions"], flow["paths"]
     state.kyc_profiles, state.regulatory_snippets = benign["kyc_profiles"], reg["snippets"]
-    state.degraded_evidence = list(benign["degraded"]) + list(reg["degraded"])
+    state.degraded_evidence = report["degraded"]
+    state.error = "verification_failed" if report["verification_failed"] else None
     state.evidence_registry = registry
     state.flow_summary = compute_network_flow_summary(flow["root_account"], flow["transactions"], flow["paths"], benign["kyc_profiles"])
     state.worksheet = report["worksheet"]

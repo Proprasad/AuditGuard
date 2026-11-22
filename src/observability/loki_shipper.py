@@ -20,6 +20,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
+from src.observability.redaction import redact_for_logs, redact_text
+
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="loki-shipper")
 
 
@@ -74,8 +76,8 @@ def emit_loki_log(
         "level": level.upper(),
         "stream_type": stream_type,
         "event": event,
-        "message": message,
-        **(extra or {}),
+        "message": redact_text(message),
+        **redact_for_logs(extra or {}),
     }
     line_str = json.dumps(record, default=str)
     try:
