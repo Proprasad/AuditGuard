@@ -174,7 +174,7 @@ def test_operational_db_stores_money_as_exact_text(isolated_operational_db: Path
     types = {r[0] for r in conn.execute("SELECT typeof(amount_inr) FROM transactions")}
     assert types == {"text"}
     assert {r[0] for r in conn.execute("SELECT typeof(initial_amount_inr) FROM alerts")} == {"text"}
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
     conn.close()
 
 

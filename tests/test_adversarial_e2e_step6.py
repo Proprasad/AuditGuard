@@ -172,7 +172,7 @@ def test_16_right_to_erasure_purges_all_tables_and_loki_scrubber(client, auth):
         assert str(cust_row["synthetic_pan_hash"]).startswith("REDACTED-")
         ws_json = conn.execute("SELECT content_json FROM worksheets WHERE alert_id = 'ALT-2026-0412'").fetchone()[0]
         case_json = conn.execute("SELECT worksheet_json FROM cases WHERE alert_id = 'ALT-2026-0412'").fetchone()[0]
-        cp_json = conn.execute("SELECT state_json FROM checkpoints WHERE thread_id = ?", (tid,)).fetchone()[0]
+        cp_json = conn.execute("SELECT state_json FROM thread_checkpoints WHERE thread_id = ?", (tid,)).fetchone()[0]
         forget_log = conn.execute(
             "SELECT details_json FROM audit_logs WHERE thread_id = 'memory-forget' ORDER BY log_id DESC LIMIT 1"
         ).fetchone()[0]

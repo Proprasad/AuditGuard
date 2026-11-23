@@ -52,6 +52,7 @@ services:
     environment:
       USE_POSTGRES: "true"
       POSTGRES_HOST: postgres
+      POSTGRES_DB_ROLE: "auditguard_ro"
     ports:
       - "8012:8012"
     depends_on:
@@ -69,6 +70,7 @@ services:
     environment:
       USE_POSTGRES: "true"
       POSTGRES_HOST: postgres
+      POSTGRES_DB_ROLE: "auditguard_case_writer"
     ports:
       - "8013:8013"
     depends_on:

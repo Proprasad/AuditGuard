@@ -1,24 +1,25 @@
 """
-PostgreSQL (`psycopg`) compatibility backend mirroring the `sqlite3` Row/Cursor/Connection contract.
+PostgreSQL (`psycopg` + `psycopg_pool`) compatibility backend mirroring the `sqlite3` contract.
 
-Enables 100% shared relational state across Docker/multi-process deployments when `USE_POSTGRES=true`
-without duplicating repository SQL:
+Enables shared relational state across multi-process deployments when `USE_POSTGRES=true`:
+  - Lifespan-managed `ConnectionPool` eliminates per-query TCP/auth handshake churn.
   - Positional `?` placeholders outside single-quoted literals translate cleanly to `%s`.
   - `INSERT OR IGNORE` / `INSERT OR REPLACE` translate to deterministic `ON CONFLICT (<pk>)` clauses.
-  - `INSERT INTO audit_logs | investigation_events | case_episodes` return generated serial IDs (`lastrowid`).
-  - Read-only connections enforce `SET TRANSACTION READ ONLY` + `statement_timeout`; scoped connections
-    enforce write-table allow-lists (`CASE_WRITE_TABLES`).
+  - Read-only connections enforce `SET TRANSACTION READ ONLY`, `statement_timeout`, and `SET ROLE auditguard_ro`
+    (when provisioned); scoped writers enforce `SET ROLE auditguard_case_writer` + multi-statement/CTE SQL guards.
 """
 
 from __future__ import annotations
 
-import re
-import sqlite3
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
+import re
+import sqlite3
+import threading
 from typing import Any
 
 import psycopg
+from psycopg_pool import ConnectionPool
 
 _TABLE_PK: dict[str, str] = {
     "banks": "bank_id",
@@ -32,7 +33,7 @@ _TABLE_PK: dict[str, str] = {
     "users": "username",
     "revoked_tokens": "jti",
     "approval_tokens": "token_id",
-    "checkpoints": "thread_id",
+    "thread_checkpoints": "thread_id",
     "entity_profiles": "customer_id",
     "reflexion_playbook": "lesson_id",
     "system_flags": "flag_key",
@@ -47,12 +48,48 @@ _INSERT_REPLACE_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _INSERT_SERIAL_RE = re.compile(r"^\s*INSERT\s+INTO\s+(audit_logs|investigation_events|case_episodes)\b", re.IGNORECASE)
-_WRITE_TARGET_RE = re.compile(
-    r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|"
-    r"CREATE\s+TABLE|DROP\s+TABLE|ALTER\s+TABLE|TRUNCATE(?:\s+TABLE)?)\s+"
-    r"(?:IF\s+(?:NOT\s+)?EXISTS\s+)?([a-zA-Z0-9_]+)",
+_ANY_WRITE_CLAUSE_RE = re.compile(
+    r"\b(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|"
+    r"CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|ROLE|VIEW|FUNCTION|TRIGGER)|"
+    r"DROP\s+(?:TABLE|INDEX|ROLE|VIEW|SCHEMA)|ALTER\s+(?:TABLE|ROLE|DEFAULT)|"
+    r"TRUNCATE(?:\s+TABLE)?|GRANT|REVOKE|COPY)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?([a-zA-Z0-9_]+)?",
     re.IGNORECASE,
 )
+_DDL_OR_ADMIN_RE = re.compile(
+    r"\b(?:CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY|SET\s+ROLE|RESET\s+ROLE)\b",
+    re.IGNORECASE,
+)
+
+_POOL_LOCK = threading.Lock()
+_PG_POOL: ConnectionPool[Any] | None = None
+_PG_POOL_DSN: str = ""
+_KNOWN_ROLES: set[str] | None = None
+
+
+def open_postgres_pool(dsn: str, min_size: int = 1, max_size: int = 10) -> None:
+    global _PG_POOL, _PG_POOL_DSN, _KNOWN_ROLES
+    with _POOL_LOCK:
+        if _PG_POOL is not None and _PG_POOL_DSN == dsn:
+            return
+        if _PG_POOL is not None:
+            _PG_POOL.close()
+        _PG_POOL = ConnectionPool(conninfo=dsn, min_size=min_size, max_size=max_size, open=True)
+        _PG_POOL_DSN = dsn
+        _KNOWN_ROLES = None
+
+
+def close_postgres_pool() -> None:
+    global _PG_POOL, _PG_POOL_DSN, _KNOWN_ROLES
+    with _POOL_LOCK:
+        if _PG_POOL is not None:
+            _PG_POOL.close()
+            _PG_POOL = None
+            _PG_POOL_DSN = ""
+            _KNOWN_ROLES = None
+
+
+def _strip_quoted_literals(sql: str) -> str:
+    return re.sub(r"'(?:''|[^'])*'", "''", sql)
 
 
 class CompatRow(Mapping[str, Any]):
@@ -107,12 +144,12 @@ def translate_sql(sql: str) -> tuple[str, str | None]:
             raise ValueError(f"unknown primary key for upsert table {table!r}")
         cols = [c.strip() for c in cols_raw.split(",")]
         if mode == "IGNORE":
-            sql_ignore = f"INSERT INTO {table} ({cols_raw}) VALUES ({vals_raw}) ON CONFLICT ({pk}) DO NOTHING"  # noqa: S608
-            return sql_ignore, None
+            sql_ig = f"INSERT INTO {table} ({cols_raw}) VALUES ({vals_raw}) ON CONFLICT ({pk}) DO NOTHING"  # noqa: S608
+            return sql_ig, None
         updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c != pk)
         conflict = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"
-        sql_upsert = f"INSERT INTO {table} ({cols_raw}) VALUES ({vals_raw}) ON CONFLICT ({pk}) {conflict}"  # noqa: S608
-        return sql_upsert, None
+        sql_up = f"INSERT INTO {table} ({cols_raw}) VALUES ({vals_raw}) ON CONFLICT ({pk}) {conflict}"  # noqa: S608
+        return sql_up, None
 
     sm = _INSERT_SERIAL_RE.match(converted)
     if sm and "RETURNING " not in converted.upper():
@@ -123,11 +160,18 @@ def translate_sql(sql: str) -> tuple[str, str | None]:
 
 
 def enforce_write_scope(sql: str, allowed: frozenset[str] | None) -> None:
+    """Deny multi-statement SQL, DDL/privilege escalation, and any write/CTE targeting non-allowed tables."""
     if allowed is None:
         return
-    m = _WRITE_TARGET_RE.match(sql)
-    if m and m.group(1).lower() not in allowed:
-        raise sqlite3.DatabaseError(f"write denied to table {m.group(1)!r} outside allowed scope")
+    scrubbed = _strip_quoted_literals(sql).strip().rstrip(";").strip()
+    if ";" in scrubbed:
+        raise sqlite3.DatabaseError("multi-statement SQL denied on scoped connection")
+    if _DDL_OR_ADMIN_RE.search(scrubbed):
+        raise sqlite3.DatabaseError("DDL or role mutation denied on scoped connection")
+    for match in _ANY_WRITE_CLAUSE_RE.finditer(scrubbed):
+        target = (match.group(1) or "").lower()
+        if target not in allowed:
+            raise sqlite3.DatabaseError(f"write denied to table {target!r} outside allowed scope")
 
 
 class CompatCursor:
@@ -153,8 +197,20 @@ class CompatCursor:
         return iter(self.fetchall())
 
 
+def _available_roles(conn: psycopg.Connection[Any]) -> set[str]:
+    global _KNOWN_ROLES
+    if _KNOWN_ROLES is not None:
+        return _KNOWN_ROLES
+    with conn.cursor() as cur:
+        rows = cur.execute(
+            "SELECT rolname FROM pg_roles WHERE rolname IN ('auditguard_ro', 'auditguard_case_writer')"
+        ).fetchall()
+    _KNOWN_ROLES = {str(r[0]) for r in rows}
+    return _KNOWN_ROLES
+
+
 class PostgresCompatConnection:
-    """Thin wrapper over `psycopg.Connection` matching the `sqlite3.Connection` methods used by repos."""
+    """Pooled `psycopg` connection wrapper enforcing read-only / scoped DB roles and statement timeouts."""
 
     def __init__(
         self,
@@ -164,16 +220,30 @@ class PostgresCompatConnection:
         timeout_s: float = 15.0,
         allowed_write_tables: Iterable[str] | None = None,
     ) -> None:
-        self._conn = psycopg.connect(dsn, connect_timeout=max(2, int(timeout_s)))
+        self._pool = _PG_POOL if (_PG_POOL is not None and _PG_POOL_DSN == dsn) else None
+        self._conn = (
+            self._pool.getconn(timeout=max(2.0, timeout_s))
+            if self._pool is not None
+            else psycopg.connect(dsn, connect_timeout=max(2, int(timeout_s)))
+        )
         self._allowed = frozenset(t.lower() for t in allowed_write_tables) if allowed_write_tables is not None else None
         self._read_only = read_only
+        self._role_applied = False
+        roles = _available_roles(self._conn)
         with self._conn.cursor() as cur:
             cur.execute(f"SET statement_timeout = {int(timeout_s * 1000)}")
             if read_only:
                 cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
+                if "auditguard_ro" in roles:
+                    cur.execute("SET ROLE auditguard_ro")
+                    self._role_applied = True
+            elif self._allowed is not None and "auditguard_case_writer" in roles:
+                cur.execute("SET ROLE auditguard_case_writer")
+                self._role_applied = True
 
     def execute(self, sql: str, params: Sequence[Any] = ()) -> CompatCursor:
-        if self._read_only and _WRITE_TARGET_RE.match(sql):
+        scrubbed = _strip_quoted_literals(sql)
+        if self._read_only and (_ANY_WRITE_CLAUSE_RE.search(scrubbed) or ";" in scrubbed.rstrip(";").strip()):
             raise sqlite3.OperationalError("attempt to write a readonly database")
         enforce_write_scope(sql, self._allowed)
         pg_sql, ret_col = translate_sql(sql)
@@ -211,7 +281,20 @@ class PostgresCompatConnection:
         self._conn.rollback()
 
     def close(self) -> None:
-        self._conn.close()
+        if self._pool is None:
+            self._conn.close()
+            return
+        try:
+            self._conn.rollback()
+            with self._conn.cursor() as cur:
+                if self._role_applied:
+                    cur.execute("RESET ROLE")
+                if self._read_only:
+                    cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE")
+            self._conn.commit()
+        except psycopg.Error:
+            pass
+        self._pool.putconn(self._conn)
 
 
 def postgres_ddl() -> str:

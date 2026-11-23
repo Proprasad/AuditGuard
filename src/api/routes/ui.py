@@ -90,6 +90,6 @@ def _metrics_authorized(request: Request, authorization: Optional[str]) -> bool:
 
 @router.get("/metrics")
 async def metrics(request: Request, authorization: Optional[str] = Header(default=None)) -> Response:
-    if not _metrics_authorized(request, authorization):
+    if not await asyncio.to_thread(_metrics_authorized, request, authorization):
         raise HTTPException(status_code=401, detail="UNAUTHORIZED: metrics access denied")
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

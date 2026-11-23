@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.canonical import dumps_json
 from src.db.database import DbConn, get_db, init_db, utc_now_iso
 
 
@@ -104,7 +105,7 @@ class LongTermMemoryStore:
             with self._db() as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO entity_profiles (customer_id, profile_json, updated_at) VALUES (?, ?, ?)",
-                    (customer_id, json.dumps(rec, default=str), now),
+                    (customer_id, dumps_json(rec), now),
                 )
 
     def get_entity_profile(self, customer_id: str) -> Optional[dict[str, Any]]:
@@ -128,7 +129,7 @@ class LongTermMemoryStore:
             with self._db() as conn:
                 conn.execute(
                     "INSERT INTO case_episodes (customer_id, episode_json, archived_at) VALUES (?, ?, ?)",
-                    (customer_id, json.dumps(rec, default=str), now),
+                    (customer_id, dumps_json(rec), now),
                 )
         return True
 

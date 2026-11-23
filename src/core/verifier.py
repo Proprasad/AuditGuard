@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from src.core.canonical import CENT, NumericError, canonical_sha256, to_decimal, to_money
+from src.core.canonical import CENT, NumericError, canonical_sha256, to_confidence, to_decimal, to_money
 
 DEFAULT_CONSERVATION_TOLERANCE = Decimal("0.05")
 
@@ -58,9 +58,9 @@ _GUILT_FAMILIES = [
 ]
 
 _REF_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
-_AMOUNT_PATTERN = re.compile(r"(?:INR|₹|Rs\.?)\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
-_SUFFIX_AMOUNT_PATTERN = re.compile(
-    r"\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*(rupees?|rs\.?|inr|lakhs?|lacs?|crores?)\b",
+_PROSE_CURRENCY_RE = re.compile(
+    r"(?:(INR|₹|Rs\.?)\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(lakhs?|lacs?|crores?|rupees?))?(?!\w))"
+    r"|(?:(?<!\w)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(rupees?|rs\.?|inr|lakhs?|lacs?|crores?)(?!\w))",
     re.IGNORECASE,
 )
 _UNIT_MULTIPLIERS = {
@@ -263,16 +263,19 @@ def _check_citations(ws: Mapping[str, Any], registry: Mapping[str, Any], disposi
 
 def _extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
     found: list[tuple[str, Decimal | None]] = []
-    for raw in _AMOUNT_PATTERN.findall(text):
-        found.append((f"INR {raw}", _as_money(raw.replace(",", ""))))
-    for raw_num, unit in _SUFFIX_AMOUNT_PATTERN.findall(text):
-        cleaned = raw_num.replace(",", "")
-        mult = _UNIT_MULTIPLIERS.get(unit.lower().rstrip("."), Decimal("1"))
+    for m in _PROSE_CURRENCY_RE.finditer(text):
+        prefix, p_num, p_unit, s_num, s_unit = m.groups()
+        raw_num = p_num if p_num is not None else s_num
+        unit = (p_unit or s_unit or "").lower().rstrip(".")
+        mult = _UNIT_MULTIPLIERS.get(unit, Decimal("1"))
         try:
-            scaled = to_money(to_decimal(cleaned, Decimal("0.0001")) * mult)
+            scaled = to_money(to_decimal(raw_num.replace(",", ""), Decimal("0.0001")) * mult)
         except NumericError:
             scaled = None
-        found.append((f"{raw_num} {unit}", scaled))
+        label = f"{prefix} {raw_num}".strip() if prefix else f"{raw_num} {s_unit}"
+        if p_unit:
+            label = f"{label} {p_unit}"
+        found.append((label, scaled))
     return found
 
 
@@ -315,8 +318,9 @@ def verify_worksheet(
     checks.setdefault("no_prohibited_claims", True)
 
     try:
-        conf_ok = 0.0 <= float(worksheet.get("confidence_score", 0)) <= 1.0
-    except (TypeError, ValueError):
+        to_confidence(worksheet.get("confidence_score", 0))
+        conf_ok = True
+    except NumericError:
         conf_ok = False
     checks["confidence_in_range"] = conf_ok
     if not conf_ok:

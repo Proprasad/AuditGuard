@@ -36,13 +36,6 @@ def _delete_pg_saver_table(pg_conn: Any, tbl: str, threads: list[str]) -> int:
         ).fetchone()
         if not exists:
             return 0
-        if tbl == "checkpoints":
-            has_ns = cur.execute(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = 'checkpoints' AND column_name = 'checkpoint_ns'"
-            ).fetchone()
-            if not has_ns:
-                return 0
         removed = 0
         for tid in threads:
             cur.execute(f"DELETE FROM {tbl} WHERE thread_id = %s", (tid,))  # noqa: S608
@@ -98,7 +91,7 @@ def erase_customer(customer_id: str, actor: str) -> dict[str, Any]:
             conn, "SELECT alert_id FROM alerts WHERE network_accounts_json LIKE ?", [f'%"{a}"%' for a in accounts]
         )
         alerts = list(dict.fromkeys([*seed_alerts, *net_alerts]))
-        threads = _select_col(conn, "SELECT thread_id FROM checkpoints WHERE alert_id = ?", alerts)
+        threads = _select_col(conn, "SELECT thread_id FROM thread_checkpoints WHERE alert_id = ?", alerts)
         worksheets = _select_col(conn, "SELECT worksheet_id FROM worksheets WHERE alert_id = ?", alerts)
         cases = _select_col(conn, "SELECT case_id FROM cases WHERE alert_id = ?", alerts)
 
@@ -131,7 +124,7 @@ def erase_customer(customer_id: str, actor: str) -> dict[str, Any]:
         )
         counts["cases"] = _update_many(conn, "UPDATE cases SET worksheet_json = ? WHERE case_id = ?", marker, cases)
         counts["checkpoints"] = _update_many(
-            conn, "UPDATE checkpoints SET state_json = ? WHERE thread_id = ?", marker, threads
+            conn, "UPDATE thread_checkpoints SET state_json = ? WHERE thread_id = ?", marker, threads
         )
         counts["investigation_events"] = _update_many(
             conn, "UPDATE investigation_events SET payload_json = ? WHERE thread_id = ?", marker, threads

@@ -67,7 +67,7 @@ COMMON_INJECTION_PATTERNS = [
     re.compile(r"\byou are now\b"),
     re.compile(r"\b(?:new|updated|revised|real|actual) (?:instructions?|directives?|rules?|task)\s*:"),
     re.compile(r"\bsystem (?:prompt|message|override|instruction)s?\b"),
-    re.compile(r"<\|?\s*(?:im_start|im_end|system|assistant)\b"),
+    re.compile(r"<\|?\s*(?:im[\s_]?start|im[\s_]?end|system|assistant)\b"),
     re.compile(r"</?\s*untrusted_data\b"),
     re.compile(r"\bjailbreak\b|\bdan mode\b|\bdeveloper mode\b"),
     re.compile(r"\bpretend (?:you|to be)\b|\bact as (?:if|an?|the)\b"),

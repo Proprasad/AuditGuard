@@ -5,6 +5,7 @@ JWT (HS256, stdlib only) with issuer/audience/expiry/role/jti validation, logout
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -114,8 +115,9 @@ async def get_principal(authorization: Optional[str] = Header(default=None)) -> 
     if authorization:
         if not authorization.lower().startswith("bearer "):
             raise HTTPException(status_code=401, detail="UNAUTHORIZED: invalid Authorization scheme")
+        raw_token = authorization.split(" ", 1)[1].strip()
         try:
-            claims = verify_jwt_token(authorization.split(" ", 1)[1].strip())
+            claims = await asyncio.to_thread(verify_jwt_token, raw_token)
         except (ValueError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=401, detail=f"UNAUTHORIZED: {exc}") from exc
         return Principal(

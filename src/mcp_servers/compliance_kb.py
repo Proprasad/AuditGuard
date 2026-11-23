@@ -12,12 +12,13 @@ Tools: search_regulations, get_clause_by_id
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter
 import json
 import math
 import os
-import re
-from collections import Counter
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from fastmcp import FastMCP
@@ -303,12 +304,7 @@ def get_regulatory_index() -> HybridRegulatoryIndex:
 # ---------------------------------------------------------------------------
 # MCP Tools
 # ---------------------------------------------------------------------------
-@mcp.tool()
-async def search_regulations(params: SearchRegulationsInput) -> SearchRegulationsOutput:
-    """
-    Search the Indian AML regulatory knowledge base using Hybrid RAG
-    (BM25 + Dense Vector + Reciprocal Rank Fusion + Reranking + Query Decomposition).
-    """
+def _sync_search_regulations(params: SearchRegulationsInput) -> SearchRegulationsOutput:
     idx = get_regulatory_index()
     query = params.query
 
@@ -343,21 +339,34 @@ async def search_regulations(params: SearchRegulationsInput) -> SearchRegulation
 
 
 @mcp.tool()
-async def get_clause_by_id(params: GetClauseInput) -> dict[str, Any]:
-    """Retrieve a specific regulatory clause by its exact REG-* / SOP-* identifier."""
+async def search_regulations(params: SearchRegulationsInput) -> SearchRegulationsOutput:
+    """
+    Search the Indian AML regulatory knowledge base using Hybrid RAG
+    (BM25 + Dense Vector + Reciprocal Rank Fusion + Reranking + Query Decomposition).
+    """
+    return await asyncio.to_thread(_sync_search_regulations, params)
+
+
+def _sync_get_clause(clause_id: str) -> dict[str, Any]:
     idx = get_regulatory_index()
     for clause in idx.clauses:
-        if clause.clause_id == params.clause_id:
+        if clause.clause_id == clause_id:
             return {"status": "ok", **clause.model_copy(update={"relevance_score": 1.0}).model_dump()}
 
     return {
         "status": "error",
         "error_code": "CLAUSE_NOT_FOUND",
-        "message": f"No clause found with ID: {params.clause_id}",
-        "clause_id": params.clause_id,
+        "message": f"No clause found with ID: {clause_id}",
+        "clause_id": clause_id,
         "source": "unknown",
         "relevance_score": 0.0,
     }
+
+
+@mcp.tool()
+async def get_clause_by_id(params: GetClauseInput) -> dict[str, Any]:
+    """Retrieve a specific regulatory clause by its exact REG-* / SOP-* identifier."""
+    return await asyncio.to_thread(_sync_get_clause, params.clause_id)
 
 
 if __name__ == "__main__":

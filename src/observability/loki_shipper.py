@@ -23,6 +23,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
+from src.db.database import register_audit_observer
 from src.observability.redaction import redact_for_logs, redact_text
 
 logger = logging.getLogger("auditguard.loki")
@@ -94,3 +95,24 @@ def emit_loki_log(
         _EXECUTOR.submit(_post_to_loki, labels, line_str, ts_ns)
     except RuntimeError as exc:  # executor already shut down (interpreter exit)
         logger.debug("loki submit failed: %s", exc)
+
+
+def _on_audit_log(record: dict[str, Any]) -> None:
+    msg = f"[AUDIT #{record['log_id']}] {record['event_type']} by {record['actor']} (thread={record['thread_id']})"
+    emit_loki_log(
+        stream_type="audit_trail",
+        event=str(record["event_type"]),
+        message=msg,
+        level="INFO",
+        extra={
+            "log_id": record["log_id"],
+            "thread_id": record["thread_id"],
+            "actor": record["actor"],
+            "case_id": record["case_id"],
+            "payload_hash": record["payload_hash"],
+            "details": redact_for_logs(record["details"]),
+        },
+    )
+
+
+register_audit_observer(_on_audit_log)

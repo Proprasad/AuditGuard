@@ -16,15 +16,16 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+from datetime import timedelta
+from decimal import Decimal
 import json
 import os
-from decimal import Decimal
 from typing import Any, Optional
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.canonical import dec_str, to_money
+from src.core.canonical import dec_str, parse_utc_timestamp, to_money
 from src.db.database import DbConn, get_ro_db
 from src.mcp_servers.http_auth import serve_mcp_http
 
@@ -171,28 +172,48 @@ async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
     return await asyncio.to_thread(_sync_alert_context, params.alert_id)
 
 
-def _sync_account_txs(account_id: str, limit: int) -> list[dict[str, Any]]:
+def _filter_by_days_back(txs: list[dict[str, Any]], days_back: int) -> list[dict[str, Any]]:
+    if not txs:
+        return []
+    stamps = [parse_utc_timestamp(t["timestamp"]) for t in txs if t.get("timestamp")]
+    if not stamps:
+        return txs
+    cutoff = max(stamps) - timedelta(days=days_back)
+    return [t for t in txs if t.get("timestamp") and parse_utc_timestamp(t["timestamp"]) >= cutoff]
+
+
+def _sync_account_txs(account_id: str, days_back: int, limit: int) -> list[dict[str, Any]]:
     with get_ro_db() as conn:
+        max_row = conn.execute(
+            "SELECT MAX(txn_timestamp) FROM transactions WHERE from_account_id = ? OR to_account_id = ?",
+            (account_id, account_id),
+        ).fetchone()
+        latest_raw = max_row[0] if max_row else None
+        if not latest_raw:
+            return []
+        cutoff_iso = (parse_utc_timestamp(latest_raw) - timedelta(days=days_back)).isoformat()
         rows = conn.execute(
-            f"SELECT {_TX_COLUMNS} FROM transactions WHERE from_account_id = ? OR to_account_id = ? "  # noqa: S608
+            f"SELECT {_TX_COLUMNS} FROM transactions "  # noqa: S608
+            "WHERE (from_account_id = ? OR to_account_id = ?) AND txn_timestamp >= ? "
             "ORDER BY txn_timestamp DESC LIMIT ?",
-            (account_id, account_id, min(limit, MAX_ROWS)),
+            (account_id, account_id, cutoff_iso, min(limit, MAX_ROWS)),
         ).fetchall()
     return [_tx_dict(r) for r in rows]
 
 
 @mcp.tool()
 async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
-    """Transaction history for an account (hard cap: 200 rows)."""
+    """Transaction history for an account within `days_back` (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
-        txs = [
+        matched = [
             t
             for t in overlay.get("transactions", [])
             if params.account_id in (t.get("sender_account"), t.get("receiver_account"))
-        ][: params.limit]
+        ]
+        txs = _filter_by_days_back(matched, params.days_back)[: params.limit]
     else:
-        txs = await asyncio.to_thread(_sync_account_txs, params.account_id, params.limit)
+        txs = await asyncio.to_thread(_sync_account_txs, params.account_id, params.days_back, params.limit)
     return {
         "status": "ok",
         "account_id": params.account_id,
@@ -247,32 +268,47 @@ async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
     return await asyncio.to_thread(_sync_kyc, params.account_id)
 
 
-def _sync_counterparty_txs(account_id: str, counterparty_id: str) -> list[dict[str, Any]]:
+def _sync_counterparty_txs(account_id: str, counterparty_id: str, days_back: int) -> list[dict[str, Any]]:
     with get_ro_db() as conn:
-        rows = conn.execute(
-            f"SELECT {_TX_COLUMNS} FROM transactions WHERE (from_account_id = ? AND to_account_id = ?) "  # noqa: S608
-            f"OR (from_account_id = ? AND to_account_id = ?) ORDER BY txn_timestamp DESC LIMIT {MAX_ROWS}",
+        max_row = conn.execute(
+            "SELECT MAX(txn_timestamp) FROM transactions "
+            "WHERE (from_account_id = ? AND to_account_id = ?) OR (from_account_id = ? AND to_account_id = ?)",
             (account_id, counterparty_id, counterparty_id, account_id),
+        ).fetchone()
+        latest_raw = max_row[0] if max_row else None
+        if not latest_raw:
+            return []
+        cutoff_iso = (parse_utc_timestamp(latest_raw) - timedelta(days=days_back)).isoformat()
+        rows = conn.execute(
+            f"SELECT {_TX_COLUMNS} FROM transactions "  # noqa: S608
+            "WHERE ((from_account_id = ? AND to_account_id = ?) OR (from_account_id = ? AND to_account_id = ?)) "
+            f"AND txn_timestamp >= ? ORDER BY txn_timestamp DESC LIMIT {MAX_ROWS}",
+            (account_id, counterparty_id, counterparty_id, account_id, cutoff_iso),
         ).fetchall()
     return [_tx_dict(r) for r in rows]
 
 
 @mcp.tool()
 async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
-    """Historical transfers between two accounts (hard cap: 200 rows)."""
+    """Historical transfers between two accounts within `days_back` (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
         pair = {params.account_id, params.counterparty_id}
-        txs = [
+        matched = [
             t for t in overlay.get("transactions", []) if {t.get("sender_account"), t.get("receiver_account")} == pair
         ]
+        txs = _filter_by_days_back(matched, params.days_back)
     else:
-        txs = await asyncio.to_thread(_sync_counterparty_txs, params.account_id, params.counterparty_id)
+        txs = await asyncio.to_thread(
+            _sync_counterparty_txs, params.account_id, params.counterparty_id, params.days_back
+        )
     total = sum((to_money(t.get("amount_inr", "0")) for t in txs), Decimal("0.00"))
     return {
         "status": "ok",
+        "evidence_id": f"CP-{params.account_id}-{params.counterparty_id}",
         "account_id": params.account_id,
         "counterparty_id": params.counterparty_id,
+        "period_days": params.days_back,
         "total_transactions": len(txs),
         "total_amount_inr": dec_str(total),
         "transactions": txs,

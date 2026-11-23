@@ -25,7 +25,15 @@ DB_PATH = ROOT / "data" / "auditguard.db"
 HELD_OUT_DIR = ROOT / "eval" / "held_out"
 DEV_DIR = ROOT / "data" / "synthetic" / "dev"
 
-RUNTIME_TABLES = ["worksheets", "checkpoints", "cases", "audit_logs", "case_episodes", "entity_profiles"]
+RUNTIME_TABLES = [
+    "worksheets",
+    "thread_checkpoints",
+    "checkpoints",
+    "cases",
+    "audit_logs",
+    "case_episodes",
+    "entity_profiles",
+]
 REFERENCE_TABLES = ["alerts", "transactions", "accounts", "customers", "commercial_registry"]
 
 
@@ -98,7 +106,10 @@ def main() -> int:
             for table, rowids in before.items():
                 conn.executemany(f'DELETE FROM "{table}" WHERE rowid = ?', [(r,) for r in rowids])  # noqa: S608
             if args.reset_runtime:
+                existing_tables = set(_tables(conn))
                 for table in RUNTIME_TABLES:
+                    if table not in existing_tables:
+                        continue
                     n = conn.execute(f'DELETE FROM "{table}"').rowcount  # noqa: S608
                     print(f"reset runtime table {table}: deleted {n}")
                 conn.execute("UPDATE alerts SET status = 'OPEN'")

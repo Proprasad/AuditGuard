@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from decimal import Decimal
 import html
 import json
 import logging
@@ -27,6 +28,7 @@ from src.api.services import runner
 from src.api.services.erasure import erase_customer
 from src.api.services.threads import get_thread, thread_view
 from src.config import get_policy
+from src.core.canonical import NumericError, to_confidence
 from src.db.database import list_checkpoints, read_events
 from src.models import Alert, DecisionRequest, DispositionWorksheet, InvestigateRequest, InvestigateResponse
 
@@ -181,6 +183,11 @@ def _render_report_html(thread_id: str, rec: dict[str, Any]) -> str:
     ws = st.get("worksheet") or {}
     fs = st.get("flow_summary") or {}
 
+    try:
+        conf_pct = int((to_confidence(ws.get("confidence_score", 0)) * Decimal(100)).quantize(Decimal("1")))
+    except NumericError:
+        conf_pct = 0
+
     def esc(s: Any) -> str:
         return html.escape(str(s or ""))
 
@@ -213,7 +220,7 @@ def _render_report_html(thread_id: str, rec: dict[str, Any]) -> str:
         f"<strong>Status:</strong> {esc(rec.get('status'))}</div>"
         "<h3>1. Executive Recommendation &amp; Human Review Status</h3>"
         f"<p><strong>Recommended Disposition:</strong> {esc(ws.get('recommended_disposition', '')).upper()} "
-        f"(Assessment Score: {round(float(ws.get('confidence_score', 0)) * 100)}%)<br/>"
+        f"(Assessment Score: {conf_pct}%)<br/>"
         "<strong>Human Reviewer Decision:</strong> "
         f"{esc(rec.get('human_decision') or 'Pending Mandatory Human Approval')} "
         f"(Reviewer: {esc(rec.get('reviewer_id') or '-')})<br/>"

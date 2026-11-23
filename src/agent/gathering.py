@@ -105,13 +105,42 @@ async def gather_identity(
         targets = list(dict.fromkeys(new_beneficiaries))[:1]
         await _profile_accounts_batch(ctx, box, targets, existing, profiled_ids, registry, degraded)
 
-    multi = any(p.hop_count >= 2 for p in paths)
-    cp_key = f"CP-{root}"
-    if state.replan_count > 0 and not multi and cp_key not in registry and _can_spend_calls(ctx, 1):
-        cp_res = await box.call("bank-records", "get_counterparty_history", {"account_id": root})
-        if not is_error(cp_res):
-            registry[cp_res.get("evidence_id", cp_key)] = cp_res
+    if state.replan_count > 0 and not any(p.hop_count >= 2 for p in paths):
+        await _record_counterparty_history(ctx, box, state, root, registry, degraded)
     return existing
+
+
+async def _record_counterparty_history(
+    ctx: RunContext,
+    box: GuardedToolbox,
+    state: InvestigationState,
+    root: str,
+    registry: dict[str, Any],
+    degraded: list[str],
+) -> None:
+    counterparties = list(
+        dict.fromkeys(
+            str(t["receiver_account"])
+            for t in state.transactions
+            if t.get("sender_account") == root and t.get("receiver_account")
+        )
+    )
+    if not counterparties or not _can_spend_calls(ctx, 1):
+        return
+    cp_id = counterparties[0]
+    cp_key = f"CP-{root}-{cp_id}"
+    if cp_key in registry:
+        return
+    days_back = max(30, state.plan.graph_params.time_window_days) if state.plan else 90
+    cp_res = await box.call(
+        "bank-records",
+        "get_counterparty_history",
+        {"account_id": root, "counterparty_id": cp_id, "days_back": days_back},
+    )
+    if is_error(cp_res):
+        degraded.append(f"Counterparty history unavailable for {cp_id}: {err_code(cp_res)}")
+    else:
+        registry[str(cp_res.get("evidence_id") or cp_key)] = cp_res
 
 
 async def gather_regulatory(
@@ -222,14 +251,16 @@ async def fetch_flow_evidence(
         extra = await flow_box.call(
             "bank-records",
             "get_account_transactions",
-            {"account_id": acc, "window_days": params.time_window_days},
+            {"account_id": acc, "days_back": params.time_window_days},
         )
-        if not is_error(extra):
-            for t in extra.get("transactions", []):
-                if isinstance(t, dict) and t.get("tx_id") and t["tx_id"] not in seen_tx_ids:
-                    txs.append(t)
-                    seen_tx_ids.add(t["tx_id"])
-                    registry[t["tx_id"]] = t
+        if is_error(extra):
+            degraded.append(f"Account transactions unavailable for {acc}: {err_code(extra)}")
+            continue
+        for t in extra.get("transactions", []):
+            if isinstance(t, dict) and t.get("tx_id") and t["tx_id"] not in seen_tx_ids:
+                txs.append(t)
+                seen_tx_ids.add(t["tx_id"])
+                registry[t["tx_id"]] = t
 
     graph_result = await flow_box.call(
         "graph-engine",

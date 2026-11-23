@@ -68,7 +68,7 @@ def fetch_analytics() -> dict[str, Any]:
             "(SELECT COUNT(*) FROM transactions) AS total_transactions, "
             "(SELECT COUNT(*) FROM cases) AS total_committed_cases, "
             "(SELECT COUNT(*) FROM audit_logs) AS total_audit_events, "
-            "(SELECT COUNT(*) FROM checkpoints) AS total_threads"
+            "(SELECT COUNT(*) FROM thread_checkpoints) AS total_threads"
         ).fetchone()
         volume = sum(
             (to_money(r[0]) for r in conn.execute("SELECT amount_inr FROM transactions").fetchall()),

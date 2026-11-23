@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from src.agent.llm_client import get_llm_status, get_model_for_role, ping_openrouter, set_runtime_llm_config
 from src.api.auth import Principal
 from src.api.deps import (
     ADMIN,
@@ -86,8 +87,6 @@ async def get_analytics(_p: Principal = ANALYST) -> dict[str, Any]:
 
 @router.get("/api/v1/config-info", dependencies=api_deps)
 async def get_config_info(_p: Principal = ANALYST) -> dict[str, Any]:
-    from src.agent.llm_client import get_llm_status, get_model_for_role
-
     llm_info = await asyncio.to_thread(get_llm_status)
     specialist_m = await asyncio.to_thread(get_model_for_role, "c2_specialists")
     policy = get_policy()
@@ -115,8 +114,6 @@ async def get_config_info(_p: Principal = ANALYST) -> dict[str, Any]:
 
 @router.post("/api/v1/config/llm", dependencies=api_deps)
 async def update_llm_config(req: LlmConfigUpdateRequest, principal: Principal = ADMIN) -> dict[str, Any]:
-    from src.agent.llm_client import set_runtime_llm_config
-
     try:
         updated = await asyncio.to_thread(set_runtime_llm_config, req.enabled, req.model, req.strong_model)
     except ValueError as exc:
@@ -137,6 +134,4 @@ async def update_llm_config(req: LlmConfigUpdateRequest, principal: Principal = 
 
 @router.post("/api/v1/config/llm/test", dependencies=api_deps)
 async def test_llm_connection(model: Optional[str] = None, _p: Principal = ADMIN) -> dict[str, Any]:
-    from src.agent.llm_client import ping_openrouter
-
     return await ping_openrouter(model=model)

@@ -30,7 +30,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from pydantic_core import to_jsonable_python
 
-from src.agent import nodes
+from src.agent import c0_fixed, nodes
 from src.agent.nodes import RunContext
 from src.agent.tooling import GuardedToolbox
 from src.config import get_policy, settings
@@ -338,8 +338,6 @@ def build_c0_graph(
 
 def select_graph(ctx: RunContext, thread_id: str) -> StateGraph[Any, Any, Any, Any]:
     if ctx.mode == "c0_fixed":
-        from src.agent import c0_fixed
-
         return build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
     if ctx.mode == "c2_multi":
         return build_c2_graph(ctx, thread_id)

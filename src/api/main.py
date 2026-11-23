@@ -22,7 +22,9 @@ from starlette.responses import Response
 from src.agent.llm_client import close_shared_llm_client, open_shared_llm_client
 from src.api.users import ensure_seed_users
 from src.config import env_mapping, reload_policy, settings, validate_startup
-from src.db.database import init_db
+from src.db.database import ensure_dev_alerts_seeded, init_db, use_postgres_active
+from src.db.postgres_backend import close_postgres_pool, open_postgres_pool
+from src.mcp_servers.client import close_mcp_client_pool, open_mcp_client_pool
 from src.observability.loki_shipper import emit_loki_log
 
 logger = logging.getLogger("auditguard.api")
@@ -32,7 +34,11 @@ def _startup_sync() -> None:
     for warning in validate_startup():
         logger.warning("startup warning (dev/test only): %s", warning)
     policy = reload_policy()
+    if use_postgres_active():
+        open_postgres_pool(settings.sync_database_url)
     init_db()
+    if settings.is_dev:
+        ensure_dev_alerts_seeded()
     seeded = ensure_seed_users(env_mapping())
     logger.info(
         "PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s); users=%s",
@@ -45,13 +51,16 @@ def _startup_sync() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema, shared HTTP client."""
+    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema, shared HTTP/DB pools."""
     await asyncio.to_thread(_startup_sync)
     await open_shared_llm_client()
+    open_mcp_client_pool()
     try:
         yield
     finally:
+        await close_mcp_client_pool()
         await close_shared_llm_client()
+        await asyncio.to_thread(close_postgres_pool)
 
 
 app = FastAPI(

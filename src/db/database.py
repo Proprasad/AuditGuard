@@ -9,15 +9,15 @@ Provides privilege-separated connections:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import sqlite3
 import threading
 import time
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional, Union
 
 from src.config import settings
@@ -26,12 +26,19 @@ from src.db.postgres_backend import PostgresCompatConnection, postgres_ddl
 from src.db.seeder import seed_from_directories, upsert_case_into_db
 
 DbConn = Union[sqlite3.Connection, PostgresCompatConnection]
+AuditObserver = Callable[[dict[str, Any]], None]
 
 _DB_LOCK = threading.RLock()
 _DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[2] / "data" / "auditguard.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _REFERENCE_TABLES_DROP_ORDER = ("transactions", "alerts", "accounts", "commercial_registry", "customers")
 _initialized_targets: set[str] = set()
+_AUDIT_OBSERVERS: list[AuditObserver] = []
+
+
+def register_audit_observer(observer: AuditObserver) -> None:
+    if observer not in _AUDIT_OBSERVERS:
+        _AUDIT_OBSERVERS.append(observer)
 
 SQLITE_DDL = """
 PRAGMA foreign_keys = ON;
@@ -98,7 +105,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     event_type TEXT NOT NULL, actor TEXT NOT NULL, payload_hash TEXT,
     details_json TEXT NOT NULL, created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS checkpoints (
+CREATE TABLE IF NOT EXISTS thread_checkpoints (
     thread_id TEXT PRIMARY KEY, alert_id TEXT NOT NULL, mode TEXT NOT NULL, current_node TEXT NOT NULL,
     status TEXT NOT NULL, worksheet_id TEXT, payload_hash TEXT,
     state_json TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -181,9 +188,11 @@ def _migrate_sqlite(conn: sqlite3.Connection) -> None:
     if version >= SCHEMA_VERSION:
         return
     existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-    if "alerts" in existing:
+    if version < 2 and "alerts" in existing:
         for table in _REFERENCE_TABLES_DROP_ORDER:
             conn.execute(f"DROP TABLE IF EXISTS {table}")  # noqa: S608
+    if "checkpoints" in existing and "thread_checkpoints" not in existing:
+        conn.execute("ALTER TABLE checkpoints RENAME TO thread_checkpoints")
     if "worksheets" in existing:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(worksheets)").fetchall()}
         if "thread_id" not in cols:
@@ -232,6 +241,15 @@ def seed_operational_db(dev_dir: Optional[Path] = None) -> int:
     init_db()
     with get_db() as conn:
         return seed_from_directories(conn, dev_dir=dev_dir)
+
+
+def ensure_dev_alerts_seeded() -> int:
+    """Seed dev + showcase fixtures if the operational `alerts` table is empty."""
+    init_db()
+    with get_ro_db() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()
+        existing = int(row[0]) if row else 0
+    return seed_operational_db() if existing == 0 else 0
 
 
 @contextmanager
@@ -316,7 +334,7 @@ def save_checkpoint(
     init_db()
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO checkpoints "
+            "INSERT OR REPLACE INTO thread_checkpoints "
             "(thread_id, alert_id, mode, current_node, status, worksheet_id, payload_hash, state_json, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -327,7 +345,7 @@ def save_checkpoint(
                 status,
                 worksheet_id,
                 payload_hash,
-                json.dumps(state_dict, default=str),
+                dumps_json(state_dict),
                 utc_now_iso(),
             ),
         )
@@ -336,7 +354,7 @@ def save_checkpoint(
 def load_checkpoint(thread_id: str) -> Optional[dict[str, Any]]:
     init_db()
     with get_ro_db() as conn:
-        row = conn.execute("SELECT * FROM checkpoints WHERE thread_id = ?", (thread_id,)).fetchone()
+        row = conn.execute("SELECT * FROM thread_checkpoints WHERE thread_id = ?", (thread_id,)).fetchone()
     if not row:
         return None
     return {
@@ -357,7 +375,7 @@ def list_checkpoints(limit: int = 50) -> list[dict[str, Any]]:
     with get_ro_db() as conn:
         rows = conn.execute(
             "SELECT thread_id, alert_id, mode, current_node, status, worksheet_id, payload_hash, updated_at "
-            "FROM checkpoints ORDER BY updated_at DESC LIMIT ?",
+            "FROM thread_checkpoints ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -380,23 +398,17 @@ def append_audit_log(
         )
         log_id = int(cur.lastrowid or 0)
 
-    from src.observability.loki_shipper import emit_loki_log
-    from src.observability.redaction import redact_for_logs
-
-    emit_loki_log(
-        stream_type="audit_trail",
-        event=event_type,
-        message=f"[AUDIT #{log_id}] {event_type} by {actor} (thread={thread_id})",
-        level="INFO",
-        extra={
-            "log_id": log_id,
-            "thread_id": thread_id,
-            "actor": actor,
-            "case_id": case_id,
-            "payload_hash": payload_hash,
-            "details": redact_for_logs(details),
-        },
-    )
+    event_record = {
+        "log_id": log_id,
+        "thread_id": thread_id,
+        "event_type": event_type,
+        "actor": actor,
+        "case_id": case_id,
+        "payload_hash": payload_hash,
+        "details": details,
+    }
+    for observer in _AUDIT_OBSERVERS:
+        observer(event_record)
     return log_id
 
 
