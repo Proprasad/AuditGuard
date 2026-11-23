@@ -8,6 +8,7 @@ from src.agent import reasoning
 from src.agent.c1_single import run_investigation
 from src.agent.c2_multi import run_multi_agent
 from src.agent.graph import (
+    build_c2_graph,
     build_graph,
     make_context,
     merge_investigation,
@@ -50,12 +51,36 @@ def test_graph_topology_has_no_orphans_and_reaches_end():
         "replan",
         "draft",
         "human_gate",
+        "commit_disposition",
     }
     edges = {(e.source, e.target) for e in graph.edges}
     assert ("critique", "replan") in edges and ("critique", "draft") in edges and ("replan", "gather_evidence") in edges
+    assert ("human_gate", "commit_disposition") in edges and ("commit_disposition", "__end__") in edges
     assert ("human_gate", "__end__") in edges and ("__start__", "plan") in edges
     for node in nodes:  # every node is reachable and has an outgoing edge
         assert any(t == node for _, t in edges) and any(s == node for s, _ in edges)
+
+    c2_ctx = make_context("c2_multi", "thr-c2-topology")
+    c2_graph = build_c2_graph(c2_ctx, "thr-c2-topology").compile().get_graph()
+    c2_nodes = {n for n in c2_graph.nodes if not n.startswith("__")}
+    assert c2_nodes == {
+        "supervisor_plan",
+        "flow_tracer",
+        "parallel_specialists",
+        "supervisor_hypotheses",
+        "supervisor_critique",
+        "supervisor_replan",
+        "reporter_critic",
+        "human_gate",
+        "commit_disposition",
+    }
+    c2_edges = {(e.source, e.target) for e in c2_graph.edges}
+    assert ("supervisor_critique", "supervisor_replan") in c2_edges
+    assert ("supervisor_replan", "flow_tracer") in c2_edges
+    assert ("reporter_critic", "human_gate") in c2_edges and ("human_gate", "commit_disposition") in c2_edges
+    assert ("commit_disposition", "__end__") in c2_edges
+    for node in c2_nodes:
+        assert any(t == node for _, t in c2_edges) and any(s == node for s, _ in c2_edges)
 
 
 def test_recursion_limit_is_derived_from_replan_budget():
@@ -149,7 +174,7 @@ async def test_llm_reasoning_is_used_and_fabricated_evidence_ids_are_dropped(mon
     state = await run_investigation(ALERT, thread_id="thr-s5-llm")
     assert state.reasoning_mode == "llm"
     susp = next(h for h in state.worksheet.hypotheses if h.label.value == "suspicious")
-    assert susp.confidence == pytest.approx(0.91)
+    assert float(susp.confidence) == pytest.approx(0.91)
     assert "FAKE-ID-1" not in susp.evidence_ids
     assert any("FAKE-ID-1" in d for d in state.degraded_evidence)
     assert any("LLM planning unavailable" in d for d in state.degraded_evidence)  # explicit degradation, not silent

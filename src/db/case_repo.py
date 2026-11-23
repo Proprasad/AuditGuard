@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from src.config import get_hmac_secret
 from src.core.canonical import canonical_sha256, dumps_json
-from src.db.database import get_db, get_scoped_db, init_db, utc_now_iso
+from src.db.database import DbConn, get_db, get_scoped_db, init_db, utc_now_iso
 
 CASE_WRITE_TABLES = frozenset({"worksheets", "approval_tokens", "cases", "audit_logs"})
 
@@ -71,7 +71,7 @@ def get_worksheet(worksheet_id: str) -> Optional[dict[str, Any]]:
 
 
 def _audit(
-    conn: sqlite3.Connection,
+    conn: DbConn,
     thread_id: str,
     event_type: str,
     actor: str,
@@ -213,35 +213,41 @@ def issue_approval_token(thread_id: str, worksheet_id: str) -> dict[str, Any]:
     }
 
 
-def commit_case(
-    worksheet_id: str, approval_token: str, reviewer_id: str, reviewer_notes: str, thread_id: str
-) -> dict[str, Any]:
-    """Atomically verify + consume the single-use token, mark the worksheet submitted and INSERT the case."""
+def _validate_commit_token(
+    conn: DbConn, worksheet_id: str, approval_token: str
+) -> tuple[Any, dict[str, Any], str, str]:
     parsed = parse_approval_token(approval_token)
     if parsed is None:
         raise CaseRepoError("INVALID_TOKEN_FORMAT", "approval token is malformed")
     token_id, token_sha, token_sig = parsed
+    ws = conn.execute("SELECT * FROM worksheets WHERE worksheet_id = ?", (worksheet_id,)).fetchone()
+    if ws is None:
+        raise CaseRepoError("WORKSHEET_NOT_FOUND", f"worksheet {worksheet_id} not found")
+    if ws["status"] == "submitted":
+        raise CaseRepoError("ALREADY_COMMITTED", "worksheet already committed")
+    content = json.loads(ws["content_json"])
+    current_sha = canonical_sha256(content)
+    tok = conn.execute(
+        "SELECT * FROM approval_tokens WHERE token_id = ? AND worksheet_id = ?", (token_id, worksheet_id)
+    ).fetchone()
+    if tok is None:
+        raise CaseRepoError("TOKEN_NOT_FOUND", "approval token was not issued for this worksheet")
+    if tok["consumed_at"] is not None:
+        raise CaseRepoError("ALREADY_CONSUMED", "approval token already consumed or superseded")
+    if token_sha != current_sha or tok["worksheet_sha256"] != current_sha:
+        raise CaseRepoError("TOKEN_INVALIDATED_BY_EDIT", "worksheet changed since the token was issued")
+    if not hmac.compare_digest(token_sig, _signature(token_id, token_sha)) or tok["hmac_token"] != approval_token:
+        raise CaseRepoError("INVALID_HMAC_SIGNATURE", "approval token signature invalid")
+    return ws, content, current_sha, token_id
+
+
+def commit_case(
+    worksheet_id: str, approval_token: str, reviewer_id: str, reviewer_notes: str, thread_id: str
+) -> dict[str, Any]:
+    """Atomically verify + consume the single-use token, mark the worksheet submitted and INSERT the case."""
     now = utc_now_iso()
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
-        ws = conn.execute("SELECT * FROM worksheets WHERE worksheet_id = ?", (worksheet_id,)).fetchone()
-        if ws is None:
-            raise CaseRepoError("WORKSHEET_NOT_FOUND", f"worksheet {worksheet_id} not found")
-        if ws["status"] == "submitted":
-            raise CaseRepoError("ALREADY_COMMITTED", "worksheet already committed")
-        content = json.loads(ws["content_json"])
-        current_sha = canonical_sha256(content)
-        tok = conn.execute(
-            "SELECT * FROM approval_tokens WHERE token_id = ? AND worksheet_id = ?", (token_id, worksheet_id)
-        ).fetchone()
-        if tok is None:
-            raise CaseRepoError("TOKEN_NOT_FOUND", "approval token was not issued for this worksheet")
-        if tok["consumed_at"] is not None:
-            raise CaseRepoError("ALREADY_CONSUMED", "approval token already consumed or superseded")
-        if token_sha != current_sha or tok["worksheet_sha256"] != current_sha:
-            raise CaseRepoError("TOKEN_INVALIDATED_BY_EDIT", "worksheet changed since the token was issued")
-        if not hmac.compare_digest(token_sig, _signature(token_id, token_sha)) or tok["hmac_token"] != approval_token:
-            raise CaseRepoError("INVALID_HMAC_SIGNATURE", "approval token signature invalid")
-
+        ws, content, current_sha, token_id = _validate_commit_token(conn, worksheet_id, approval_token)
         consumed = conn.execute(
             (
                 "UPDATE approval_tokens SET consumed_at = ?, consumed_by = ? WHERE "
@@ -278,26 +284,15 @@ def commit_case(
             )
         except sqlite3.IntegrityError as exc:
             raise CaseRepoError("ALREADY_COMMITTED", f"a case already exists for alert {ws['alert_id']}") from exc
+        details = {
+            "worksheet_id": worksheet_id,
+            "alert_id": ws["alert_id"],
+            "disposition": content["recommended_disposition"],
+        }
         cur = conn.execute(
-            (
-                "INSERT INTO audit_logs (case_id, thread_id, event_type, actor, "
-                "payload_hash, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-            ),
-            (
-                case_id,
-                thread_id,
-                "case_committed",
-                reviewer_id,
-                current_sha,
-                dumps_json(
-                    {
-                        "worksheet_id": worksheet_id,
-                        "alert_id": ws["alert_id"],
-                        "disposition": content["recommended_disposition"],
-                    }
-                ),
-                now,
-            ),
+            "INSERT INTO audit_logs (case_id, thread_id, event_type, actor, payload_hash, details_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (case_id, thread_id, "case_committed", reviewer_id, current_sha, dumps_json(details), now),
         )
         log_id = int(cur.lastrowid or 0)
     return {

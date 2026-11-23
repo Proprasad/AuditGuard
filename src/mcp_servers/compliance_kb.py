@@ -3,9 +3,8 @@ MCP Server: compliance-kb (READ)
 True Hybrid RAG Pipeline over the 32-clause Indian AML Regulatory Corpus:
   1. Sparse Lexical Index: Okapi BM25 (k1=1.5, b=0.75)
   2. Dense Subword/Semantic Vector Index: Character n-gram (3..4) + domain-concept TF-IDF cosine vectors
-     (upgrades seamlessly to Qdrant + BAAI/bge-m3 when Qdrant is online in Docker)
-  3. Fusion: Reciprocal Rank Fusion (RRF, k=60) merging Top-20 BM25 + Top-20 Dense Vector hits
-  4. Reranker: Cross-feature proximity, exact clause-ID & bigram reranker (or CrossEncoder when installed)
+  3. Fusion: Reciprocal Rank Fusion (RRF, k from PolicyConfig.retrieval) merging BM25 + Dense Vector hits
+  4. Reranker: Cross-feature proximity, exact clause-ID & bigram reranker
   5. Query Decomposition: Splits multi-part queries into 2-3 sub-queries before parallel retrieval
 
 Tools: search_regulations, get_clause_by_id
@@ -19,10 +18,12 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.config import get_policy
 
 mcp = FastMCP(
     name="compliance-kb",
@@ -35,7 +36,11 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
-class SearchRegulationsInput(BaseModel):
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchRegulationsInput(_Strict):
     query: str = Field(description="Natural language query about AML regulations")
     top_k: int = Field(default=5, ge=1, le=20)
     decompose: bool = Field(
@@ -45,7 +50,7 @@ class SearchRegulationsInput(BaseModel):
     mode: Literal["hybrid_rrf_rerank", "bm25_only", "vector_only"] = "hybrid_rrf_rerank"
 
 
-class RegulationClause(BaseModel):
+class RegulationClause(_Strict):
     clause_id: str
     source: str
     title: str
@@ -55,14 +60,14 @@ class RegulationClause(BaseModel):
     category: str = ""
 
 
-class SearchRegulationsOutput(BaseModel):
+class SearchRegulationsOutput(_Strict):
     status: str = "ok"
     clauses: list[RegulationClause]
     query_used: str
     retrieval_method: str
 
 
-class GetClauseInput(BaseModel):
+class GetClauseInput(_Strict):
     clause_id: str = Field(description="Exact clause identifier (e.g. REG-FIU-RF-014)")
 
 
@@ -116,24 +121,28 @@ def _word_tokens(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
+def _ngrams(word: str) -> list[str]:
+    padded = f"<{word}>"
+    return [
+        f"g:{padded[i : i + n]}"
+        for n in (3, 4)
+        for i in range(max(0, len(padded) - n + 1))
+    ]
+
+
+def _concept_tokens(word: str) -> list[str]:
+    return [f"c:{syn}" for stem, syns in DOMAIN_CONCEPTS.items() if word.startswith(stem) for syn in syns]
+
+
 def _dense_features(text: str, expand_concepts: bool = True) -> Counter[str]:
-    """
-    Build subword character 3/4-gram + semantic concept features for dense cosine retrieval.
-    Captures morphological variations, partial identifiers, and semantic paraphrases.
-    """
-    words = _word_tokens(text)
+    """Build subword character 3/4-gram + semantic concept features for dense cosine retrieval."""
     feats: Counter[str] = Counter()
-    for w in words:
+    for w in _word_tokens(text):
         feats[f"w:{w}"] += 2
-        padded = f"<{w}>"
-        for n in (3, 4):
-            for i in range(max(0, len(padded) - n + 1)):
-                feats[f"g:{padded[i : i + n]}"] += 1
+        feats.update(_ngrams(w))
         if expand_concepts:
-            for stem, syns in DOMAIN_CONCEPTS.items():
-                if w.startswith(stem):
-                    for syn in syns:
-                        feats[f"c:{syn}"] += 2
+            for tok in _concept_tokens(w):
+                feats[tok] += 2
     return feats
 
 
@@ -237,11 +246,12 @@ class HybridRegulatoryIndex:
             hits = self.vector_search(query, top_k=top_k)
             return [self.clauses[i].model_copy(update={"relevance_score": round(max(0.0, s), 4)}) for i, s in hits]
 
-        # Full Hybrid: BM25 Top-20 + Vector Top-20 -> RRF (k=60) -> Reranker -> Top-K
-        bm25_hits = self.bm25_search(query, top_k=20)
-        vec_hits = self.vector_search(query, top_k=20)
+        # Full Hybrid: BM25 + Vector -> RRF -> Reranker -> Top-K (bounds from PolicyConfig.retrieval)
+        ret_cfg = get_policy().retrieval
+        bm25_hits = self.bm25_search(query, top_k=ret_cfg.top_k_bm25)
+        vec_hits = self.vector_search(query, top_k=ret_cfg.top_k_dense)
 
-        rrf_k = 60
+        rrf_k = ret_cfg.rrf_k
         rrf_scores: dict[int, float] = {}
         for rank, (idx, s) in enumerate(bm25_hits, start=1):
             if s > 0:
@@ -253,7 +263,8 @@ class HybridRegulatoryIndex:
         if not rrf_scores:
             rrf_scores = {i: 1.0 / (rrf_k + i + 1) for i in range(min(top_k, len(self.clauses)))}
 
-        top_candidates = sorted(rrf_scores, key=lambda i: -rrf_scores[i])[:15]
+        pool_limit = max(top_k, ret_cfg.top_k_final * 3)
+        top_candidates = sorted(rrf_scores, key=lambda i: -rrf_scores[i])[:pool_limit]
         reranked = self.rerank(query, top_candidates, rrf_scores)[:top_k]
         return [self.clauses[idx].model_copy(update={"relevance_score": score}) for idx, score in reranked]
 
@@ -302,6 +313,7 @@ async def search_regulations(params: SearchRegulationsInput) -> SearchRegulation
     query = params.query
 
     if params.mode == "hybrid_rrf_rerank" and params.decompose and (" and " in query.lower() or ";" in query):
+        rrf_k = get_policy().retrieval.rrf_k
         parts = [p.strip() for p in re.split(r"\band\b|;", query, flags=re.IGNORECASE) if p.strip()][:3]
         rrf_merged: dict[str, float] = {}
         clause_map: dict[str, RegulationClause] = {}
@@ -309,7 +321,7 @@ async def search_regulations(params: SearchRegulationsInput) -> SearchRegulation
             sub_hits = idx.search(sq, top_k=max(params.top_k, 8), mode="hybrid_rrf_rerank")
             for rank, c in enumerate(sub_hits, start=1):
                 rrf_merged[c.clause_id] = (
-                    rrf_merged.get(c.clause_id, 0.0) + (1.0 / (60 + rank)) + 0.1 * c.relevance_score
+                    rrf_merged.get(c.clause_id, 0.0) + (1.0 / (rrf_k + rank)) + 0.1 * c.relevance_score
                 )
                 clause_map[c.clause_id] = c
         top_ids = sorted(rrf_merged, key=lambda cid: -rrf_merged[cid])[: params.top_k]
@@ -331,22 +343,25 @@ async def search_regulations(params: SearchRegulationsInput) -> SearchRegulation
 
 
 @mcp.tool()
-async def get_clause_by_id(params: GetClauseInput) -> RegulationClause:
+async def get_clause_by_id(params: GetClauseInput) -> dict[str, Any]:
     """Retrieve a specific regulatory clause by its exact REG-* / SOP-* identifier."""
     idx = get_regulatory_index()
     for clause in idx.clauses:
         if clause.clause_id == params.clause_id:
-            return clause.model_copy(update={"relevance_score": 1.0})
+            return {"status": "ok", **clause.model_copy(update={"relevance_score": 1.0}).model_dump()}
 
-    return RegulationClause(
-        clause_id=params.clause_id,
-        source="unknown",
-        title="Clause not found",
-        text=f"No clause found with ID: {params.clause_id}",
-        relevance_score=0.0,
-    )
+    return {
+        "status": "error",
+        "error_code": "CLAUSE_NOT_FOUND",
+        "message": f"No clause found with ID: {params.clause_id}",
+        "clause_id": params.clause_id,
+        "source": "unknown",
+        "relevance_score": 0.0,
+    }
 
 
 if __name__ == "__main__":
+    from src.mcp_servers.http_auth import serve_mcp_http
+
     port = int(os.getenv("MCP_COMPLIANCE_KB_PORT", "8010"))
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)  # noqa: S104 - container bind
+    serve_mcp_http(mcp, port=port)

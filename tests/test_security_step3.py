@@ -11,17 +11,26 @@ def _run(client, headers, alert="ALT-2026-0412", mode="c2_multi"):
 
 
 def test_empty_decision_body_is_rejected(client, auth):
-    h = auth("analyst")
-    tid = _run(client, h)
-    assert client.post(f"/api/v1/investigations/{tid}/decision", json={}, headers=h).status_code == 422
+    analyst = auth("analyst")
+    sr = auth("senior_reviewer")
+    tid = _run(client, analyst)
+    assert client.post(f"/api/v1/investigations/{tid}/decision", json={}, headers=sr).status_code == 422
     assert (
-        client.post(f"/api/v1/investigations/{tid}/decision", json={"action": "approve"}, headers=h).status_code == 422
+        client.post(
+            f"/api/v1/investigations/{tid}/decision",
+            json={"action": "approve", "approved_hash": "a" * 64, "approval_token": "APPROVE:1:2:3"},
+            headers=analyst,
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(f"/api/v1/investigations/{tid}/decision", json={"action": "approve"}, headers=sr).status_code == 422
     )
     assert (
         client.post(
             f"/api/v1/investigations/{tid}/decision",
             json={"action": "approve", "reviewer_id": "x"},
-            headers=h,
+            headers=sr,
         ).status_code
         == 422
     )
@@ -32,24 +41,26 @@ def test_decision_requires_authentication(client):
 
 
 def test_replayed_approval_token_is_409(client, auth):
-    h = auth("analyst")
-    tid = _run(client, h)
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=h).json()["approval"]
+    analyst = auth("analyst")
+    sr = auth("senior_reviewer")
+    tid = _run(client, analyst)
+    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
     body = {
         "action": "approve",
         "approved_hash": appr["approved_hash"],
         "approval_token": appr["approval_token"],
     }
-    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=h).status_code == 200
-    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=h).status_code == 409
+    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=sr).status_code == 200
+    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=sr).status_code == 409
 
 
 def test_wrong_hash_is_403(client, auth):
-    h = auth("analyst")
-    tid = _run(client, h)
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=h).json()["approval"]
+    analyst = auth("analyst")
+    sr = auth("senior_reviewer")
+    tid = _run(client, analyst)
+    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
     body = {"action": "approve", "approved_hash": "0" * 64, "approval_token": appr["approval_token"]}
-    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=h).status_code == 403
+    assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=sr).status_code == 403
 
 
 def test_untrusted_data_closing_tag_is_escaped():

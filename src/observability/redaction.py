@@ -32,8 +32,10 @@ _SENSITIVE_KEYS = {
     "kyc_summaries",
     "entity_name",
     "full_name",
+    "customer_id",
 }
 _ACCOUNT_ID = re.compile(r"\bACC-[A-Z0-9\-]+\b")
+_CUSTOMER_ID = re.compile(r"\bCUST-[A-Z0-9\-]+\b")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b")
 _APPROVAL = re.compile(r"\bAPPROVE:[A-Za-z0-9:\-_]+")
 _API_KEY = re.compile(r"\bsk-[A-Za-z0-9_\-]{12,}\b")
@@ -44,11 +46,17 @@ def _mask_account(match: re.Match[str]) -> str:
     return f"ACC-***{value[-4:]}"
 
 
+def _mask_customer(match: re.Match[str]) -> str:
+    value = match.group(0)
+    return f"CUST-***{value[-4:]}"
+
+
 def redact_text(text: str) -> str:
     out = _JWT.sub(REDACTED, text)
     out = _APPROVAL.sub(REDACTED, out)
     out = _API_KEY.sub(REDACTED, out)
     out = _ACCOUNT_ID.sub(_mask_account, out)
+    out = _CUSTOMER_ID.sub(_mask_customer, out)
     masked, _ = mask_pii(out)
     return masked
 

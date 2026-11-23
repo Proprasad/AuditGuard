@@ -5,23 +5,28 @@ Security & Compliance Guarantees:
   - Never logs or exposes full API keys (masked preview only).
   - Enforces the 6-slot prompt rules: zero mental INR math, strict citation grounding,
     `<untrusted_data>` isolation, and prohibited guilt-claim filtering via `apply_output_guardrails`.
-  - Tracks real token usage (`prompt_tokens` + `completion_tokens`) and `estimated_cost_usd`
-    against `PolicyConfig.budgets.max_cost_usd_per_case`.
-  - Model slugs, temperatures, max_tokens, and timeouts load dynamically from `PolicyConfig`.
+  - Pre-reserves conservative max-token USD cost before each call and records actual `prompt_tokens` +
+    `completion_tokens` against `PolicyConfig.budgets.max_cost_usd_per_case`.
+  - Offloads synchronous DB flag lookups via `asyncio.to_thread`, caches `.env` once, and reuses an
+    application-lifespan `httpx.AsyncClient` when active.
 """
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from decimal import Decimal
 import json
 import os
+from pathlib import Path
 import re
 import sqlite3
-from pathlib import Path
 from typing import Any, Optional, TypeVar
 
-import httpx
 from dotenv import dotenv_values
-from pydantic import BaseModel, ValidationError
+import httpx
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.config import get_policy, settings
 from src.core.policy import BudgetLedger
@@ -31,6 +36,8 @@ from src.guardrails.guardrails import apply_output_guardrails
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 FLAG_ENABLED, FLAG_MODEL, FLAG_STRONG_MODEL = "llm_enabled", "llm_model", "llm_strong_model"
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_DOTENV_CACHE: Optional[dict[str, str]] = None
+_SHARED_HTTP_CLIENT: Optional[httpx.AsyncClient] = None
 
 NARRATIVE_SYSTEM_PROMPT = (
     "You are AuditGuard, a Senior AML Compliance Decision-Support Analyst operating under Indian PMLA 2002, "
@@ -49,9 +56,35 @@ NARRATIVE_SYSTEM_PROMPT = (
 
 
 class LlmCallMeta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     used_live_llm: bool
     model: str
     error: Optional[str] = None
+
+
+async def open_shared_llm_client() -> None:
+    global _SHARED_HTTP_CLIENT
+    if _SHARED_HTTP_CLIENT is None or _SHARED_HTTP_CLIENT.is_closed:
+        _SHARED_HTTP_CLIENT = httpx.AsyncClient(timeout=float(get_policy().timeouts.llm_call_seconds))
+
+
+async def close_shared_llm_client() -> None:
+    global _SHARED_HTTP_CLIENT
+    if _SHARED_HTTP_CLIENT is not None:
+        if not _SHARED_HTTP_CLIENT.is_closed:
+            await _SHARED_HTTP_CLIENT.aclose()
+        _SHARED_HTTP_CLIENT = None
+
+
+@asynccontextmanager
+async def _http_client() -> AsyncIterator[httpx.AsyncClient]:
+    timeout_s = float(get_policy().timeouts.llm_call_seconds)
+    if _SHARED_HTTP_CLIENT is not None and not _SHARED_HTTP_CLIENT.is_closed:
+        yield _SHARED_HTTP_CLIENT
+        return
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        yield client
 
 
 def _flag(key: str) -> Optional[str]:
@@ -61,25 +94,38 @@ def _flag(key: str) -> Optional[str]:
         with get_db() as conn:
             row = conn.execute("SELECT flag_value FROM system_flags WHERE flag_key = ?", (key,)).fetchone()
         return str(row["flag_value"]) if row else None
-    except sqlite3.Error:
+    except (sqlite3.Error, RuntimeError):
         return None
 
 
 def _set_flag(key: str, value: str) -> None:
     init_db()
     with get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO system_flags (flag_key, flag_value) VALUES (?, ?)", (key, value))
+        conn.execute(
+            "INSERT INTO system_flags (flag_key, flag_value) VALUES (?, ?) "
+            "ON CONFLICT(flag_key) DO UPDATE SET flag_value = excluded.flag_value",
+            (key, value),
+        )
 
 
-def _live_dotenv() -> dict[str, str]:
-    if _ENV_PATH.exists():
-        raw = dotenv_values(_ENV_PATH)
-        return {k: str(v) for k, v in raw.items() if v is not None}
-    return {}
+def _cached_dotenv() -> dict[str, str]:
+    global _DOTENV_CACHE
+    if _DOTENV_CACHE is None:
+        if _ENV_PATH.exists():
+            raw = dotenv_values(_ENV_PATH)
+            _DOTENV_CACHE = {k: str(v) for k, v in raw.items() if v is not None}
+        else:
+            _DOTENV_CACHE = {}
+    return _DOTENV_CACHE
+
+
+def reset_dotenv_cache() -> None:
+    global _DOTENV_CACHE
+    _DOTENV_CACHE = None
 
 
 def _resolve_api_key() -> str:
-    dotenv_map = _live_dotenv()
+    dotenv_map = _cached_dotenv()
     for candidate in (
         os.getenv("OPENROUTER_API_KEY", ""),
         dotenv_map.get("OPENROUTER_API_KEY", ""),
@@ -110,7 +156,7 @@ def is_live_llm_active() -> bool:
         return runtime_flag == "true"
     raw_flag = os.getenv("LLM_ENABLED")
     if raw_flag is None:
-        raw_flag = _live_dotenv().get("LLM_ENABLED")
+        raw_flag = _cached_dotenv().get("LLM_ENABLED")
     if raw_flag is not None:
         return raw_flag.strip().lower() in ("1", "true", "yes", "on")
     return bool(settings.llm_enabled)
@@ -121,6 +167,23 @@ def get_active_models() -> tuple[str, str]:
     fast_m = _flag(FLAG_MODEL) or policy.model_for("c1_investigator").model_id
     strong_m = _flag(FLAG_STRONG_MODEL) or policy.model_for("c2_supervisor").model_id
     return fast_m, strong_m
+
+
+def get_model_for_role(role: str, *, strong: bool = False) -> str:
+    policy = get_policy()
+    if strong or role == "c2_supervisor":
+        return _flag(FLAG_STRONG_MODEL) or policy.model_for("c2_supervisor").model_id
+    if role == "c2_specialists":
+        return _flag(FLAG_MODEL) or policy.model_for("c2_specialists").model_id
+    return _flag(FLAG_MODEL) or policy.model_for(role).model_id
+
+
+def _load_runtime_llm_context(role: str, strong: bool = False) -> tuple[bool, str, str]:
+    return is_live_llm_active(), get_model_for_role(role, strong=strong), _resolve_api_key()
+
+
+async def _runtime_llm_context(role: str, *, strong: bool = False) -> tuple[bool, str, str]:
+    return await asyncio.to_thread(_load_runtime_llm_context, role, strong)
 
 
 def set_runtime_llm_config(
@@ -161,18 +224,26 @@ def get_llm_status() -> dict[str, Any]:
 def _build_payload(chosen_model: str, role: str, messages: list[dict[str, str]]) -> dict[str, Any]:
     spec = get_policy().model_for(role)
     payload: dict[str, Any] = {"model": chosen_model, "messages": messages, "max_tokens": spec.max_tokens}
-    if "gpt-5" in chosen_model:
-        payload["reasoning"] = {"effort": "low"}
+    effort_override = os.getenv("OPENAI_REASONING_EFFORT") or spec.reasoning_effort
+    if effort_override and "gpt-5" in chosen_model:
+        payload["reasoning"] = dict(effort=effort_override)
     else:
         payload["temperature"] = float(spec.temperature)
     return payload
+
+
+def _estimate_call_ceiling_usd(chosen_model: str, role: str, messages: list[dict[str, str]]) -> Decimal:
+    policy = get_policy()
+    spec = policy.model_for(role)
+    approx_prompt_tokens = max(1, sum(len(m.get("content", "")) for m in messages) // 4)
+    return policy.estimate_cost_usd(chosen_model, approx_prompt_tokens, spec.max_tokens)
 
 
 def _headers(key: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:8000",
+        "HTTP-Referer": settings.public_base_url,
         "X-Title": "AuditGuard AML Workbench",
     }
 
@@ -186,7 +257,7 @@ def _extract_json_dict(raw_content: str) -> dict[str, Any]:
     return parsed
 
 
-def _record_usage(data: dict[str, Any], chosen_model: str, ledger: BudgetLedger) -> tuple[int, Any]:
+def _record_usage(data: dict[str, Any], chosen_model: str, ledger: BudgetLedger) -> tuple[int, Decimal]:
     usage = data.get("usage") or {}
     p_toks = int(usage.get("prompt_tokens", 0))
     c_toks = int(usage.get("completion_tokens", 0))
@@ -198,15 +269,14 @@ def _record_usage(data: dict[str, Any], chosen_model: str, ledger: BudgetLedger)
 
 async def ping_openrouter(model: Optional[str] = None) -> dict[str, Any]:
     """Lightweight connectivity & key check against OpenRouter `/chat/completions`."""
-    key = _resolve_api_key()
+    _, fast_m, key = await _runtime_llm_context("c1_investigator")
     if not key:
         return {"ok": False, "error": "No OPENROUTER_API_KEY / OPENAI_API_KEY configured in .env"}
-    fast_m, _ = get_active_models()
     chosen = model or fast_m
     base_url = (os.getenv("OPENAI_BASE_URL") or settings.openai_base_url).rstrip("/")
     payload = _build_payload(chosen, "c1_investigator", [{"role": "user", "content": "Reply with exact word: READY"}])
     try:
-        async with httpx.AsyncClient(timeout=float(get_policy().timeouts.llm_call_seconds)) as client:
+        async with _http_client() as client:
             resp = await client.post(f"{base_url}/chat/completions", headers=_headers(key), json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -230,36 +300,17 @@ def _guard_optional(text: Any) -> Optional[str]:
     return val if apply_output_guardrails(val).allowed else None
 
 
-async def synthesize_investigation_narrative(
-    *,
+def _narrative_evidence_dict(
     alert_id: str,
     disposition: str,
     confidence: float,
-    paths_summary: list[dict[str, Any]],
+    replan_count: int,
     kyc_summaries: list[str],
     citations: list[str],
-    replan_count: int,
-    fallback_rationale: str,
-    use_strong_model: bool = False,
-    ledger: BudgetLedger,
-    verifier_feedback: Optional[list[dict[str, Any]]] = None,
+    verifier_feedback: Optional[list[dict[str, Any]]],
+    paths_summary: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Generate evidence-grounded rationale via OpenRouter when active & within budget; otherwise return fallback."""
-    if not is_live_llm_active() or not ledger.check_llm_allowed().allowed:
-        return {
-            "used_live_llm": False,
-            "model": "offline-deterministic",
-            "rationale": fallback_rationale,
-            "suspicious_explanation": None,
-            "benign_explanation": None,
-            "tokens_used": 0,
-            "cost_usd": 0.0,
-        }
-    fast_m, strong_m = get_active_models()
-    chosen = strong_m if use_strong_model else fast_m
-    role = "c2_supervisor" if use_strong_model else "c1_investigator"
-    base_url = (os.getenv("OPENAI_BASE_URL") or settings.openai_base_url).rstrip("/")
-    evidence = {
+    return {
         "alert_id": alert_id,
         "recommended_disposition": disposition,
         "assessment_confidence": round(confidence, 2),
@@ -279,20 +330,54 @@ async def synthesize_investigation_narrative(
             for p in paths_summary[:3]
         ],
     }
-    payload = _build_payload(
-        chosen,
-        role,
-        [
-            {"role": "system", "content": NARRATIVE_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"Verified investigation evidence:\n{json.dumps(evidence, indent=2, default=str)}",
-            },
-        ],
+
+
+def _offline_narrative(rationale: str, model: str = "offline-deterministic") -> dict[str, Any]:
+    return {
+        "used_live_llm": False,
+        "model": model,
+        "rationale": rationale,
+        "suspicious_explanation": None,
+        "benign_explanation": None,
+        "tokens_used": 0,
+        "cost_usd": Decimal("0"),
+    }
+
+
+async def synthesize_investigation_narrative(
+    *,
+    alert_id: str,
+    disposition: str,
+    confidence: float,
+    paths_summary: list[dict[str, Any]],
+    kyc_summaries: list[str],
+    citations: list[str],
+    replan_count: int,
+    fallback_rationale: str,
+    use_strong_model: bool = False,
+    role_override: Optional[str] = None,
+    ledger: BudgetLedger,
+    verifier_feedback: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Generate evidence-grounded rationale via OpenRouter when active & within budget; otherwise return fallback."""
+    role = role_override or ("c2_supervisor" if use_strong_model else "c1_investigator")
+    active, chosen, key = await _runtime_llm_context(role, strong=use_strong_model and role_override is None)
+    if not active:
+        return _offline_narrative(fallback_rationale)
+    evidence = _narrative_evidence_dict(
+        alert_id, disposition, confidence, replan_count, kyc_summaries, citations, verifier_feedback, paths_summary
     )
+    messages = [
+        {"role": "system", "content": NARRATIVE_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Verified investigation evidence:\n{json.dumps(evidence, indent=2, default=str)}"},
+    ]
+    if not ledger.check_llm_allowed(_estimate_call_ceiling_usd(chosen, role, messages)).allowed:
+        return _offline_narrative(fallback_rationale)
+    base_url = (os.getenv("OPENAI_BASE_URL") or settings.openai_base_url).rstrip("/")
+    payload = _build_payload(chosen, role, messages)
     try:
-        async with httpx.AsyncClient(timeout=float(get_policy().timeouts.llm_call_seconds)) as client:
-            resp = await client.post(f"{base_url}/chat/completions", headers=_headers(_resolve_api_key()), json=payload)
+        async with _http_client() as client:
+            resp = await client.post(f"{base_url}/chat/completions", headers=_headers(key), json=payload)
             resp.raise_for_status()
             data = resp.json()
         total_toks, est_cost = _record_usage(data, chosen, ledger)
@@ -311,15 +396,7 @@ async def synthesize_investigation_narrative(
             "cost_usd": est_cost,
         }
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
-        return {
-            "used_live_llm": False,
-            "model": "offline-fallback",
-            "rationale": fallback_rationale,
-            "suspicious_explanation": None,
-            "benign_explanation": None,
-            "tokens_used": 0,
-            "cost_usd": 0.0,
-        }
+        return _offline_narrative(fallback_rationale, model="offline-fallback")
 
 
 async def chat_json(
@@ -332,15 +409,18 @@ async def chat_json(
     strong: bool = False,
 ) -> tuple[Optional[SchemaT], LlmCallMeta]:
     """Budget-checked structured LLM call returning `(validated_model, meta)` or `(None, meta)` on failure."""
-    if not is_live_llm_active() or not ledger.check_llm_allowed().allowed:
+    active, chosen, key = await _runtime_llm_context(role, strong=strong)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    if not active:
         return None, LlmCallMeta(used_live_llm=False, model="offline")
-    fast_m, strong_m = get_active_models()
-    chosen = strong_m if strong else fast_m
+    ceiling_usd = _estimate_call_ceiling_usd(chosen, role, messages)
+    if not ledger.check_llm_allowed(ceiling_usd).allowed:
+        return None, LlmCallMeta(used_live_llm=False, model="budget_exhausted", error="BUDGET_EXCEEDED")
     base_url = (os.getenv("OPENAI_BASE_URL") or settings.openai_base_url).rstrip("/")
-    payload = _build_payload(chosen, role, [{"role": "system", "content": system}, {"role": "user", "content": user}])
+    payload = _build_payload(chosen, role, messages)
     try:
-        async with httpx.AsyncClient(timeout=float(get_policy().timeouts.llm_call_seconds)) as client:
-            resp = await client.post(f"{base_url}/chat/completions", headers=_headers(_resolve_api_key()), json=payload)
+        async with _http_client() as client:
+            resp = await client.post(f"{base_url}/chat/completions", headers=_headers(key), json=payload)
             resp.raise_for_status()
             data = resp.json()
         _record_usage(data, chosen, ledger)

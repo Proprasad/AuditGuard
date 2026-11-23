@@ -3,7 +3,7 @@ AuditGuard CLI Entrypoint (`python -m src.cli` or `auditguard`)
 Commands:
   generate-data    Generate 60-case golden dataset & seed SQLite operational DB
   investigate      Run a single investigation (c0_fixed | c1_single | c2_multi)
-  retrieval-bench  Evaluate Recall@5 & MRR on the 35-query regulatory benchmark
+  retrieval-bench  Evaluate Recall@5 & MRR on the regulatory benchmarks
   serve            Initialize DB & launch FastAPI + Analyst Workbench locally
 """
 
@@ -12,8 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from src.models import InvestigationState
 
 app = typer.Typer(name="auditguard", help="AuditGuard AML Investigation CLI")
 
@@ -48,7 +52,7 @@ def investigate(
         risk_level=RiskLevel.HIGH,
     )
 
-    async def _run():
+    async def _run() -> InvestigationState:
         if mode == "c0_fixed":
             from src.agent.c0_fixed import run_fixed_pipeline
 
@@ -68,21 +72,26 @@ def investigate(
         typer.echo("Investigation completed without worksheet.")
 
 
+def _load_bench_queries(bench_path: Path) -> list[dict[str, object]]:
+    return [json.loads(ln) for ln in bench_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+
 @app.command("retrieval-bench")
 def retrieval_bench() -> None:
     """Run regulatory retrieval benchmarks (35-query dev + 28-query independent NL held-out)."""
     from src.mcp_servers.client import call_mcp_tool
 
     async def _eval_suite(bench_path: Path, mode: str) -> tuple[float, float, int]:
-        queries = [json.loads(ln) for ln in bench_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        queries = await asyncio.to_thread(_load_bench_queries, bench_path)
         hits = 0
         rr_sum = 0.0
         for q in queries:
             res = await call_mcp_tool(
-                "compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": mode}
+                "compliance-kb", "search_regulations", {"query": str(q["query"]), "top_k": 5, "mode": mode}
             )
             returned = [c["clause_id"] for c in res.get("clauses", [])]
-            expected = set(q["expected_ids"])
+            expected_raw = q["expected_ids"]
+            expected = set(expected_raw) if isinstance(expected_raw, list) else set()
             if expected & set(returned):
                 hits += 1
                 for rank, cid in enumerate(returned, start=1):
@@ -107,6 +116,22 @@ def retrieval_bench() -> None:
             f"  Hybrid RRF+Rerank -> Recall@5: {hyb_r5:.1%}, MRR: {hyb_mrr:.3f} "
             f"(Delta: {(hyb_r5 - bm25_r5) * 100:+.1f} pp)"
         )
+
+
+@app.command("serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Bind host"),
+    port: int = typer.Option(8000, help="Bind port"),
+) -> None:
+    """Validate configuration, initialize operational DB, and launch FastAPI + Analyst Workbench."""
+    import uvicorn
+
+    from src.config import validate_startup
+    from src.db.database import init_db
+
+    validate_startup()
+    init_db()
+    uvicorn.run("src.api.main:app", host=host, port=port)
 
 
 if __name__ == "__main__":

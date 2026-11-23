@@ -1,0 +1,102 @@
+{
+  "alert_id": "ALT-2026-0508",
+  "case_id": "CASE-WT-0508",
+  "is_held_out": false,
+  "category": "marketplace_payout",
+  "rule_name": "SCATTER_GATHER_1250K",
+  "root_account": "ACC-MKT-5081",
+  "network_accounts": [
+    "ACC-SEL-5082",
+    "ACC-SEL-5083",
+    "ACC-SEL-5084",
+    "ACC-LOG-5090"
+  ],
+  "total_amount_inr": "1250000.00",
+  "triggered_at": "2026-09-15T11:00:00Z",
+  "kyc_profiles": {
+    "ACC-MKT-5081": {
+      "account_id": "ACC-MKT-5081",
+      "entity_name": "CraftBazaar India Marketplace Pvt Ltd",
+      "entity_type": "company",
+      "risk_category": "LOW",
+      "declared_annual_income_inr": "45000000.00",
+      "is_commercially_registered": true,
+      "registry_type": "MARKETPLACE",
+      "kyc_notes": "Active GST-registered handicraft marketplace; 18 months weekly artisan payouts"
+    },
+    "ACC-SEL-5082": {
+      "account_id": "ACC-SEL-5082",
+      "entity_name": "Jaipur Looms",
+      "entity_type": "company",
+      "risk_category": "LOW",
+      "declared_annual_income_inr": "4800000.00",
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT"
+    },
+    "ACC-SEL-5083": {
+      "account_id": "ACC-SEL-5083",
+      "entity_name": "Kutch Artisans",
+      "entity_type": "company",
+      "risk_category": "LOW",
+      "declared_annual_income_inr": "3600000.00",
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT"
+    },
+    "ACC-SEL-5084": {
+      "account_id": "ACC-SEL-5084",
+      "entity_name": "Bastar Crafts",
+      "entity_type": "company",
+      "risk_category": "LOW",
+      "declared_annual_income_inr": "3100000.00",
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT"
+    },
+    "ACC-LOG-5090": {
+      "account_id": "ACC-LOG-5090",
+      "entity_name": "SwiftShip Courier Escrow",
+      "entity_type": "company",
+      "risk_category": "LOW",
+      "declared_annual_income_inr": "90000000.00",
+      "is_commercially_registered": true,
+      "registry_type": "MERCHANT"
+    }
+  },
+  "transactions": [
+    {
+      "tx_id": "TXN-9501",
+      "sender_account": "ACC-MKT-5081",
+      "receiver_account": "ACC-SEL-5082",
+      "amount_inr": "400000.00",
+      "timestamp": "2026-09-15T10:00:00Z",
+      "channel": "NEFT",
+      "memo": "Weekly marketplace seller payout"
+    },
+    {
+      "tx_id": "TXN-9502",
+      "sender_account": "ACC-MKT-5081",
+      "receiver_account": "ACC-SEL-5083",
+      "amount_inr": "425000.00",
+      "timestamp": "2026-09-15T10:05:00Z",
+      "channel": "NEFT",
+      "memo": "Weekly marketplace seller payout"
+    },
+    {
+      "tx_id": "TXN-9503",
+      "sender_account": "ACC-MKT-5081",
+      "receiver_account": "ACC-SEL-5084",
+      "amount_inr": "425000.00",
+      "timestamp": "2026-09-15T10:10:00Z",
+      "channel": "NEFT",
+      "memo": "Weekly marketplace seller payout"
+    },
+    {
+      "tx_id": "TXN-9504",
+      "sender_account": "ACC-SEL-5082",
+      "receiver_account": "ACC-LOG-5090",
+      "amount_inr": "35000.00",
+      "timestamp": "2026-09-16T12:00:00Z",
+      "channel": "UPI",
+      "memo": "Courier logistics settlement"
+    }
+  ]
+}

@@ -13,18 +13,28 @@ from src.config import settings
 
 
 class SlidingWindowLimiter:
-    def __init__(self, limit_getter: Callable[[], int], window_seconds: float = 60.0) -> None:
+    def __init__(self, limit_getter: Callable[[], int], window_seconds: float = 60.0, max_keys: int = 4096) -> None:
         self._limit_getter = limit_getter
         self._window = window_seconds
+        self._max_keys = max_keys
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
     def allow(self, key: str) -> bool:
         now = time.monotonic()
         with self._lock:
-            hits = self._hits[key]
-            while hits and now - hits[0] > self._window:
-                hits.popleft()
+            hits = self._hits.get(key)
+            if hits is not None:
+                while hits and now - hits[0] > self._window:
+                    hits.popleft()
+                if not hits:
+                    self._hits.pop(key, None)
+                    hits = None
+            if hits is None:
+                if len(self._hits) >= self._max_keys:
+                    oldest_key = next(iter(self._hits))
+                    self._hits.pop(oldest_key, None)
+                hits = self._hits[key]
             if len(hits) >= self._limit_getter():
                 return False
             hits.append(now)

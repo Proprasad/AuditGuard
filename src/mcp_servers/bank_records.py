@@ -14,10 +14,10 @@ Tools: get_alert_context, get_account_transactions, get_kyc_profile, get_counter
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
 import os
-import sqlite3
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -25,7 +25,8 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.canonical import dec_str, to_money
-from src.db.database import get_ro_db
+from src.db.database import DbConn, get_ro_db
+from src.mcp_servers.http_auth import serve_mcp_http
 
 MAX_ROWS = 200
 
@@ -83,7 +84,7 @@ class CheckCommercialRegistryInput(_Strict):
     gstin: Optional[str] = None
 
 
-def _tx_dict(row: sqlite3.Row) -> dict[str, Any]:
+def _tx_dict(row: Any) -> dict[str, Any]:
     return {
         "tx_id": row["txn_id"],
         "sender_account": row["from_account_id"],
@@ -99,7 +100,7 @@ def _tx_dict(row: sqlite3.Row) -> dict[str, Any]:
 _TX_COLUMNS = "txn_id, from_account_id, to_account_id, amount_inr, txn_timestamp, channel, memo_text"
 
 
-def _alert_transactions(conn: sqlite3.Connection, seed: str, network: list[str]) -> list[dict[str, Any]]:
+def _alert_transactions(conn: DbConn, seed: str, network: list[str]) -> list[dict[str, Any]]:
     accounts = [seed, *network]
     marks = ",".join("?" for _ in accounts)
     rows = conn.execute(
@@ -129,27 +130,11 @@ def get_alert_record(alert_id: str) -> Optional[dict[str, Any]]:
     }
 
 
-@mcp.tool()
-def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
-    """Alert metadata, seed account and multi-bank network transactions."""
-    overlay = _eval_case_ctx.get()
-    if overlay and overlay.get("alert_id") == params.alert_id:
-        return {
-            "status": "ok",
-            "alert_id": overlay["alert_id"],
-            "case_id": overlay.get("case_id"),
-            "rule_name": overlay.get("rule_name", "SCATTER_GATHER"),
-            "triggered_at": overlay["triggered_at"],
-            "root_account": overlay["root_account"],
-            "network_accounts": overlay["network_accounts"],
-            "total_amount_inr": dec_str(to_money(overlay["total_amount_inr"])),
-            "transactions": overlay["transactions"],
-            "risk_level": "high",
-        }
+def _sync_alert_context(alert_id: str) -> dict[str, Any]:
     with get_ro_db() as conn:
-        row = conn.execute("SELECT * FROM alerts WHERE alert_id = ?", (params.alert_id,)).fetchone()
+        row = conn.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
         if row is None:
-            return _error("INVALID_ALERT_ID", f"Alert {params.alert_id} not found")
+            return _error("INVALID_ALERT_ID", f"Alert {alert_id} not found")
         network = json.loads(row["network_accounts_json"] or "[]")
         txs = _alert_transactions(conn, row["seed_account_id"], network)
     return {
@@ -167,7 +152,37 @@ def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
+async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
+    """Alert metadata, seed account and multi-bank network transactions."""
+    overlay = _eval_case_ctx.get()
+    if overlay and overlay.get("alert_id") == params.alert_id:
+        return {
+            "status": "ok",
+            "alert_id": overlay["alert_id"],
+            "case_id": overlay.get("case_id"),
+            "rule_name": overlay.get("rule_name", "SCATTER_GATHER"),
+            "triggered_at": overlay["triggered_at"],
+            "root_account": overlay["root_account"],
+            "network_accounts": overlay["network_accounts"],
+            "total_amount_inr": dec_str(to_money(overlay["total_amount_inr"])),
+            "transactions": overlay["transactions"],
+            "risk_level": "high",
+        }
+    return await asyncio.to_thread(_sync_alert_context, params.alert_id)
+
+
+def _sync_account_txs(account_id: str, limit: int) -> list[dict[str, Any]]:
+    with get_ro_db() as conn:
+        rows = conn.execute(
+            f"SELECT {_TX_COLUMNS} FROM transactions WHERE from_account_id = ? OR to_account_id = ? "  # noqa: S608
+            "ORDER BY txn_timestamp DESC LIMIT ?",
+            (account_id, account_id, min(limit, MAX_ROWS)),
+        ).fetchall()
+    return [_tx_dict(r) for r in rows]
+
+
+@mcp.tool()
+async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
     """Transaction history for an account (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
@@ -177,13 +192,7 @@ def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, A
             if params.account_id in (t.get("sender_account"), t.get("receiver_account"))
         ][: params.limit]
     else:
-        with get_ro_db() as conn:
-            rows = conn.execute(
-                f"SELECT {_TX_COLUMNS} FROM transactions WHERE from_account_id = ? OR to_account_id = ? "  # noqa: S608
-                "ORDER BY txn_timestamp DESC LIMIT ?",
-                (params.account_id, params.account_id, min(params.limit, MAX_ROWS)),
-            ).fetchall()
-        txs = [_tx_dict(r) for r in rows]
+        txs = await asyncio.to_thread(_sync_account_txs, params.account_id, params.limit)
     return {
         "status": "ok",
         "account_id": params.account_id,
@@ -193,16 +202,7 @@ def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, A
     }
 
 
-@mcp.tool()
-def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
-    """KYC profile & risk tier for an account (`ACCOUNT_NOT_FOUND` if unknown - nothing is fabricated)."""
-    overlay = _eval_case_ctx.get()
-    if overlay and params.account_id in overlay.get("kyc_profiles", {}):
-        return {
-            "status": "ok",
-            "evidence_id": f"KYC-{params.account_id}",
-            **overlay["kyc_profiles"][params.account_id],
-        }
+def _sync_kyc(account_id: str) -> dict[str, Any]:
     with get_ro_db() as conn:
         row = conn.execute(
             "SELECT a.account_id, a.account_type, b.bank_name, c.customer_id, c.full_name, c.kyc_tier, c.occupation, "
@@ -211,13 +211,13 @@ def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
             "FROM accounts a JOIN customers c ON a.customer_id = c.customer_id "
             "LEFT JOIN banks b ON a.bank_id = b.bank_id "
             "LEFT JOIN commercial_registry cr ON c.customer_id = cr.customer_id WHERE a.account_id = ?",
-            (params.account_id,),
+            (account_id,),
         ).fetchone()
     if row is None:
-        return _error("ACCOUNT_NOT_FOUND", f"No KYC record for account {params.account_id}")
+        return _error("ACCOUNT_NOT_FOUND", f"No KYC record for account {account_id}")
     return {
         "status": "ok",
-        "evidence_id": f"KYC-{params.account_id}",
+        "evidence_id": f"KYC-{account_id}",
         "account_id": row["account_id"],
         "customer_id": row["customer_id"],
         "entity_name": row["full_name"],
@@ -235,7 +235,30 @@ def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
+async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
+    """KYC profile & risk tier for an account (`ACCOUNT_NOT_FOUND` if unknown - nothing is fabricated)."""
+    overlay = _eval_case_ctx.get()
+    if overlay and params.account_id in overlay.get("kyc_profiles", {}):
+        return {
+            "status": "ok",
+            "evidence_id": f"KYC-{params.account_id}",
+            **overlay["kyc_profiles"][params.account_id],
+        }
+    return await asyncio.to_thread(_sync_kyc, params.account_id)
+
+
+def _sync_counterparty_txs(account_id: str, counterparty_id: str) -> list[dict[str, Any]]:
+    with get_ro_db() as conn:
+        rows = conn.execute(
+            f"SELECT {_TX_COLUMNS} FROM transactions WHERE (from_account_id = ? AND to_account_id = ?) "  # noqa: S608
+            f"OR (from_account_id = ? AND to_account_id = ?) ORDER BY txn_timestamp DESC LIMIT {MAX_ROWS}",
+            (account_id, counterparty_id, counterparty_id, account_id),
+        ).fetchall()
+    return [_tx_dict(r) for r in rows]
+
+
+@mcp.tool()
+async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
     """Historical transfers between two accounts (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
@@ -244,13 +267,7 @@ def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, A
             t for t in overlay.get("transactions", []) if {t.get("sender_account"), t.get("receiver_account")} == pair
         ]
     else:
-        with get_ro_db() as conn:
-            rows = conn.execute(
-                f"SELECT {_TX_COLUMNS} FROM transactions WHERE (from_account_id = ? AND to_account_id = ?) "  # noqa: S608
-                f"OR (from_account_id = ? AND to_account_id = ?) ORDER BY txn_timestamp DESC LIMIT {MAX_ROWS}",
-                (params.account_id, params.counterparty_id, params.counterparty_id, params.account_id),
-            ).fetchall()
-        txs = [_tx_dict(r) for r in rows]
+        txs = await asyncio.to_thread(_sync_counterparty_txs, params.account_id, params.counterparty_id)
     total = sum((to_money(t.get("amount_inr", "0")) for t in txs), Decimal("0.00"))
     return {
         "status": "ok",
@@ -275,8 +292,36 @@ def _registered(entity: str, kind: str, number: str, status: str, since: str, ev
     }
 
 
+def _sync_registry(entity_name: str, account_id: Optional[str], not_found: dict[str, Any]) -> dict[str, Any]:
+    columns = "cr.registry_id, cr.entity_type, cr.registration_number, cr.status, cr.registered_since, c.full_name"
+    with get_ro_db() as conn:
+        row = None
+        if account_id:
+            row = conn.execute(
+                f"SELECT {columns} FROM accounts a JOIN customers c ON a.customer_id = c.customer_id "  # noqa: S608
+                "JOIN commercial_registry cr ON c.customer_id = cr.customer_id WHERE a.account_id = ?",
+                (account_id,),
+            ).fetchone()
+        if row is None:
+            row = conn.execute(
+                f"SELECT {columns} FROM customers c JOIN commercial_registry cr ON c.customer_id = cr.customer_id "  # noqa: S608
+                "WHERE c.full_name = ?",
+                (entity_name,),
+            ).fetchone()
+    if row and row["status"] == "ACTIVE":
+        return _registered(
+            row["full_name"],
+            row["entity_type"],
+            row["registration_number"],
+            row["status"],
+            row["registered_since"],
+            row["registry_id"],
+        )
+    return not_found
+
+
 @mcp.tool()
-def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
+async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
     """GST / MCA / Section 80G / Chit registration lookup (a clean NOT_FOUND is a legitimate answer)."""
     overlay = _eval_case_ctx.get()
     not_found = {
@@ -303,31 +348,7 @@ def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str,
                 "registry_status": "ACTIVE",
             }
         return not_found
-    columns = "cr.registry_id, cr.entity_type, cr.registration_number, cr.status, cr.registered_since, c.full_name"
-    with get_ro_db() as conn:
-        row = None
-        if params.account_id:
-            row = conn.execute(
-                f"SELECT {columns} FROM accounts a JOIN customers c ON a.customer_id = c.customer_id "  # noqa: S608
-                "JOIN commercial_registry cr ON c.customer_id = cr.customer_id WHERE a.account_id = ?",
-                (params.account_id,),
-            ).fetchone()
-        if row is None:
-            row = conn.execute(
-                f"SELECT {columns} FROM customers c JOIN commercial_registry cr ON c.customer_id = cr.customer_id "  # noqa: S608
-                "WHERE c.full_name = ?",
-                (params.entity_name,),
-            ).fetchone()
-    if row and row["status"] == "ACTIVE":
-        return _registered(
-            row["full_name"],
-            row["entity_type"],
-            row["registration_number"],
-            row["status"],
-            row["registered_since"],
-            row["registry_id"],
-        )
-    return not_found
+    return await asyncio.to_thread(_sync_registry, params.entity_name, params.account_id, not_found)
 
 
 def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
@@ -353,4 +374,4 @@ def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
 
 if __name__ == "__main__":
     port = int(os.getenv("MCP_BANK_RECORDS_PORT", "8012"))
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)  # noqa: S104 - container bind
+    serve_mcp_http(mcp, port=port)

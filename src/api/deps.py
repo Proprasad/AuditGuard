@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from src.api.auth import require_role
 from src.api.ratelimit import rate_limit_api
@@ -25,11 +25,15 @@ api_deps = [Depends(rate_limit_api)]
 
 
 class TokenRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str
     password: str
 
 
 class LlmConfigUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: Optional[bool] = None
     model: Optional[str] = None
     strong_model: Optional[str] = None

@@ -12,7 +12,7 @@ import html
 import re
 import unicodedata
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 PII_PATTERNS = {
     "pan": re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b"),
@@ -89,6 +89,8 @@ INJECTION_PATTERNS = COMMON_INJECTION_PATTERNS  # public alias (input-side list)
 
 
 class GuardrailResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     allowed: bool
     scrubbed_text: str
     blocked_reason: str = ""

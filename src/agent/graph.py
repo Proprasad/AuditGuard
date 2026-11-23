@@ -1,25 +1,26 @@
 """
-Compiled LangGraph `StateGraph` runtime shared by C1 and C2.
+Compiled LangGraph `StateGraph` runtime shared by C0, C1, and C2.
 
-Topology:  START -> plan -> gather_evidence -> form_hypotheses -> critique --(contradiction & budget)--> replan ->
-gather_evidence
+Topology:
+  START -> plan -> gather_evidence -> form_hypotheses -> critique --(contradiction)--> replan -> gather_evidence
                                                                    \\--(otherwise)--> draft -> human_gate (interrupt)
-                                                                   -> END
+                                                                   --(approve + token)--> commit_disposition -> END
 
 * Durable checkpointing: `AsyncSqliteSaver` locally / `AsyncPostgresSaver` when `USE_POSTGRES=true`.
-* Native `interrupt()` pauses the run at `human_gate`; the API resumes it with `Command(resume=...)` after the human
-decision.
+* Native `interrupt()` pauses the run at `human_gate`; resuming with an `approval_token` executes `commit_disposition`
+  through `GuardedToolbox` (`has_human_approval_token=True`). If `submit_case_disposition` fails validation, the graph
+  loops back to `human_gate` (`interrupt()`) so a subsequent valid token can still commit.
 * `recursion_limit` is derived from the replan budget so the loop always terminates (replan edge is budget-gated).
-* State reducers: `evidence_registry` merges by key; `degraded_evidence` / `regulatory_snippets` / `retrieved_lessons`
-union with
-  de-duplication (safe across retries and resumes); every other field is last-writer-wins.
+* State reducers: `evidence_registry` merges by key; `regulatory_clauses` merges by `clause_id`; `specialist_findings`
+  merges by `task_id`; `degraded_evidence` / `regulatory_snippets` / `retrieved_lessons` union with de-duplication.
 """
 
 from __future__ import annotations
 
-import logging
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Optional, TypedDict
 
@@ -42,10 +43,38 @@ logger = logging.getLogger("auditguard.graph")
 DICT_MERGE_KEYS = frozenset({"evidence_registry"})
 LIST_UNION_KEYS = frozenset({"degraded_evidence", "regulatory_snippets", "retrieved_lessons"})
 C2_ROLES = ("flow_tracer", "benign_investigator", "regulatory_analyst", "reporter_critic")
+_THREAD_LOCKS: dict[str, asyncio.Lock] = {}
+_MAX_THREAD_LOCKS = 2048
 
 
 class SimulatedCrashInterrupt(RuntimeError):
     """Raised intentionally by crash/resume tests after a node's checkpoint is committed."""
+
+
+def _lock_for_thread(thread_id: str) -> asyncio.Lock:
+    lock = _THREAD_LOCKS.get(thread_id)
+    if lock is None:
+        if len(_THREAD_LOCKS) >= _MAX_THREAD_LOCKS:
+            for stale_id in list(_THREAD_LOCKS.keys())[: _MAX_THREAD_LOCKS // 2]:
+                if not _THREAD_LOCKS[stale_id].locked():
+                    _THREAD_LOCKS.pop(stale_id, None)
+        lock = asyncio.Lock()
+        _THREAD_LOCKS[thread_id] = lock
+    return lock
+
+
+def _merge_field(old: dict[str, Any], key: str, value: Any) -> Any:
+    if key in DICT_MERGE_KEYS and isinstance(value, dict):
+        return {**old.get(key, {}), **value}
+    if key == "regulatory_clauses" and isinstance(value, list):
+        by_id = {c["clause_id"]: c for c in [*old.get(key, []), *value] if isinstance(c, dict) and c.get("clause_id")}
+        return list(by_id.values())
+    if key == "specialist_findings" and isinstance(value, list):
+        by_task = {f["task_id"]: f for f in [*old.get(key, []), *value] if isinstance(f, dict) and f.get("task_id")}
+        return list(by_task.values())
+    if key in LIST_UNION_KEYS and isinstance(value, list):
+        return list(dict.fromkeys([*old.get(key, []), *value]))
+    return value
 
 
 def merge_investigation(old: Optional[dict[str, Any]], new: Optional[dict[str, Any]]) -> dict[str, Any]:
@@ -54,17 +83,7 @@ def merge_investigation(old: Optional[dict[str, Any]], new: Optional[dict[str, A
         return dict(new or {})
     out = dict(old)
     for key, value in (new or {}).items():
-        if key in DICT_MERGE_KEYS and isinstance(value, dict):
-            out[key] = {**old.get(key, {}), **value}
-        elif key == "regulatory_clauses" and isinstance(value, list):
-            by_id = {
-                c["clause_id"]: c for c in [*old.get(key, []), *value] if isinstance(c, dict) and c.get("clause_id")
-            }
-            out[key] = list(by_id.values())
-        elif key in LIST_UNION_KEYS and isinstance(value, list):
-            out[key] = list(dict.fromkeys([*old.get(key, []), *value]))
-        else:
-            out[key] = value
+        out[key] = _merge_field(old, key, value)
     return out
 
 
@@ -78,7 +97,7 @@ def as_state(raw: dict[str, Any]) -> InvestigationState:
 
 
 def recursion_limit(policy: PolicyConfig) -> int:
-    """One pass is 4 nodes (+replan); allow max_replans+1 passes plus draft/gate headroom."""
+    """One pass is 4 nodes (+replan); allow max_replans+1 passes plus draft/gate/commit headroom."""
     return (policy.budgets.max_replans + 1) * 4 + 8
 
 
@@ -122,9 +141,6 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
     )
 
 
-# ---------------------------------------------------------------------------------------------------
-# Checkpointer
-# ---------------------------------------------------------------------------------------------------
 def checkpoint_db_path() -> Path:
     return Path(get_sqlite_path()).with_suffix(".langgraph.sqlite")
 
@@ -144,9 +160,6 @@ async def open_saver() -> AsyncIterator[Any]:
             yield saver
 
 
-# ---------------------------------------------------------------------------------------------------
-# Graph construction
-# ---------------------------------------------------------------------------------------------------
 NodeFn = Callable[[InvestigationState, RunContext], Awaitable[dict[str, Any]]]
 
 
@@ -170,9 +183,9 @@ def _wrap(name: str, fn: NodeFn, ctx: RunContext, thread_id: str) -> Callable[[G
         out = await fn(as_state(gs["inv"]), ctx)
         update = to_jsonable_python(out)
         merged = merge_investigation(gs["inv"], update)
-        _persist(thread_id, ctx.mode, merged)
+        await asyncio.to_thread(_persist, thread_id, ctx.mode, merged)
         if ctx.emit is not None:
-            ctx.emit(name, merged)  # live progress for the SSE log (read-only subscribers)
+            await asyncio.to_thread(ctx.emit, name, merged)
         return {"inv": update}
 
     return run
@@ -181,7 +194,6 @@ def _wrap(name: str, fn: NodeFn, ctx: RunContext, thread_id: str) -> Callable[[G
 async def _human_gate(gs: GState, config: RunnableConfig) -> GState:
     inv = gs["inv"]
     ws = inv.get("worksheet") or {}
-    # Python < 3.11 does not propagate the runnable context into async nodes, so bind it explicitly for `interrupt()`.
     token = var_child_runnable_config.set(config)
     try:
         decision = interrupt(
@@ -195,25 +207,81 @@ async def _human_gate(gs: GState, config: RunnableConfig) -> GState:
         )
     finally:
         var_child_runnable_config.reset(token)
-    approved = isinstance(decision, dict) and decision.get("action") == "approve"
+    payload = decision if isinstance(decision, dict) else {}
+    approved = payload.get("action") == "approve"
+    has_token = bool(payload.get("approval_token"))
     return {
         "inv": {
-            "current_node": "committed" if approved else "rejected",
-            "human_decision": decision.get("disposition") if approved else None,
+            "current_node": "committing" if (approved and has_token) else ("committed" if approved else "rejected"),
+            "human_decision": payload.get("disposition") if approved else None,
         },
-        "gate": decision if isinstance(decision, dict) else {},
+        "gate": payload,
     }
 
 
-def build_graph(ctx: RunContext, thread_id: str) -> StateGraph:
-    graph = StateGraph(GState)
+def _make_commit_node(ctx: RunContext) -> Callable[[GState], Awaitable[GState]]:
+    async def _commit_disposition(gs: GState) -> GState:
+        gate = dict(gs.get("gate") or {})
+        res = await ctx.box("primary").call(
+            "case-actions",
+            "submit_case_disposition",
+            {
+                "worksheet_id": str(gate.get("worksheet_id") or ""),
+                "approval_token": str(gate.get("approval_token") or ""),
+                "reviewer_id": str(gate.get("reviewer") or ""),
+                "reviewer_notes": str(gate.get("reviewer_notes") or ""),
+                "thread_id": str(gate.get("thread_id") or ""),
+            },
+            has_human_approval_token=True,
+        )
+        ok = bool(res.get("success"))
+        return {
+            "inv": {
+                "current_node": "committed" if ok else "interrupt_required",
+                "human_decision": res.get("final_disposition") if ok else None,
+            },
+            "gate": {**gate, "commit_result": res},
+        }
+
+    return _commit_disposition
+
+
+def _route_after_gate(gs: GState) -> str:
+    gate = gs.get("gate") or {}
+    if gate.get("action") == "approve" and gate.get("approval_token"):
+        return "commit_disposition"
+    return "__end__"
+
+
+def _route_after_commit(gs: GState) -> str:
+    commit_res = (gs.get("gate") or {}).get("commit_result") or {}
+    return "__end__" if commit_res.get("success") else "human_gate"
+
+
+def _attach_gate_and_commit(graph: StateGraph[Any, Any, Any, Any], ctx: RunContext, draft_node_name: str) -> None:
+    graph.add_node("human_gate", _human_gate)  # type: ignore[call-overload]
+    graph.add_node("commit_disposition", _make_commit_node(ctx))  # type: ignore[call-overload]
+    graph.add_edge(draft_node_name, "human_gate")
+    graph.add_conditional_edges(
+        "human_gate",
+        _route_after_gate,
+        {"commit_disposition": "commit_disposition", "__end__": END},
+    )
+    graph.add_conditional_edges(
+        "commit_disposition",
+        _route_after_commit,
+        {"__end__": END, "human_gate": "human_gate"},
+    )
+
+
+def build_graph(ctx: RunContext, thread_id: str) -> StateGraph[Any, Any, Any, Any]:
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
     graph.add_node("plan", _wrap("plan", nodes.plan_node, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("gather_evidence", _wrap("gather_evidence", nodes.gather_evidence_node, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("form_hypotheses", _wrap("form_hypotheses", nodes.hypothesis_node, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("critique", _wrap("critique", nodes.critique_node, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("replan", _wrap("replan", nodes.replan_node, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("draft", _wrap("draft", nodes.draft_worksheet_node, ctx, thread_id))  # type: ignore[call-overload]
-    graph.add_node("human_gate", _human_gate)  # type: ignore[call-overload]
     graph.add_edge(START, "plan")
     graph.add_edge("plan", "gather_evidence")
     graph.add_edge("gather_evidence", "form_hypotheses")
@@ -224,22 +292,58 @@ def build_graph(ctx: RunContext, thread_id: str) -> StateGraph:
         {"replan": "replan", "draft": "draft"},
     )
     graph.add_edge("replan", "gather_evidence")
-    graph.add_edge("draft", "human_gate")
-    graph.add_edge("human_gate", END)
+    _attach_gate_and_commit(graph, ctx, "draft")
     return graph
 
 
-def build_c0_graph(ctx: RunContext, thread_id: str, scan_fn: NodeFn, draft_fn: NodeFn) -> StateGraph:
-    """Fixed linear StateGraph for C0 baseline (`scan -> draft -> human_gate(interrupt) -> END`)."""
-    graph = StateGraph(GState)
+def build_c2_graph(ctx: RunContext, thread_id: str) -> StateGraph[Any, Any, Any, Any]:
+    """Supervisor + 4 RBAC Specialists StateGraph with per-specialist durable checkpointing."""
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
+    graph.add_node("supervisor_plan", _wrap("supervisor_plan", nodes.plan_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("flow_tracer", _wrap("flow_tracer", nodes.flow_tracer_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node(
+        "parallel_specialists", _wrap("parallel_specialists", nodes.parallel_specialists_node, ctx, thread_id)
+    )  # type: ignore[call-overload]
+    graph.add_node("supervisor_hypotheses", _wrap("supervisor_hypotheses", nodes.hypothesis_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("supervisor_critique", _wrap("supervisor_critique", nodes.critique_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("supervisor_replan", _wrap("supervisor_replan", nodes.replan_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("reporter_critic", _wrap("reporter_critic", nodes.draft_worksheet_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_edge(START, "supervisor_plan")
+    graph.add_edge("supervisor_plan", "flow_tracer")
+    graph.add_edge("flow_tracer", "parallel_specialists")
+    graph.add_edge("parallel_specialists", "supervisor_hypotheses")
+    graph.add_edge("supervisor_hypotheses", "supervisor_critique")
+    graph.add_conditional_edges(
+        "supervisor_critique",
+        lambda gs: nodes.should_replan(as_state(gs["inv"]), ctx),
+        {"replan": "supervisor_replan", "draft": "reporter_critic"},
+    )
+    graph.add_edge("supervisor_replan", "flow_tracer")
+    _attach_gate_and_commit(graph, ctx, "reporter_critic")
+    return graph
+
+
+def build_c0_graph(
+    ctx: RunContext, thread_id: str, scan_fn: NodeFn, draft_fn: NodeFn
+) -> StateGraph[Any, Any, Any, Any]:
+    """Fixed linear StateGraph for C0 (`scan -> draft -> human_gate(interrupt) -> commit_disposition -> END`)."""
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
     graph.add_node("gather_evidence", _wrap("gather_evidence", scan_fn, ctx, thread_id))  # type: ignore[call-overload]
     graph.add_node("draft", _wrap("draft", draft_fn, ctx, thread_id))  # type: ignore[call-overload]
-    graph.add_node("human_gate", _human_gate)  # type: ignore[call-overload]
     graph.add_edge(START, "gather_evidence")
     graph.add_edge("gather_evidence", "draft")
-    graph.add_edge("draft", "human_gate")
-    graph.add_edge("human_gate", END)
+    _attach_gate_and_commit(graph, ctx, "draft")
     return graph
+
+
+def select_graph(ctx: RunContext, thread_id: str) -> StateGraph[Any, Any, Any, Any]:
+    if ctx.mode == "c0_fixed":
+        from src.agent import c0_fixed
+
+        return build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
+    if ctx.mode == "c2_multi":
+        return build_c2_graph(ctx, thread_id)
+    return build_graph(ctx, thread_id)
 
 
 def _config(thread_id: str, policy: PolicyConfig) -> RunnableConfig:
@@ -262,15 +366,8 @@ async def run_graph(
     """Run (or resume) the compiled graph until the human-approval `interrupt()`; returns the paused state."""
     ctx = make_context(mode, thread_id, **flags)
     config = _config(thread_id, ctx.policy)
-    async with open_saver() as saver:
-        from src.agent import c0_fixed
-
-        sg = (
-            build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
-            if mode == "c0_fixed"
-            else build_graph(ctx, thread_id)
-        )
-        compiled = sg.compile(checkpointer=saver)
+    async with _lock_for_thread(thread_id), open_saver() as saver:
+        compiled = select_graph(ctx, thread_id).compile(checkpointer=saver)
         snapshot = await compiled.aget_state(config)
         graph_input: Optional[dict[str, Any]]
         if resume and snapshot.values:
@@ -278,7 +375,11 @@ async def run_graph(
                 return as_state(snapshot.values["inv"])
             saved = as_state(snapshot.values["inv"])
             ctx.ledger.preload(
-                calls=saved.tool_calls_used, cost_usd=saved.estimated_cost_usd, replans=saved.replan_count
+                calls=saved.tool_calls_used,
+                cost_usd=saved.estimated_cost_usd,
+                replans=saved.replan_count,
+                critique_retries=saved.critique_retries_used,
+                tokens_used=saved.total_tokens_used,
             )
             graph_input = None
         else:
@@ -292,7 +393,7 @@ async def run_graph(
     if not final.values:
         raise RuntimeError("graph finished without state")
     state = as_state(final.values["inv"])
-    _persist(thread_id, mode, final.values["inv"], status="interrupt_required")
+    await asyncio.to_thread(_persist, thread_id, mode, final.values["inv"], "interrupt_required")
     return state
 
 
@@ -300,16 +401,26 @@ async def resume_gate(thread_id: str, mode: str, decision: dict[str, Any]) -> bo
     """Resume the paused `human_gate` interrupt with the human decision. Returns False if no interrupt is pending."""
     ctx = make_context(mode, thread_id)
     config = _config(thread_id, ctx.policy)
-    async with open_saver() as saver:
-        from src.agent import c0_fixed
-
-        sg = (
-            build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
-            if mode == "c0_fixed"
-            else build_graph(ctx, thread_id)
-        )
-        compiled = sg.compile(checkpointer=saver)
+    async with _lock_for_thread(thread_id), open_saver() as saver:
+        compiled = select_graph(ctx, thread_id).compile(checkpointer=saver)
         if not _is_paused(await compiled.aget_state(config)):
             return False
         await compiled.ainvoke(Command(resume=decision), config)
     return True
+
+
+async def resume_and_commit_gate(thread_id: str, mode: str, decision: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """
+    Resume `human_gate` and execute `commit_disposition` through the guarded MCP tool gate.
+    Returns `None` if no LangGraph `interrupt()` is currently active on `thread_id`.
+    """
+    ctx = make_context(mode, thread_id)
+    config = _config(thread_id, ctx.policy)
+    async with _lock_for_thread(thread_id), open_saver() as saver:
+        compiled = select_graph(ctx, thread_id).compile(checkpointer=saver)
+        if not _is_paused(await compiled.aget_state(config)):
+            return None
+        out = await compiled.ainvoke(Command(resume=decision), config)
+    gate = out.get("gate") if isinstance(out, dict) else None
+    commit_result = gate.get("commit_result") if isinstance(gate, dict) else None
+    return dict(commit_result) if isinstance(commit_result, dict) else {"success": False, "error_code": "COMMIT_FAILED"}

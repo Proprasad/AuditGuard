@@ -19,8 +19,10 @@ import os
 from typing import Any
 
 from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
-from src.config import settings
+from src.config import get_policy, settings
+from src.mcp_servers.http_auth import MCP_TOKEN_HEADER, mcp_service_token
 
 logger = logging.getLogger("auditguard.mcp")
 
@@ -48,7 +50,10 @@ def _host(server: str) -> str:
 
 def _target(server: str) -> Any:
     if settings.mcp_transport == "http":
-        return f"http://{_host(server)}:{_port(server)}/mcp"
+        return StreamableHttpTransport(
+            f"http://{_host(server)}:{_port(server)}/mcp",
+            headers={MCP_TOKEN_HEADER: mcp_service_token()},
+        )
     return importlib.import_module(_SERVERS[server]).mcp
 
 
@@ -57,6 +62,7 @@ def error_envelope(server: str, tool: str, code: str, message: str) -> dict[str,
         "status": "error",
         "success": False,
         "error_code": code,
+        "message": message,
         "error": message,
         "server": server,
         "tool": tool,
@@ -87,7 +93,7 @@ async def call_mcp_tool(
     """Invoke `tool` on `server` through the MCP protocol. Never raises for transport/tool failures."""
     if server not in _SERVERS:
         return error_envelope(server, tool, "UNKNOWN_MCP_SERVER", f"unknown MCP server {server!r}")
-    timeout = timeout_s if timeout_s is not None else settings.mcp_timeout_s
+    timeout = timeout_s if timeout_s is not None else float(get_policy().timeouts.mcp_call_seconds)
     try:
         async with Client(_target(server), timeout=timeout) as client:
             result = await asyncio.wait_for(

@@ -67,26 +67,21 @@ class Settings(BaseSettings):
     postgres_user: str = "auditguard"
     postgres_password: Optional[SecretStr] = None
 
-    # Vector store / observability
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
-    qdrant_collection: str = "compliance_kb"
-    langfuse_host: str = "http://localhost:3000"
-
     # API & auth
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     api_secret_key: Optional[SecretStr] = None
     hmac_secret: Optional[SecretStr] = None
+    metrics_token: Optional[SecretStr] = None
     auth_required: bool = True
-    cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:8001,http://localhost:8001"
+    cors_origins: str = "http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8001"
+    public_base_url: str = "http://127.0.0.1:8000"
     api_rate_limit_per_min: int = 600
     auth_rate_limit_per_min: int = 10
 
-    # MCP
+    # MCP (call timeouts load dynamically from PolicyConfig.timeouts.mcp_call_seconds)
     mcp_transport: Literal["inprocess", "http"] = "inprocess"
     mcp_host: str = "localhost"
-    mcp_timeout_s: float = 30.0
     mcp_compliance_kb_port: int = 8010
     mcp_graph_engine_port: int = 8011
     mcp_bank_records_port: int = 8012

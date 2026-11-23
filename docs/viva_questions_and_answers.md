@@ -13,7 +13,7 @@ Grounded strictly in the AuditGuard codebase, compiled LangGraph execution trace
 2. **FastAPI Router & Rate-Limited Auth Gate (`src/api/routes/investigations.py`, `src/api/auth.py`, `src/api/ratelimit.py`):**
    - Validates Bearer JWT + minimum role (`analyst`), enforces sliding-window rate limits (`429` on breach), checks `alert_id` through `apply_input_guardrails()` (`422` on injection), resolves trusted alert metadata from `bank-records` (`404 INVALID_ALERT_ID` if absent — zero fabricated fallbacks), registers the thread in `checkpoints` + `investigation_events`, and launches `runner.run_thread`.
 3. **Compiled LangGraph `StateGraph` (`src/agent/graph.py`, `src/agent/nodes.py`):**
-   - Compiles `START -> plan -> gather_evidence -> form_hypotheses -> critique --(replan|draft)--> draft -> human_gate(interrupt) -> END` with `recursion_limit = (max_replans + 1) * 4 + 8 = 24` and durable checkpointing (`AsyncSqliteSaver` locally / `AsyncPostgresSaver` when `USE_POSTGRES=true`).
+   - For `C2`, compiles `build_c2_graph` (`START -> supervisor_plan -> flow_tracer -> parallel_specialists -> supervisor_hypotheses -> supervisor_critique --(replan|draft)--> reporter_critic -> human_gate(interrupt) -> commit_disposition -> END`) with `recursion_limit = (max_replans + 1) * 4 + 8 = 24` and durable checkpointing (`AsyncSqliteSaver` locally / `AsyncPostgresSaver` when `USE_POSTGRES=true`).
    - Emits real-time node-completion events to `investigation_events` (`GET /stream` is strictly a read-only subscriber).
 4. **Supervisor Planning (`plan_node`, `src/agent/reasoning.py`):**
    - Proposes a structured `InvestigationPlan` bounded by `PolicyConfig` (`config/models.yaml`) and creates typed `SpecialistHandOff` assignments (`HO-FLOW`, `HO-BENIGN`, `HO-REG`, `HO-CRITIC`).
@@ -52,15 +52,15 @@ Grounded strictly in the AuditGuard codebase, compiled LangGraph execution trace
 | **Dev Accuracy (20 cases, offline rubric)** | 30.0% (6/20) | **90.0%** (18/20) | **90.0%** (18/20) |
 | **Held-Out Accuracy (40 cases, offline rubric)** | 30.0% (12/40) | **90.0%** (36/40) | **90.0%** (36/40) |
 | **Offline Avg Latency (Dev / Held-Out)** | 343.3 ms / 332.6 ms | 490.6 ms / 585.4 ms | **482.8 ms / 564.4 ms** |
-| **Live `gpt-5-mini` Accuracy / Replan Recovery (6 dev cases)** | 33.3% / 0.0% | 33.3% / 25.0% | **50.0% / 75.0%** |
-| **Live `gpt-5-mini` Avg Tokens / Cost per Case** | 0 / \$0.00000 | 11,880 / \$0.01116 | **11,070 / \$0.01053** |
-| **Live `gpt-5-mini` Avg Latency** | 746.3 ms | 64,356.7 ms | **57,425.2 ms (-10.8%)** |
+| **Live `gpt-5-mini` Accuracy / Replan Recovery (6 dev cases)** | 33.3% / 0.0% | **100.0% / 100.0%** | **100.0% / 100.0%** |
+| **Live `gpt-5-mini` Avg Tokens / Cost per Case** | 0 / \$0.00000 | 10,572 / \$0.00848 | **9,563 / \$0.00781** |
+| **Live `gpt-5-mini` Avg Latency** | 1,033.4 ms | 42,479.1 ms | **40,481.2 ms (-4.7%)** |
 | **MCP Tool Privilege Surface per Agent** | 5 read/draft tools | 12 tools on 1 role | **2–5 tools per specialist (strict RBAC)** |
 
 - **Benefits of `C2` over `C1`:**
-  1. **Least-Privilege Isolation:** `AGENT_TOOL_ALLOWLIST` (`src/guardrails/hooks.py`) physically prevents `flow_tracer`, `benign_investigator`, and `regulatory_analyst` from calling `case-actions` (`draft_disposition_report` / `submit_case_disposition`).
-  2. **Parallel Specialist Execution (`asyncio.gather`):** Concurrent KYC/registry and regulatory retrieval reduces latency in both offline (`585.4 ms -> 564.4 ms`) and live LLM (`64.4 s -> 57.4 s`) runs.
-  3. **Better Live Replan Efficiency:** On the 6-case live `gpt-5-mini` sample, `C2` achieved `75.0%` replan recovery vs. `25.0%` for `C1` with fewer redundant replans (`0.67` vs. `0.83`), resulting in slightly *lower* measured token usage (`11,070` vs. `11,880`, `0.93x`) and cost (`\$0.01053` vs. `\$0.01116`).
+  1. **Least-Privilege Isolation & Per-Specialist Checkpointing:** `build_c2_graph` (`src/agent/graph.py`) runs dedicated specialist nodes (`supervisor_plan -> flow_tracer -> parallel_specialists -> supervisor_hypotheses -> supervisor_critique -> reporter_critic -> human_gate`) with per-specialist durable checkpointing, while `AGENT_TOOL_ALLOWLIST` (`src/guardrails/hooks.py`) physically prevents `flow_tracer`, `benign_investigator`, and `regulatory_analyst` from calling `case-actions` (`draft_disposition_report` / `submit_case_disposition`).
+  2. **Parallel Specialist Execution (`asyncio.gather`):** Concurrent KYC/registry and regulatory retrieval reduces latency in both offline (`585.4 ms -> 564.4 ms`) and live LLM (`42.5 s -> 40.5 s`) runs.
+  3. **Measured Live Token & Replan Efficiency:** On the 6-case live `gpt-5-mini` evaluation, both `C1` and `C2` achieved **100.0% accuracy (`6/6`)** and **100.0% replan recovery**, while `C2` required fewer redundant replans (`0.17` vs. `0.33`), resulting in lower measured token usage (`9,563` vs. `10,572`, `0.90x`) and cost (`\$0.00781` vs. `\$0.00848`).
 - **Costs of `C2`:** Additional coordination state (`SpecialistHandOff` / `SpecialistFinding` contracts and shared thread-safe `BudgetLedger` contention management).
 
 ---
@@ -70,8 +70,8 @@ Grounded strictly in the AuditGuard codebase, compiled LangGraph execution trace
 1. **Experiment E1 (`C0` = `30.0%`) & Experiment E4 (Replanning Ablation: `90.0% -> 70.0%` without replanning):**
    - Fixed `7d / 3-hop / 0.10` scans missed 100% of `staggered_timing` (Day-11+) and `fee_skimming` (8–12% retention) cases, while escalating without commercial-registry checks misclassified benign `charitable_donations`, `salary_disbursement`, `wedding_collection`, and `chit_fund` flows.
    - **Design Changes:** Added `critique_node` + conditional `replan_node` in LangGraph, added `check_commercial_registry` + `benign_investigator`, and enforced in `src/core/scoring.py` that suspicious confidence cannot cross `disposition_threshold` (`0.70`) when `multi_hop_path` is `False`.
-2. **Experiment E2 (32-Attack Red-Team Suite: `21.9%` blocked with hooks OFF -> `96.9%` blocked with hooks ON, plus 18-scenario adversarial audit):**
-   - Without pre/post hooks and XML escaping, `78.1%` (`25/32`) of attacks succeeded (prompt injections, RBAC bypasses on read/compute/draft tools, PII leaks, guilt claims), and `</untrusted_data>` tags could be broken out of.
+2. **Experiment E2 (32-Attack Red-Team Suite: `28.1%` blocked with hooks OFF -> `96.9%` blocked with hooks ON, plus 18-scenario adversarial audit):**
+   - Without pre/post hooks and XML escaping, `71.9%` (`23/32`) of attacks succeeded against the raw MCP servers (prompt injections, RBAC bypasses on read/compute/draft tools, PII leaks, guilt claims), and `</untrusted_data>` tags could be broken out of.
    - **Design Changes:** Added XML entity escaping prior to `<untrusted_data source="...">` wrapping, NFKC/zero-width/homoglyph-normalized injection withholding in `post_tool_hook` (routing flagged runs to `request_info`), fail-closed `verify_worksheet` with `max_critique_retries = 2`, and atomic single-use HMAC approval tokens.
 
 ---

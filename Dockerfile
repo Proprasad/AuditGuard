@@ -13,8 +13,8 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml .
 COPY README.md .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -e ".[dev]"
+# Install Python dependencies (including Chainlit UI + dev checks)
+RUN pip install --no-cache-dir -e ".[ui,dev]"
 
 # Copy source code
 COPY . .

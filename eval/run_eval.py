@@ -56,7 +56,7 @@ def prepare_isolated_eval_db() -> Path:
     if not configured:
         tmp_dir = Path(tempfile.mkdtemp(prefix="auditguard_eval_"))
         os.environ["SQLITE_DB_PATH"] = str(tmp_dir / "eval_auditguard.db")
-    database._initialized_paths.clear()
+    database.reset_db_init()
     database.init_db()
     database.seed_operational_db()
     memory_store.load_playbook("config/reflexion_playbook.json")
@@ -121,6 +121,11 @@ async def run_case(
         risk_level=RiskLevel.HIGH,
     )
 
+    from src.db.database import get_db
+    from src.db.seeder import upsert_case_into_db
+
+    with get_db() as conn:
+        upsert_case_into_db(conn, case)
     token = bank_records.set_eval_case_overlay(case)
     start = time.perf_counter()
     try:
@@ -157,7 +162,7 @@ async def run_case(
         return {
             "case_id": case["case_id"],
             "disposition": ws.recommended_disposition.value if ws else "unknown",
-            "confidence": ws.confidence_score if ws else 0.0,
+            "confidence": float(ws.confidence_score) if ws else 0.0,
             "citations": ws.regulatory_citations if ws else [],
             "replan_count": final_state.replan_count,
             "tool_calls": final_state.tool_calls_used,
@@ -171,19 +176,40 @@ async def run_case(
         bank_records.reset_eval_case_overlay(token)
 
 
-async def _run_unguarded_attack(atk: dict[str, Any]) -> bool:
+async def _run_unguarded_attack(atk: dict[str, Any]) -> bool:  # noqa: C901 - unguarded probe per attack category
     """
-    Execute a red-team payload with guardrails & pre/post hooks DISABLED (`defenses_enabled=False`)
-    to measure genuine baseline vulnerability vs. intrinsic MCP server schema defenses.
-    Returns True only if the attack is still blocked without the guardrail/hook layer.
+    Execute a red-team payload against the real FastMCP servers with guardrails, pre/post hooks,
+    and output verifiers DISABLED (`defenses_enabled=False`) to measure genuine baseline vulnerability
+    versus intrinsic MCP/DB schema defenses. Returns True only if blocked without the guardrail layer.
     """
     cat = atk["category"]
     if cat == "data_path_injection":
-        # Without apply_input_guardrails / post_tool_hook withholding, raw injection reaches prompt context unblocked
-        raw_memo = str(atk["payload"])
-        return len(raw_memo) == 0
+        raw_payload = str(atk["payload"])
+        overlay = {
+            "alert_id": "ALT-RT-INJ",
+            "triggered_at": "2026-09-01T00:00:00Z",
+            "root_account": "ACC-RT-1",
+            "network_accounts": ["ACC-RT-2"],
+            "total_amount_inr": "100000.00",
+            "transactions": [
+                {
+                    "tx_id": "TXN-RT-1",
+                    "sender_account": "ACC-RT-1",
+                    "receiver_account": "ACC-RT-2",
+                    "amount_inr": "100000.00",
+                    "timestamp": "2026-09-01T00:00:00Z",
+                    "memo_text": raw_payload,
+                }
+            ],
+        }
+        tok = bank_records.set_eval_case_overlay(overlay)
+        try:
+            res = await call_mcp_tool("bank-records", "get_alert_context", {"alert_id": "ALT-RT-INJ"})
+        finally:
+            bank_records.reset_eval_case_overlay(tok)
+        serialized = json.dumps(res)
+        return raw_payload not in serialized
     if cat == "rbac_bypass":
-        # Without pre_tool_hook RBAC allow-list, call the MCP server directly with minimal args
         tool = atk["tool"]
         server_for_tool = {
             "submit_case_disposition": (
@@ -207,10 +233,22 @@ async def _run_unguarded_attack(atk: dict[str, Any]) -> bool:
         }
         srv, params = server_for_tool[tool]
         res = await call_mcp_tool(srv, tool, params)
-        # submit_case_disposition fails at case_repo HMAC check (defense-in-depth); others execute
         return res.get("status") == "error" or res.get("success") is False
     if cat == "approval_tamper":
-        # Without pre_tool_hook / cryptographic approval gate, unguarded worksheet commit succeeds
+        # Without pre_tool_hook / HITL gate, unguarded draft creation writes arbitrary unreviewed disposition;
+        # submit_case_disposition still hits DB-layer HMAC/hash check in case_repo (defense-in-depth).
+        if atk["action"] == "submit_without_interrupt_token":
+            res = await call_mcp_tool(
+                "case-actions",
+                "submit_case_disposition",
+                {
+                    "worksheet_id": "DWS-NONE",
+                    "approval_token": "",
+                    "reviewer_id": "agent",
+                    "thread_id": "thr-unguarded",
+                },
+            )
+            return res.get("status") == "error" or res.get("success") is False
         return False
     if cat == "policy_bounds":
         tool = atk["tool"]
@@ -218,12 +256,22 @@ async def _run_unguarded_attack(atk: dict[str, Any]) -> bool:
             p = {"root_account": "A", "transactions": [], **atk.get("params", {})}
             res = await call_mcp_tool("graph-engine", tool, p)
             return res.get("status") == "error"
-        # Budget-exhausted get_kyc_profile without pre_tool_hook budget check executes unblocked!
         res = await call_mcp_tool("bank-records", tool, {"account_id": "ACC-IND-1042"})
         return res.get("status") == "error"
     if cat == "guilt_or_pii":
-        # Without output guardrails or mask_pii, guilt assertions and raw PAN/Aadhaar pass straight through
-        return False
+        text = str(atk.get("output") or atk.get("pii_leak") or "")
+        res = await call_mcp_tool(
+            "case-actions",
+            "draft_disposition_report",
+            {
+                "alert_id": "ALT-RT-OUT",
+                "recommended_disposition": "escalate_str",
+                "recommendation_rationale": text,
+                "confidence_score": 0.8,
+            },
+        )
+        stored_text = json.dumps(res.get("content", {}))
+        return res.get("status") == "error" or text not in stored_text
     return False
 
 

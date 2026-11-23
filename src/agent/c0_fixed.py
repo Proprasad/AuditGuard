@@ -20,6 +20,7 @@ from src.agent.nodes import RunContext
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
 from src.core.adapters import flow_paths_from_result, graph_tx_payload, kyc_summaries
+from src.core.canonical import to_confidence
 from src.db.database import utc_now_iso
 from src.models import (
     Alert,
@@ -31,8 +32,6 @@ from src.models import (
 )
 
 ROLE = "c0_fixed"
-FIXED_CONFIDENCE_ESCALATE = 0.65
-FIXED_CONFIDENCE_INFO = 0.40
 
 
 def _err(result: dict[str, Any]) -> str:
@@ -103,62 +102,9 @@ async def scan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
     }
 
 
-async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
-    t0 = time.perf_counter()
-    box = ctx.box("primary")
-    params = GraphParams.policy_default()
-    degraded = sorted({*state.degraded_evidence, *security_notes(box)})
-    citations = [c["clause_id"] for c in state.regulatory_clauses if c.get("clause_id")]
-    multi_hop = [p for p in state.fund_flow_paths if p.hop_count >= 2]
-    window = f"{params.time_window_days}d/{params.max_hops}-hop"
-    if multi_hop and not degraded:
-        disposition, confidence = DispositionDecision.ESCALATE_STR, FIXED_CONFIDENCE_ESCALATE
-        rationale = f"C0 Fixed Pipeline: {len(multi_hop)} multi-hop path(s) in fixed {window} scan."
-    else:
-        disposition, confidence = DispositionDecision.REQUEST_INFO, FIXED_CONFIDENCE_INFO
-        rationale = f"C0 Fixed Pipeline: {len(multi_hop)} multi-hop consolidation paths in fixed {window} scan."
-    if degraded:
-        rationale += " Degraded evidence: " + "; ".join(degraded)
-
-    summaries = kyc_summaries(state.kyc_profiles, limit=1)
-    hypotheses = [
-        Hypothesis(
-            label=HypothesisLabel.SUSPICIOUS,
-            explanation="C0 static scatter-gather detector output",
-            confidence=confidence,
-            regulatory_citations=citations,
-            evidence_ids=[p.path_id for p in state.fund_flow_paths],
-        )
-    ]
-    # C0 never invokes the LLM (deterministic baseline)
-    from unittest.mock import patch
-
-    with patch("src.agent.llm_client.is_live_llm_active", return_value=False):
-        outcome = await draft_and_verify(
-            box=box,
-            ledger=ctx.ledger,
-            alert=state.alert,
-            agent_label="auditguard-c0-fixed",
-            thread_id=state.thread_id,
-            disposition=disposition,
-            confidence=confidence,
-            paths=state.fund_flow_paths,
-            hypotheses=hypotheses,
-            citations=citations,
-            summaries=summaries,
-            registry=state.evidence_registry,
-            replan_count=0,
-            base_rationale=rationale,
-            degraded=degraded,
-            use_strong_model=False,
-            verify=ctx.deterministic_verifier,
-        )
-    draft_ms = (time.perf_counter() - t0) * 1000
-    scan_ms = ctx.timings.get("scan_ms", 0.0)
-    ws = outcome.worksheet
-    flow_summary = compute_network_flow_summary(
-        state.alert.root_account, state.transactions, state.fund_flow_paths, state.kyc_profiles
-    )
+def _c0_telemetry(
+    params: GraphParams, scan_ms: float, draft_ms: float, calls_used: int, rationale: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     steps = [
         {"step": 1, "name": "Alert Intake & Validation", "status": "completed"},
         {"step": 2, "name": "Fixed Sequence Setup (No Agent Plan)", "status": "completed"},
@@ -169,12 +115,7 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
             "duration_ms": round(scan_ms, 1),
         },
         {"step": 4, "name": "Rule-Based Synthesis", "status": "completed"},
-        {
-            "step": 5,
-            "name": "Verification (Deterministic)",
-            "status": "completed",
-            "duration_ms": round(draft_ms, 1),
-        },
+        {"step": 5, "name": "Verification (Deterministic)", "status": "completed", "duration_ms": round(draft_ms, 1)},
         {"step": 6, "name": "Human Approval", "status": "waiting_approval"},
         {"step": 7, "name": "Case Commit & Reporting", "status": "pending"},
     ]
@@ -186,10 +127,69 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
             "status": "completed",
             "started_at": utc_now_iso(),
             "duration_ms": round(scan_ms + draft_ms, 1),
-            "tool_calls": ctx.ledger.calls_used,
+            "tool_calls": calls_used,
             "summary": rationale,
         }
     ]
+    return steps, runs
+
+
+async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
+    t0 = time.perf_counter()
+    box = ctx.box("primary")
+    params = GraphParams.policy_default()
+    degraded = sorted({*state.degraded_evidence, *security_notes(box)})
+    citations = [c["clause_id"] for c in state.regulatory_clauses if c.get("clause_id")]
+    multi_hop = [p for p in state.fund_flow_paths if p.hop_count >= 2]
+    window = f"{params.time_window_days}d/{params.max_hops}-hop"
+    if multi_hop and not degraded:
+        disposition = DispositionDecision.ESCALATE_STR
+        confidence = float(ctx.policy.scoring.c0_escalate_confidence)
+        rationale = f"C0 Fixed Pipeline: {len(multi_hop)} multi-hop path(s) in fixed {window} scan."
+    else:
+        disposition = DispositionDecision.REQUEST_INFO
+        confidence = float(ctx.policy.scoring.c0_request_info_confidence)
+        rationale = f"C0 Fixed Pipeline: {len(multi_hop)} multi-hop consolidation paths in fixed {window} scan."
+    if degraded:
+        rationale += " Degraded evidence: " + "; ".join(degraded)
+
+    summaries = kyc_summaries(state.kyc_profiles, limit=1)
+    hypotheses = [
+        Hypothesis(
+            label=HypothesisLabel.SUSPICIOUS,
+            explanation="C0 static scatter-gather detector output",
+            confidence=to_confidence(confidence),
+            regulatory_citations=citations,
+            evidence_ids=[p.path_id for p in state.fund_flow_paths],
+        )
+    ]
+    outcome = await draft_and_verify(
+        box=box,
+        ledger=ctx.ledger,
+        alert=state.alert,
+        agent_label="auditguard-c0-fixed",
+        thread_id=state.thread_id,
+        disposition=disposition,
+        confidence=confidence,
+        paths=state.fund_flow_paths,
+        hypotheses=hypotheses,
+        citations=citations,
+        summaries=summaries,
+        registry=state.evidence_registry,
+        replan_count=0,
+        base_rationale=rationale,
+        degraded=degraded,
+        use_strong_model=False,
+        verify=ctx.deterministic_verifier,
+        allow_llm=False,
+    )
+    draft_ms = (time.perf_counter() - t0) * 1000
+    scan_ms = ctx.timings.get("scan_ms", 0.0)
+    ws = outcome.worksheet
+    flow_summary = compute_network_flow_summary(
+        state.alert.root_account, state.transactions, state.fund_flow_paths, state.kyc_profiles
+    )
+    steps, runs = _c0_telemetry(params, scan_ms, draft_ms, ctx.ledger.calls_used, rationale)
     return {
         "worksheet": ws,
         "active_hypotheses": ws.hypotheses,
@@ -210,6 +210,7 @@ async def run_fixed_pipeline(
     thread_id: Optional[str] = None,
     verify: bool = True,
     resume: bool = False,
+    stop_after_node: Optional[str] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
 ) -> InvestigationState:
     from src.agent.graph import run_graph
@@ -219,6 +220,7 @@ async def run_fixed_pipeline(
         mode=ROLE,
         thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
         resume=resume,
+        stop_after_node=stop_after_node,
         deterministic_verifier=verify,
         emit=on_event,
     )

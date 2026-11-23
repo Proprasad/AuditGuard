@@ -1,5 +1,6 @@
 """Spawn a real FastMCP server process (streamable HTTP) and call it through `call_mcp_tool`."""
 
+import asyncio
 import os
 import socket
 import subprocess
@@ -39,7 +40,7 @@ async def test_bank_records_over_real_http(isolated_operational_db, monkeypatch)
                 if s.connect_ex(("127.0.0.1", port)) == 0:
                     break
             assert proc.poll() is None, "MCP server exited early"
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
         else:
             pytest.fail("MCP server did not start")
 

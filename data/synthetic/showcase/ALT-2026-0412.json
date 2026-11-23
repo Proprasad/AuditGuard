@@ -1,0 +1,111 @@
+{
+  "alert_id": "ALT-2026-0412",
+  "case_id": "CASE-WT-0412",
+  "is_held_out": false,
+  "category": "staggered_timing",
+  "rule_name": "SCATTER_GATHER_900K",
+  "root_account": "ACC-IND-1042",
+  "network_accounts": [
+    "ACC-IND-2011",
+    "ACC-IND-2044",
+    "ACC-IND-2089",
+    "ACC-IND-9001"
+  ],
+  "total_amount_inr": "900000.00",
+  "triggered_at": "2026-09-10T10:00:00Z",
+  "kyc_profiles": {
+    "ACC-IND-1042": {
+      "account_id": "ACC-IND-1042",
+      "entity_name": "R. Verma Trading",
+      "entity_type": "individual",
+      "risk_category": "HIGH",
+      "declared_annual_income_inr": "450000.00",
+      "is_commercially_registered": false,
+      "kyc_notes": "Declared retail clerk; sudden high-value outward transfers"
+    },
+    "ACC-IND-2011": {
+      "account_id": "ACC-IND-2011",
+      "entity_type": "individual",
+      "risk_category": "MEDIUM",
+      "declared_annual_income_inr": "300000.00",
+      "is_commercially_registered": false
+    },
+    "ACC-IND-2044": {
+      "account_id": "ACC-IND-2044",
+      "entity_type": "individual",
+      "risk_category": "MEDIUM",
+      "declared_annual_income_inr": "320000.00",
+      "is_commercially_registered": false
+    },
+    "ACC-IND-2089": {
+      "account_id": "ACC-IND-2089",
+      "entity_type": "individual",
+      "risk_category": "MEDIUM",
+      "declared_annual_income_inr": "280000.00",
+      "is_commercially_registered": false
+    },
+    "ACC-IND-9001": {
+      "account_id": "ACC-IND-9001",
+      "entity_type": "individual",
+      "risk_category": "HIGH",
+      "declared_annual_income_inr": "500000.00",
+      "is_commercially_registered": false
+    }
+  },
+  "transactions": [
+    {
+      "tx_id": "TXN-8801",
+      "sender_account": "ACC-IND-1042",
+      "receiver_account": "ACC-IND-2011",
+      "amount_inr": "300000.00",
+      "timestamp": "2026-09-10T09:00:00Z",
+      "channel": "NEFT",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-8802",
+      "sender_account": "ACC-IND-1042",
+      "receiver_account": "ACC-IND-2044",
+      "amount_inr": "300000.00",
+      "timestamp": "2026-09-10T09:15:00Z",
+      "channel": "NEFT",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-8803",
+      "sender_account": "ACC-IND-1042",
+      "receiver_account": "ACC-IND-2089",
+      "amount_inr": "300000.00",
+      "timestamp": "2026-09-10T09:30:00Z",
+      "channel": "IMPS",
+      "memo": "Transfer"
+    },
+    {
+      "tx_id": "TXN-8891",
+      "sender_account": "ACC-IND-2011",
+      "receiver_account": "ACC-IND-9001",
+      "amount_inr": "276000.00",
+      "timestamp": "2026-09-21T14:00:00Z",
+      "channel": "RTGS",
+      "memo": "Settlement"
+    },
+    {
+      "tx_id": "TXN-8892",
+      "sender_account": "ACC-IND-2044",
+      "receiver_account": "ACC-IND-9001",
+      "amount_inr": "276000.00",
+      "timestamp": "2026-09-21T14:20:00Z",
+      "channel": "RTGS",
+      "memo": "Settlement"
+    },
+    {
+      "tx_id": "TXN-8893",
+      "sender_account": "ACC-IND-2089",
+      "receiver_account": "ACC-IND-9001",
+      "amount_inr": "276000.00",
+      "timestamp": "2026-09-21T14:45:00Z",
+      "channel": "RTGS",
+      "memo": "Settlement"
+    }
+  ]
+}

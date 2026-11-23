@@ -17,9 +17,11 @@ from collections.abc import Callable, Iterable, Mapping
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from src.core.canonical import CENT, NumericError, canonical_sha256, to_decimal, to_money
+
+DEFAULT_CONSERVATION_TOLERANCE = Decimal("0.05")
 
 # Back-compat literal list (also screened) + normalised regex families.
 PROHIBITED_PHRASES = [
@@ -57,6 +59,18 @@ _GUILT_FAMILIES = [
 
 _REF_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
 _AMOUNT_PATTERN = re.compile(r"(?:INR|₹|Rs\.?)\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
+_SUFFIX_AMOUNT_PATTERN = re.compile(
+    r"\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*(rupees?|rs\.?|inr|lakhs?|lacs?|crores?)\b",
+    re.IGNORECASE,
+)
+_UNIT_MULTIPLIERS = {
+    "lakh": Decimal("100000"),
+    "lakhs": Decimal("100000"),
+    "lac": Decimal("100000"),
+    "lacs": Decimal("100000"),
+    "crore": Decimal("10000000"),
+    "crores": Decimal("10000000"),
+}
 _CITATION_FORMAT = re.compile(r"^[A-Z][A-Z0-9\-]+$")
 _VALID_DISPOSITIONS = {"escalate_str", "close_benign", "request_info", "pending"}
 _HASH_EXCLUDED = {
@@ -71,12 +85,16 @@ _HASH_EXCLUDED = {
 
 
 class Discrepancy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str
     field: str
     detail: str
 
 
 class VerificationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     passed: bool
     checks: dict[str, bool]
     errors: list[str]
@@ -97,7 +115,9 @@ def check_prohibited_claims(text: str) -> list[str]:
 
 
 def verify_inr_math(
-    outflow: str | Decimal | int, inflow: str | Decimal | int, tolerance: str | Decimal = "0.05"
+    outflow: str | Decimal | int,
+    inflow: str | Decimal | int,
+    tolerance: str | Decimal = DEFAULT_CONSERVATION_TOLERANCE,
 ) -> tuple[bool, str]:
     """Exact Decimal conservation check: |out - in| / out <= tolerance."""
     try:
@@ -241,17 +261,31 @@ def _check_citations(ws: Mapping[str, Any], registry: Mapping[str, Any], disposi
             )
 
 
+def _extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
+    found: list[tuple[str, Decimal | None]] = []
+    for raw in _AMOUNT_PATTERN.findall(text):
+        found.append((f"INR {raw}", _as_money(raw.replace(",", ""))))
+    for raw_num, unit in _SUFFIX_AMOUNT_PATTERN.findall(text):
+        cleaned = raw_num.replace(",", "")
+        mult = _UNIT_MULTIPLIERS.get(unit.lower().rstrip("."), Decimal("1"))
+        try:
+            scaled = to_money(to_decimal(cleaned, Decimal("0.0001")) * mult)
+        except NumericError:
+            scaled = None
+        found.append((f"{raw_num} {unit}", scaled))
+    return found
+
+
 def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
     known = _known_amounts(ws, registry)
     for name, text in _narrative_fields(ws):
-        for raw in _AMOUNT_PATTERN.findall(text):
-            amount = _as_money(raw.replace(",", ""))
+        for label, amount in _extract_prose_amounts(text):
             if amount is None or amount not in known:
                 fail(
                     "narrative_amounts_grounded",
                     "UNGROUNDED_AMOUNT",
                     name,
-                    f"INR {raw} does not match any verified amount",
+                    f"{label} does not match any verified amount",
                 )
 
 

@@ -41,6 +41,7 @@ class ModelSpec(_Strict):
     model_id: str
     temperature: Decimal
     max_tokens: int = Field(gt=0)
+    reasoning_effort: str | None = None
 
     @field_validator("temperature", mode="before")
     @classmethod
@@ -73,6 +74,13 @@ class Budgets(_Strict):
 class Timeouts(_Strict):
     mcp_call_seconds: int = Field(gt=0)
     llm_call_seconds: int = Field(gt=0)
+    sse_stream_seconds: int = Field(default=600, gt=0)
+    sse_poll_interval_seconds: Decimal = Decimal("0.4")
+
+    @field_validator("sse_poll_interval_seconds", mode="before")
+    @classmethod
+    def _poll(cls, v: Any) -> Decimal:
+        return _lenient_decimal(v)
 
 
 class IntRange(_Strict):
@@ -158,6 +166,9 @@ class ScoringConfig(_Strict):
     max_confidence: Decimal
     disposition_threshold: Decimal
     request_info_floor: Decimal
+    no_multi_hop_margin: Decimal = Decimal("0.0500")
+    c0_escalate_confidence: Decimal = Decimal("0.6800")
+    c0_request_info_confidence: Decimal = Decimal("0.4000")
     suspicious_weights: dict[str, Decimal]
     benign_weights: dict[str, Decimal]
 
@@ -167,6 +178,9 @@ class ScoringConfig(_Strict):
         "max_confidence",
         "disposition_threshold",
         "request_info_floor",
+        "no_multi_hop_margin",
+        "c0_escalate_confidence",
+        "c0_request_info_confidence",
         mode="before",
     )
     @classmethod
@@ -348,9 +362,12 @@ class BudgetLedger:
             return BudgetVerdict(True)
 
     # -- LLM calls ---------------------------------------------------------------------------------
-    def check_llm_allowed(self) -> BudgetVerdict:
+    def check_llm_allowed(self, estimated_cost_usd: Decimal = Decimal("0")) -> BudgetVerdict:
         with self._lock:
-            if self._cost >= self._budgets.max_cost_usd_per_case:
+            if (
+                self._cost >= self._budgets.max_cost_usd_per_case
+                or self._cost + estimated_cost_usd > self._budgets.max_cost_usd_per_case
+            ):
                 return BudgetVerdict(
                     False,
                     "BUDGET_EXCEEDED",
@@ -388,12 +405,18 @@ class BudgetLedger:
             return BudgetVerdict(True)
 
     def preload(
-        self, calls: int = 0, cost_usd: Decimal = Decimal("0"), replans: int = 0, critique_retries: int = 0
+        self,
+        calls: int = 0,
+        cost_usd: Decimal = Decimal("0"),
+        replans: int = 0,
+        critique_retries: int = 0,
+        tokens_used: int = 0,
     ) -> None:
         """Restore counters (crash-resume) or simulate exhaustion in tests/red-team runs."""
         with self._lock:
             self._calls, self._cost = calls, to_usd(cost_usd)
             self._replans, self._critique_retries = replans, critique_retries
+            self._tokens_in, self._tokens_out = max(0, tokens_used), 0
 
     # -- introspection -----------------------------------------------------------------------------
     @property

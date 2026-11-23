@@ -1,20 +1,21 @@
 """
 AuditGuard - Core Data Models (Pydantic v2, strict, exact decimals).
 
-All currency / ratio fields use `Money` / `Ratio` / `Usd` (Decimal-only, JSON strings). There are no
-showcase defaults: alert IDs, accounts and amounts must always be supplied by a trusted source.
+All currency / ratio / confidence fields use `Money` / `Ratio` / `Confidence` / `Usd` (Decimal-only, JSON strings).
+There are no showcase defaults: alert IDs, accounts and amounts must always be supplied by a trusted source.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.core.canonical import Money, Ratio, Usd, canonical_sha256, utc_now
+from src.core.canonical import Confidence, Money, Ratio, Usd, canonical_sha256, utc_now
 
 
 def _policy() -> Any:
@@ -23,12 +24,18 @@ def _policy() -> Any:
     return get_policy()
 
 
+def _zero_usd() -> Decimal:
+    return Decimal("0.000000")
+
+
+def _zero_conf() -> Decimal:
+    return Decimal("0.0000")
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Enums
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class AlertStatus(str, Enum):
     OPEN = "open"
     UNDER_INVESTIGATION = "under_investigation"
@@ -58,8 +65,6 @@ class DispositionDecision(str, Enum):
     PENDING = "pending"
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Core Domain
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class Alert(StrictModel):
     alert_id: str
     rule_name: str
@@ -104,7 +109,7 @@ class Hypothesis(StrictModel):
     explanation: str
     supporting_evidence: list[str] = Field(default_factory=list)
     contradicting_evidence: list[str] = Field(default_factory=list)
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: Confidence
     regulatory_citations: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
 
@@ -113,29 +118,41 @@ class InvestigationPlan(StrictModel):
     plan_id: str = Field(default_factory=lambda: uuid4().hex[:8])
     steps: list[str]
     graph_params: GraphParams = Field(default_factory=GraphParams.policy_default)
+    focus_accounts: list[str] = Field(default_factory=list)
+    regulatory_queries: list[str] = Field(default_factory=list)
+    clause_ids: list[str] = Field(default_factory=list)
     replan_count: int = 0
     replan_reason: Optional[str] = None
 
 
 class DispositionWorksheet(StrictModel):
     """
-    Citation-verified worksheet for mandatory human review. `payload_hash` is the canonical SHA-256 recorded
-    by case-actions at draft time (single source of truth); any edit recomputes it.
+    Citation-verified worksheet for mandatory human review. `compute_hash()` produces the exact same canonical
+    SHA-256 (`payload_hash`) persisted and verified by `case-actions`.
     """
 
     worksheet_id: str = Field(default_factory=lambda: f"DWS-{uuid4().hex[:8].upper()}")
     alert_id: str
     created_at: datetime = Field(default_factory=utc_now)
+    drafted_at: Optional[str] = None
     investigator_agent: str
 
     candidate_paths: list[FundFlowPath] = Field(default_factory=list)
     hypotheses: list[Hypothesis] = Field(default_factory=list)
     regulatory_citations: list[str] = Field(default_factory=list)
     kyc_summaries: list[str] = Field(default_factory=list)
+    degraded_evidence: list[str] = Field(default_factory=list)
+    alert_amount_inr: Optional[str] = None
+    verification_status: str = "passed"
+    verification_discrepancies: list[dict[str, Any]] = Field(default_factory=list)
 
     recommended_disposition: DispositionDecision = DispositionDecision.PENDING
     recommendation_rationale: str = ""
-    confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence_score: Confidence = Field(default_factory=_zero_conf)
+
+    analyst_notes: Optional[str] = None
+    edited_by: Optional[str] = None
+    edited_at: Optional[str] = None
 
     reviewer_id: Optional[str] = None
     reviewer_decision: Optional[DispositionDecision] = None
@@ -152,10 +169,26 @@ class DispositionWorksheet(StrictModel):
         return data
 
     def canonical_payload(self) -> dict[str, Any]:
-        return self.model_dump(
-            mode="python",
-            exclude={"payload_hash", "reviewer_id", "reviewer_decision", "reviewer_notes", "reviewed_at"},
-        )
+        payload: dict[str, Any] = {
+            "alert_id": self.alert_id,
+            "recommended_disposition": self.recommended_disposition.value,
+            "recommendation_rationale": self.recommendation_rationale,
+            "confidence_score": self.confidence_score,
+            "candidate_paths": [p.model_dump(mode="json") for p in self.candidate_paths],
+            "regulatory_citations": list(self.regulatory_citations),
+            "kyc_summaries": list(self.kyc_summaries),
+            "hypotheses": [h.model_dump(mode="json") for h in self.hypotheses],
+            "degraded_evidence": list(self.degraded_evidence),
+            "alert_amount_inr": self.alert_amount_inr,
+            "verification_status": self.verification_status,
+            "verification_discrepancies": list(self.verification_discrepancies),
+            "drafted_at": self.drafted_at,
+        }
+        for opt_key in ("analyst_notes", "edited_by", "edited_at"):
+            val = getattr(self, opt_key)
+            if val is not None:
+                payload[opt_key] = val
+        return payload
 
     def compute_hash(self) -> str:
         return canonical_sha256(self.canonical_payload())
@@ -185,6 +218,11 @@ class InvestigationState(StrictModel):
 
     plan: Optional[InvestigationPlan] = None
     proposed_params: Optional[GraphParams] = None
+    proposed_focus_accounts: list[str] = Field(default_factory=list)
+    proposed_regulatory_queries: list[str] = Field(default_factory=list)
+    proposed_clause_ids: list[str] = Field(default_factory=list)
+    refresh_kyc: bool = False
+    refresh_regulations: bool = False
     reasoning_mode: str = "rubric"
     current_node: str = "start"
     current_step: int = 0
@@ -214,8 +252,9 @@ class InvestigationState(StrictModel):
 
     tool_calls_used: int = 0
     max_tool_calls: int = Field(default_factory=lambda: _policy().budgets.max_tool_calls)
+    critique_retries_used: int = 0
     total_tokens_used: int = 0
-    estimated_cost_usd: Usd = Field(default_factory=lambda: _zero_usd())
+    estimated_cost_usd: Usd = Field(default_factory=_zero_usd)
     budget_remaining_usd: Usd = Field(default_factory=lambda: _policy().budgets.max_cost_usd_per_case)
 
     rolling_summary: str = ""
@@ -225,14 +264,6 @@ class InvestigationState(StrictModel):
     is_complete: bool = False
 
 
-def _zero_usd() -> Any:
-    from decimal import Decimal
-
-    return Decimal("0.000000")
-
-
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ API Schemas
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class InvestigateRequest(StrictModel):
     """The server resolves root account / network / amount from the trusted alert record."""
 
@@ -272,7 +303,7 @@ class DecisionRequest(StrictModel):
     notes: str = Field(default="", max_length=4000)
 
     @model_validator(mode="after")
-    def _check_action_fields(self) -> "DecisionRequest":
+    def _check_action_fields(self) -> DecisionRequest:
         if self.action == "approve" and not (self.approved_hash and self.approval_token):
             raise ValueError("approve requires approved_hash and approval_token")
         if self.action == "edit" and self.edit is None:

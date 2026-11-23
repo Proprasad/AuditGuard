@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from src.core.canonical import to_ratio
 from src.core.policy import ScoringConfig
 
 
@@ -64,20 +65,31 @@ def rubric_scores(features: EvidenceFeatures, cfg: ScoringConfig) -> RubricResul
         score -= weight
         trace.append(f"-{weight} {name}")
     if not features.multi_hop_path and score >= cfg.disposition_threshold:
-        score = cfg.disposition_threshold - Decimal("0.05")
+        score = cfg.disposition_threshold - cfg.no_multi_hop_margin
         trace.append("cap<threshold (no_multi_hop_consolidation)")
     suspicious = _clamp(score, cfg)
     return RubricResult(suspicious=suspicious, benign=_clamp(Decimal("1") - suspicious, cfg), trace=trace)
 
 
-def decide(suspicious: float, benign: float, degraded: bool, cfg: ScoringConfig) -> tuple[str, float]:
-    """Return (disposition value, confidence). Degraded/ambiguous evidence never yields a confident closure."""
-    threshold = float(cfg.disposition_threshold)
-    floor = float(cfg.request_info_floor)
-    if degraded and suspicious < threshold and benign < threshold:
-        return "request_info", max(suspicious, benign, floor)
-    if suspicious >= threshold:
-        return "escalate_str", suspicious
-    if benign >= threshold:
-        return "close_benign", benign
-    return "request_info", max(suspicious, benign, floor)
+def decide(
+    suspicious: Decimal | str | int,
+    benign: Decimal | str | int,
+    degraded: bool,
+    cfg: ScoringConfig,
+    *,
+    critical_missing: bool = False,
+) -> tuple[str, Decimal]:
+    """Return `(disposition, Decimal confidence)`. Missing critical evidence or ambiguity never yields closure."""
+    susp_d = to_ratio(suspicious)
+    ben_d = to_ratio(benign)
+    threshold = cfg.disposition_threshold
+    floor = cfg.request_info_floor
+    if critical_missing:
+        return "request_info", max(susp_d, ben_d, floor)
+    if degraded and susp_d < threshold and ben_d < threshold:
+        return "request_info", max(susp_d, ben_d, floor)
+    if susp_d >= threshold:
+        return "escalate_str", susp_d
+    if ben_d >= threshold and not degraded:
+        return "close_benign", ben_d
+    return "request_info", max(susp_d, ben_d, floor)

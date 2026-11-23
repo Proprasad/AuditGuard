@@ -1,5 +1,5 @@
 services:
-  # ---- Infrastructure ----
+  # ---- Relational & Checkpoint Persistence ----
   postgres:
     image: postgres:16-alpine
     container_name: auditguard_postgres
@@ -19,22 +19,7 @@ services:
       timeout: 5s
       retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: auditguard_qdrant
-    restart: unless-stopped
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ---- MCP Servers ----
+  # ---- Authenticated FastMCP HTTP Fleet ----
   mcp-compliance-kb:
     build:
       context: .
@@ -44,9 +29,6 @@ services:
     env_file: .env
     ports:
       - "8010:8010"
-    depends_on:
-      qdrant:
-        condition: service_healthy
     restart: unless-stopped
 
   mcp-graph-engine:
@@ -58,9 +40,6 @@ services:
     env_file: .env
     ports:
       - "8011:8011"
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
 
   mcp-bank-records:
@@ -70,6 +49,9 @@ services:
     container_name: mcp_bank_records
     command: python -m src.mcp_servers.bank_records
     env_file: .env
+    environment:
+      USE_POSTGRES: "true"
+      POSTGRES_HOST: postgres
     ports:
       - "8012:8012"
     depends_on:
@@ -84,6 +66,9 @@ services:
     container_name: mcp_case_actions
     command: python -m src.mcp_servers.case_actions
     env_file: .env
+    environment:
+      USE_POSTGRES: "true"
+      POSTGRES_HOST: postgres
     ports:
       - "8013:8013"
     depends_on:
@@ -102,20 +87,16 @@ services:
     environment:
       USE_POSTGRES: "true"
       POSTGRES_HOST: postgres
-      QDRANT_HOST: qdrant
       MCP_TRANSPORT: http
       MCP_COMPLIANCE_KB_HOST: mcp-compliance-kb
       MCP_GRAPH_ENGINE_HOST: mcp-graph-engine
       MCP_BANK_RECORDS_HOST: mcp-bank-records
       MCP_CASE_ACTIONS_HOST: mcp-case-actions
       LOKI_URL: http://loki:3100
-      LANGFUSE_HOST: http://langfuse:3000
     ports:
       - "8000:8000"
     depends_on:
       postgres:
-        condition: service_healthy
-      qdrant:
         condition: service_healthy
       mcp-compliance-kb:
         condition: service_started
@@ -143,20 +124,6 @@ services:
     restart: unless-stopped
 
   # ---- Observability ----
-  langfuse:
-    image: langfuse/langfuse:latest
-    container_name: auditguard_langfuse
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: postgresql://auditguard:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/langfuse
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
-      SALT: ${LANGFUSE_SALT:?set LANGFUSE_SALT in .env}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   loki:
     image: grafana/loki:latest
     container_name: auditguard_loki
@@ -195,5 +162,4 @@ services:
 
 volumes:
   pg_data:
-  qdrant_data:
   grafana_data:

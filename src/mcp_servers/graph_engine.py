@@ -209,5 +209,7 @@ async def compare_graph_runs(params: CompareGraphRunsInput) -> CompareGraphRunsO
 
 
 if __name__ == "__main__":
+    from src.mcp_servers.http_auth import serve_mcp_http
+
     port = int(os.getenv("MCP_GRAPH_ENGINE_PORT", "8011"))
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)  # noqa: S104 - container bind
+    serve_mcp_http(mcp, port=port)

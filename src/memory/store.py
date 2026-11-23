@@ -9,15 +9,18 @@ Short-Term & Long-Term Memory Layer (Durable SQL Persistence + Isolated Test Sto
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 import json
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.db.database import get_db, init_db, utc_now_iso
+from src.db.database import DbConn, get_db, init_db, utc_now_iso
 
 
 class ReflexionLesson(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lesson_id: str
     trigger_precondition: str
     observed_failure: str
@@ -74,9 +77,23 @@ class LongTermMemoryStore:
         self._reflexion_playbook: dict[str, ReflexionLesson] = {}
         self._playbook_frozen: bool = False
 
-    def _db(self):  # lazily initialised: importing this module must never touch any database file
+    def _db(self) -> AbstractContextManager[DbConn]:
+        """Lazily initialised DB context (importing this module never touches disk)."""
         init_db()
         return get_db()
+
+    def reset_in_memory_cache(self) -> None:
+        """Clear in-memory caches between isolated test runs."""
+        self._entity_profiles.clear()
+        self._case_episodes.clear()
+        self._reflexion_playbook.clear()
+        self._playbook_frozen = False
+
+    def evict_customer_cache(self, customer_id: str) -> tuple[bool, int]:
+        """Evict a customer's cached profile and episodes without touching private attributes from callers."""
+        profile_removed = self._entity_profiles.pop(customer_id, None) is not None
+        episodes_removed = len(self._case_episodes.pop(customer_id, []))
+        return profile_removed, episodes_removed
 
     # ── Entity Profiles ───────────────────────────────────────────────────────
     def save_entity_profile(self, customer_id: str, profile: dict[str, Any]) -> None:

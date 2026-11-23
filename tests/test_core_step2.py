@@ -193,7 +193,7 @@ def test_legacy_numeric_schema_is_migrated(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("SQLITE_DB_PATH", str(legacy))
     from src.db import database
 
-    database._initialized_paths.clear()
+    database.reset_db_init()
     database.init_db(force=True)
     conn = sqlite3.connect(legacy)
     cols = {r[1]: r[2] for r in conn.execute("PRAGMA table_info(alerts)")}

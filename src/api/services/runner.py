@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
 import time
-import uuid
 from typing import Any
+import uuid
 
 from src.api.metrics import CITATIONS_VERIFIED, INVESTIGATION_DURATION, INVESTIGATIONS_TOTAL, TOOL_CALLS_TOTAL
 from src.db import case_repo
@@ -77,51 +78,53 @@ def register_thread(alert: Alert, mode: str, owner: str) -> str:
     return thread_id
 
 
-def live_callback(thread_id: str, alert: Alert, mode: str) -> Any:
-    """Translate LangGraph node completions into durable SSE events as they happen (not after the run)."""
-
-    def push(event: str, data: dict[str, Any]) -> None:
-        emit(thread_id, alert.alert_id, mode, event, data)
-
-    def on_node(node: str, inv: dict[str, Any]) -> None:
-        plan = inv.get("plan") or {}
-        if node == "plan":
-            push(
+def _node_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    plan = inv.get("plan") or {}
+    if node in ("plan", "supervisor_plan"):
+        steps = plan.get("steps", [])
+        return [
+            (
                 "plan_updated",
                 {
                     "category": "planning",
-                    "steps": plan.get("steps", []),
+                    "steps": steps,
                     "graph_params": plan.get("graph_params"),
                     "replan_count": inv.get("replan_count", 0),
-                    "message": f"Plan with {len(plan.get('steps', []))} steps",
+                    "message": f"Plan with {len(steps)} steps",
                 },
             )
-        elif node == "gather_evidence":
-            push(
+        ]
+    if node in ("gather_evidence", "flow_tracer", "parallel_specialists"):
+        return [
+            (
                 "tool_called",
                 {
                     "category": "mcp_tool",
+                    "node": node,
                     "tool_calls_used": inv.get("tool_calls_used", 0),
                     "paths_found": len(inv.get("fund_flow_paths", [])),
                     "kyc_checked": len(inv.get("kyc_profiles", [])),
                     "citations_found": len(inv.get("regulatory_snippets", [])),
-                    "message": f"Executed {inv.get('tool_calls_used', 0)} guarded MCP calls",
+                    "message": f"[{node}] Executed {inv.get('tool_calls_used', 0)} guarded MCP calls",
                 },
             )
-        elif node == "form_hypotheses":
-            push(
+        ]
+    if node in ("form_hypotheses", "supervisor_hypotheses"):
+        hyps = [{"label": h["label"], "confidence": h["confidence"]} for h in inv.get("active_hypotheses", [])]
+        return [
+            (
                 "hypotheses_scored",
                 {
                     "category": "reasoning",
                     "reasoning_mode": inv.get("reasoning_mode"),
-                    "hypotheses": [
-                        {"label": h["label"], "confidence": h["confidence"]} for h in inv.get("active_hypotheses", [])
-                    ],
+                    "hypotheses": hyps,
                     "message": f"Scored competing hypotheses ({inv.get('reasoning_mode')})",
                 },
             )
-        elif node == "replan":
-            push(
+        ]
+    if node in ("replan", "supervisor_replan"):
+        return [
+            (
                 "replan_triggered",
                 {
                     "category": "replan",
@@ -131,18 +134,15 @@ def live_callback(thread_id: str, alert: Alert, mode: str) -> Any:
                     "message": f"Replan #{inv.get('replan_count', 0)}",
                 },
             )
-        elif node == "draft":
-            for agent in inv.get("agent_runs", []):
-                push(
-                    "agent_updated",
-                    {
-                        "category": "agent",
-                        "agent": agent,
-                        "message": f"{agent['agent_name']}: {agent['summary']}",
-                    },
-                )
-            failed = inv.get("error") == "verification_failed"
-            push(
+        ]
+    if node in ("draft", "reporter_critic"):
+        events = [
+            ("agent_updated", {"category": "agent", "agent": a, "message": f"{a['agent_name']}: {a['summary']}"})
+            for a in inv.get("agent_runs", [])
+        ]
+        failed = inv.get("error") == "verification_failed"
+        events.append(
+            (
                 "verification_completed",
                 {
                     "category": "verifier",
@@ -150,51 +150,47 @@ def live_callback(thread_id: str, alert: Alert, mode: str) -> Any:
                     "message": "Deterministic verification " + ("FAILED (fail-closed)" if failed else "passed"),
                 },
             )
+        )
+        return events
+    return []
+
+
+def live_callback(thread_id: str, alert: Alert, mode: str) -> Callable[[str, dict[str, Any]], None]:
+    """Translate LangGraph node completions into durable SSE events as they happen (not after the run)."""
+
+    def on_node(node: str, inv: dict[str, Any]) -> None:
+        for ev_name, payload in _node_events(node, inv):
+            emit(thread_id, alert.alert_id, mode, ev_name, payload)
 
     return on_node
 
 
-async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = False) -> str:
-    """Execute (or resume) a thread, persist its result + events and issue the single-use approval token."""
-    started = time.perf_counter()
-    try:
-        state = await execute_mode(
-            alert, mode, thread_id, resume=resume, on_event=live_callback(thread_id, alert, mode)
-        )
-        if state.worksheet is None:
-            raise RuntimeError("investigation finished without a worksheet")
-    except Exception:  # noqa: BLE001 - background boundary: log with a correlation id, never leak internals
-        correlation = uuid.uuid4().hex[:12]
-        logger.exception("investigation failed thread=%s correlation_id=%s", thread_id, correlation)
-        save_checkpoint(
-            thread_id=thread_id,
-            alert_id=alert.alert_id,
-            mode=mode,
-            current_node="error",
-            status="error",
-            state_dict={
-                "alert": alert.model_dump(mode="json"),
-                "thread_id": thread_id,
-                "correlation_id": correlation,
-            },
-        )
-        emit(
-            thread_id,
-            alert.alert_id,
-            mode,
-            "error",
-            {
-                "category": "error",
-                "correlation_id": correlation,
-                "message": f"Investigation failed (correlation_id={correlation})",
-            },
-        )
-        return "error"
+def _record_thread_error(thread_id: str, alert: Alert, mode: str, correlation: str) -> None:
+    save_checkpoint(
+        thread_id=thread_id,
+        alert_id=alert.alert_id,
+        mode=mode,
+        current_node="error",
+        status="error",
+        state_dict={"alert": alert.model_dump(mode="json"), "thread_id": thread_id, "correlation_id": correlation},
+    )
+    emit(
+        thread_id,
+        alert.alert_id,
+        mode,
+        "error",
+        {
+            "category": "error",
+            "correlation_id": correlation,
+            "message": f"Investigation failed (correlation_id={correlation})",
+        },
+    )
 
-    duration = time.perf_counter() - started
-    INVESTIGATION_DURATION.labels(mode=mode).observe(duration)
-    TOOL_CALLS_TOTAL.labels(mode=mode).inc(state.tool_calls_used)
+
+def _finalize_thread_db(thread_id: str, alert: Alert, mode: str, state: InvestigationState, duration: float) -> str:
     worksheet = state.worksheet
+    if worksheet is None:
+        raise RuntimeError("investigation finished without a worksheet")
     failed = state.error == "verification_failed"
     status = "verification_failed" if failed else "interrupt_required"
     approval = None if failed else case_repo.issue_approval_token(thread_id, worksheet.worksheet_id)
@@ -220,7 +216,7 @@ async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = Fal
         "worksheet_id": worksheet.worksheet_id,
         "payload_hash": payload_hash,
         "recommended_disposition": worksheet.recommended_disposition.value,
-        "confidence_score": worksheet.confidence_score,
+        "confidence_score": float(worksheet.confidence_score),
         "rationale": worksheet.recommendation_rationale,
         "replan_count": state.replan_count,
         "tool_calls_used": state.tool_calls_used,
@@ -237,6 +233,27 @@ async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = Fal
     }
     emit(thread_id, alert.alert_id, mode, status, terminal)
     return status
+
+
+async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = False) -> str:
+    """Execute (or resume) a thread, persist its result + events and issue the single-use approval token."""
+    started = time.perf_counter()
+    try:
+        state = await execute_mode(
+            alert, mode, thread_id, resume=resume, on_event=live_callback(thread_id, alert, mode)
+        )
+        if state.worksheet is None:
+            raise RuntimeError("investigation finished without a worksheet")
+    except Exception:  # noqa: BLE001 - background boundary: log with a correlation id, never leak internals
+        correlation = uuid.uuid4().hex[:12]
+        logger.exception("investigation failed thread=%s correlation_id=%s", thread_id, correlation)
+        await asyncio.to_thread(_record_thread_error, thread_id, alert, mode, correlation)
+        return "error"
+
+    duration = time.perf_counter() - started
+    INVESTIGATION_DURATION.labels(mode=mode).observe(duration)
+    TOOL_CALLS_TOTAL.labels(mode=mode).inc(state.tool_calls_used)
+    return await asyncio.to_thread(_finalize_thread_db, thread_id, alert, mode, state, duration)
 
 
 def start_background(thread_id: str, alert: Alert, mode: str) -> None:

@@ -33,12 +33,11 @@ USERS = {
 
 
 def _reset_process_singletons() -> None:
+    from src.agent.llm_client import reset_dotenv_cache
     from src.memory.store import memory_store
 
-    memory_store._entity_profiles.clear()
-    memory_store._case_episodes.clear()
-    memory_store._reflexion_playbook.clear()
-    memory_store._playbook_frozen = False
+    memory_store.reset_in_memory_cache()
+    reset_dotenv_cache()
     try:
         from src.api.ratelimit import reset_limiters
 
@@ -61,7 +60,7 @@ def isolated_operational_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("SQLITE_DB_PATH", str(db_path))
     from src.db import database
 
-    database._initialized_paths.clear()
+    database.reset_db_init()
     assert database.get_sqlite_path().resolve() != OPERATIONAL_DB
     for key, value in TEST_ENV.items():
         monkeypatch.setenv(key, value)

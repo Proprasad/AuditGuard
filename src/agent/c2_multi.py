@@ -27,6 +27,7 @@ async def run_multi_agent(
     reflexion_enabled: bool = False,
     memory_enabled: bool = True,
     resume: bool = False,
+    stop_after_node: Optional[str] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
 ) -> InvestigationState:
     """C2 supervisor coordinating specialists under a shared BudgetLedger with critique-driven replanning."""
@@ -35,6 +36,7 @@ async def run_multi_agent(
         mode="c2_multi",
         thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
         resume=resume,
+        stop_after_node=stop_after_node,
         reflexion_enabled=reflexion_enabled,
         memory_enabled=memory_enabled,
         emit=on_event,

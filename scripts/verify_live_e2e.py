@@ -80,17 +80,11 @@ async def _stream_to_gate(
 
 async def _inspect_langgraph_checkpoint(db_path: Path, tid: str, mode: str) -> dict[str, Any]:
     os.environ["SQLITE_DB_PATH"] = str(db_path)
-    from src.agent import c0_fixed
-    from src.agent.graph import build_c0_graph, build_graph, make_context, open_saver
+    from src.agent.graph import make_context, open_saver, select_graph
 
     ctx = make_context(mode, tid)
     async with open_saver() as saver:
-        sg = (
-            build_c0_graph(ctx, tid, c0_fixed.scan_node, c0_fixed.draft_node)
-            if mode == "c0_fixed"
-            else build_graph(ctx, tid)
-        )
-        snap = await sg.compile(checkpointer=saver).aget_state({"configurable": {"thread_id": tid}})
+        snap = await select_graph(ctx, tid).compile(checkpointer=saver).aget_state({"configurable": {"thread_id": tid}})
     inv = snap.values.get("inv", {}) if snap.values else {}
     interrupts = [intr.value for t in snap.tasks for intr in getattr(t, "interrupts", ())]
     reg_keys = list((inv.get("evidence_registry") or {}).keys())
@@ -116,7 +110,8 @@ async def _inspect_langgraph_checkpoint(db_path: Path, tid: str, mode: str) -> d
 async def run_verification() -> None:
     dotenv = {k: str(v) for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
     analyst_pw = dotenv.get("ANALYST_PASSWORD") or os.environ.get("ANALYST_PASSWORD", "")
-    assert analyst_pw, "ANALYST_PASSWORD missing in .env (run python scripts/init_env.py)"
+    reviewer_pw = dotenv.get("REVIEWER_PASSWORD") or os.environ.get("REVIEWER_PASSWORD", "")
+    assert analyst_pw and reviewer_pw, "ANALYST_PASSWORD / REVIEWER_PASSWORD missing in .env"
 
     # Clone operational DB into a dedicated live-verification copy so operational `data/auditguard.db` stays pristine
     tmp_dir = Path(tempfile.mkdtemp(prefix="auditguard_live_e2e_"))
@@ -170,12 +165,18 @@ async def run_verification() -> None:
             ok_login = await client.post(
                 f"{base}/api/v1/auth/token", json={"username": "analyst", "password": analyst_pw}
             )
-            assert bad_login.status_code == 401 and ok_login.status_code == 200
+            sr_login = await client.post(
+                f"{base}/api/v1/auth/token", json={"username": "reviewer", "password": reviewer_pw}
+            )
+            assert bad_login.status_code == 401 and ok_login.status_code == 200 and sr_login.status_code == 200
             tok_body = ok_login.json()
             headers = {"Authorization": f"Bearer {tok_body['access_token']}"}
+            sr_headers = {"Authorization": f"Bearer {sr_login.json()['access_token']}"}
             print(f"  Bad credentials -> HTTP {bad_login.status_code}")
+            tok_pref = tok_body["access_token"][:24]
             print(
-                f"  Valid analyst   -> HTTP {ok_login.status_code} (role={tok_body['role']}, token_prefix={tok_body['access_token'][:24]}...)"
+                f"  Valid analyst   -> HTTP {ok_login.status_code} "
+                f"(role={tok_body['role']}, token_prefix={tok_pref}...)"
             )
 
             # Steps 2 & 3: Live SSE + LangGraph Checkpoint Inspection across C0, C1, C2 on ALT-2026-0007
@@ -211,16 +212,23 @@ async def run_verification() -> None:
                     c2_terminal = events[-1][2]
 
             # Step 4: Adversarial Decision Gate Probes on C2 paused thread
-            print("\n=== STEP 4: ADVERSARIAL HUMAN GATE PROBES (401 / 422 / STALE TOKEN 403 / VALID EDIT) ===")
-            h1 = c2_terminal["approved_hash"]
-            t1 = c2_terminal["approval_token"]
+            print("\n=== STEP 4: ADVERSARIAL HUMAN GATE PROBES (401 / 403 / 422 / STALE TOKEN 403 / VALID EDIT) ===")
+            c2_state = (await client.get(f"{base}/api/v1/investigations/{c2_tid}/state", headers=sr_headers)).json()
+            h1 = c2_state["approval"]["approved_hash"]
+            t1 = c2_state["approval"]["approval_token"]
+            assert c2_terminal.get("approval_token") is None, "analyst SSE stream must not expose approval_token"
 
             r_unauth = await client.post(
                 f"{base}/api/v1/investigations/{c2_tid}/decision",
                 json={"action": "approve", "approved_hash": h1, "approval_token": t1},
             )
+            r_analyst_forbidden = await client.post(
+                f"{base}/api/v1/investigations/{c2_tid}/decision",
+                json={"action": "approve", "approved_hash": h1, "approval_token": t1},
+                headers=headers,
+            )
             r_nohash = await client.post(
-                f"{base}/api/v1/investigations/{c2_tid}/decision", json={"action": "approve"}, headers=headers
+                f"{base}/api/v1/investigations/{c2_tid}/decision", json={"action": "approve"}, headers=sr_headers
             )
             r_1inr = await client.post(
                 f"{base}/api/v1/investigations/{c2_tid}/decision",
@@ -231,9 +239,15 @@ async def run_verification() -> None:
                 headers=headers,
             )
             print(f"  Unauthenticated decision       -> HTTP {r_unauth.status_code}")
+            print(f"  Analyst approve (maker-checker)-> HTTP {r_analyst_forbidden.status_code}")
             print(f"  Missing-hash decision          -> HTTP {r_nohash.status_code}")
             print(f"  Ungrounded +1 INR edit attempt -> HTTP {r_1inr.status_code} ({r_1inr.json()['detail']['code']})")
-            assert r_unauth.status_code == 401 and r_nohash.status_code == 422 and r_1inr.status_code == 422
+            assert (
+                r_unauth.status_code == 401
+                and r_analyst_forbidden.status_code == 403
+                and r_nohash.status_code == 422
+                and r_1inr.status_code == 422
+            )
 
             valid_rationale = (
                 "Tier-2 analyst verified staggered INR 900000.00 dispersal and multi-hop consolidation trail."
@@ -244,25 +258,26 @@ async def run_verification() -> None:
                     "action": "edit",
                     "edit": {"recommended_disposition": "escalate_str", "recommendation_rationale": valid_rationale},
                 },
-                headers=headers,
+                headers=sr_headers,
             )
             assert r_edit.status_code == 200, r_edit.text
             eb = r_edit.json()
             h2, t2 = eb["approved_hash"], eb["approval_token"]
             assert h2 != h1 and t2 != t1
             print(
-                f"  Valid verified edit            -> HTTP {r_edit.status_code} (old_sha={h1[:12]}... -> new_sha={h2[:12]}...)"
+                f"  Valid verified edit            -> HTTP {r_edit.status_code} "
+                f"(old_sha={h1[:12]}... -> new_sha={h2[:12]}...)"
             )
 
             r_stale_old_hash = await client.post(
                 f"{base}/api/v1/investigations/{c2_tid}/decision",
                 json={"action": "approve", "approved_hash": h1, "approval_token": t1},
-                headers=headers,
+                headers=sr_headers,
             )
             r_stale_tok_new_hash = await client.post(
                 f"{base}/api/v1/investigations/{c2_tid}/decision",
                 json={"action": "approve", "approved_hash": h2, "approval_token": t1},
-                headers=headers,
+                headers=sr_headers,
             )
             print(f"  Stale hash + stale token       -> HTTP {r_stale_old_hash.status_code}")
             print(f"  New hash + superseded token    -> HTTP {r_stale_tok_new_hash.status_code}")
@@ -278,7 +293,7 @@ async def run_verification() -> None:
                     "approval_token": t2,
                     "notes": "Approved for Principal Officer STR review.",
                 },
-                headers=headers,
+                headers=sr_headers,
             )
             assert r_commit.status_code == 200, r_commit.text
             receipt = r_commit.json()["receipt"]
@@ -286,14 +301,15 @@ async def run_verification() -> None:
 
             post_cp = await _inspect_langgraph_checkpoint(live_db, c2_tid, "c2_multi")
             print(
-                f"  LangGraph post-commit state    -> next_nodes={post_cp['next_nodes']}, has_interrupt={post_cp['has_interrupt']}"
+                f"  LangGraph post-commit state    -> next_nodes={post_cp['next_nodes']}, "
+                f"has_interrupt={post_cp['has_interrupt']}"
             )
             assert post_cp["next_nodes"] == [] and post_cp["has_interrupt"] is False
 
             r_replay = await client.post(
                 f"{base}/api/v1/investigations/{c2_tid}/decision",
                 json={"action": "approve", "approved_hash": h2, "approval_token": t2},
-                headers=headers,
+                headers=sr_headers,
             )
             print(
                 f"  Immediate replay of same token -> HTTP {r_replay.status_code} ({r_replay.json()['detail']['code']})"

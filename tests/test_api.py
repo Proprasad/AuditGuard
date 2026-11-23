@@ -31,11 +31,16 @@ def test_protected_routes_require_a_valid_token(client, auth):
 
 
 def test_login_rejects_bad_credentials_and_issued_role_is_server_side(client):
+    from tests.conftest import TEST_ENV
+
     bad = client.post("/api/v1/auth/token", json={"username": "analyst", "password": "wrong"})
     assert bad.status_code == 401
-    # a client cannot choose its own role
-    forged = client.post("/api/v1/auth/token", json={"username": "analyst", "password": "x", "role": "admin"})
-    assert forged.status_code == 401
+    # extra="forbid" rejects client-supplied role injection even when the password is valid
+    forged = client.post(
+        "/api/v1/auth/token",
+        json={"username": "analyst", "password": TEST_ENV["ANALYST_PASSWORD"], "role": "admin"},
+    )
+    assert forged.status_code == 422
 
 
 def test_navigation_and_export_endpoints(client, auth):
@@ -77,18 +82,23 @@ def test_unknown_alert_is_404_not_fabricated(client, auth):
 
 
 def test_edit_hash_invalidation_approve_and_idempotency(client, auth):
-    h = auth("analyst")
-    run = client.post("/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c2_multi"}, headers=h)
+    analyst = auth("analyst")
+    reviewer = auth("senior_reviewer")
+    run = client.post(
+        "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c2_multi"}, headers=analyst
+    )
     assert run.status_code == 200, run.text
     body = run.json()
     tid, h1 = body["thread_id"], body["payload_hash"]
     assert body["status"] == "interrupt_required" and len(h1) == 64
-    approval1 = client.get(f"/api/v1/investigations/{tid}/state", headers=h).json()["approval"]
-    assert approval1["approved_hash"] == h1
+    analyst_view = client.get(f"/api/v1/investigations/{tid}/state", headers=analyst).json()["approval"]
+    assert analyst_view["approval_token"] is None
+    approval1 = client.get(f"/api/v1/investigations/{tid}/state", headers=reviewer).json()["approval"]
+    assert approval1["approved_hash"] == h1 and approval1["approval_token"] is not None
 
     edit = client.post(
         f"/api/v1/investigations/{tid}/decision",
-        headers=h,
+        headers=analyst,
         json={
             "action": "edit",
             "edit": {
@@ -99,21 +109,37 @@ def test_edit_hash_invalidation_approve_and_idempotency(client, auth):
     assert edit.status_code == 200, edit.text
     e = edit.json()
     assert e["payload_hash"] != h1 and e["previous_hash_invalidated"] == h1
+    assert e["approval_token"] is None
+    reviewer_appr = client.get(f"/api/v1/investigations/{tid}/state", headers=reviewer).json()["approval"]
+
+    # Maker-checker: analyst cannot approve
+    assert (
+        client.post(
+            f"/api/v1/investigations/{tid}/decision",
+            headers=analyst,
+            json={
+                "action": "approve",
+                "approved_hash": reviewer_appr["approved_hash"],
+                "approval_token": reviewer_appr["approval_token"],
+            },
+        ).status_code
+        == 403
+    )
 
     stale = client.post(
         f"/api/v1/investigations/{tid}/decision",
-        headers=h,
+        headers=reviewer,
         json={"action": "approve", "approved_hash": h1, "approval_token": approval1["approval_token"]},
     )
     assert stale.status_code == 403
 
     ok = client.post(
         f"/api/v1/investigations/{tid}/decision",
-        headers=h,
+        headers=reviewer,
         json={
             "action": "approve",
-            "approved_hash": e["approved_hash"],
-            "approval_token": e["approval_token"],
+            "approved_hash": reviewer_appr["approved_hash"],
+            "approval_token": reviewer_appr["approval_token"],
             "notes": "Verified staggered Day-11 consolidation and KYC mismatch.",
         },
     )
@@ -123,11 +149,11 @@ def test_edit_hash_invalidation_approve_and_idempotency(client, auth):
 
     replay = client.post(
         f"/api/v1/investigations/{tid}/decision",
-        headers=h,
+        headers=reviewer,
         json={
             "action": "approve",
-            "approved_hash": e["approved_hash"],
-            "approval_token": e["approval_token"],
+            "approved_hash": reviewer_appr["approved_hash"],
+            "approval_token": reviewer_appr["approval_token"],
         },
     )
     assert replay.status_code == 409

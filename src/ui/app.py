@@ -2,10 +2,12 @@
 Chainlit UI - AuditGuard Analyst Interface.
 
 A thin client of the authenticated FastAPI service: it logs in with a service account (`UI_API_USERNAME` /
-`UI_API_PASSWORD`, defaulting to the seeded `analyst` account and `ANALYST_PASSWORD`), starts an investigation,
+`UI_API_PASSWORD`, defaulting to the seeded `reviewer` account and `REVIEWER_PASSWORD`), starts an investigation,
 follows its durable event stream and submits decisions with the exact `approved_hash` + single-use `approval_token`.
 It never fabricates results: any failure is shown as an error and no approval card is created.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -14,7 +16,9 @@ from typing import Any, Optional
 import chainlit as cl
 import httpx
 
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+from src.config import settings
+
+API_BASE = os.getenv("API_BASE_URL") or settings.public_base_url
 MODES = ("c0_fixed", "c1_single", "c2_multi")
 TARGET_DISPOSITION = {
     "approve": "escalate_str",
@@ -30,14 +34,18 @@ class ApiError(RuntimeError):
 
 async def _headers(client: httpx.AsyncClient) -> dict[str, str]:
     if "token" not in _token_cache:
-        username = os.getenv("UI_API_USERNAME", "analyst")
-        password = os.getenv("UI_API_PASSWORD") or os.getenv("ANALYST_PASSWORD", "")
+        username = os.getenv("UI_API_USERNAME", "reviewer")
+        password = (
+            os.getenv("UI_API_PASSWORD")
+            or os.getenv("REVIEWER_PASSWORD")
+            or os.getenv("ANALYST_PASSWORD", "")
+        )
         if not password:
-            raise ApiError("UI_API_PASSWORD (or ANALYST_PASSWORD) is not configured")
+            raise ApiError("UI_API_PASSWORD (or REVIEWER_PASSWORD) is not configured")
         resp = await client.post(f"{API_BASE}/api/v1/auth/token", json={"username": username, "password": password})
         if resp.status_code != 200:
             raise ApiError(f"login failed (HTTP {resp.status_code})")
-        _token_cache["token"] = resp.json()["access_token"]
+        _token_cache["token"] = str(resp.json()["access_token"])
     return {"Authorization": f"Bearer {_token_cache['token']}"}
 
 
@@ -47,21 +55,20 @@ async def _api(client: httpx.AsyncClient, method: str, path: str, **kwargs: Any)
         _token_cache.pop("token", None)
     if resp.status_code >= 400:
         raise ApiError(f"HTTP {resp.status_code}: {resp.text[:300]}")
-    return resp.json()
+    data = resp.json()
+    return dict(data) if isinstance(data, dict) else {}
 
 
-@cl.on_chat_start
+@cl.on_chat_start  # type: ignore[untyped-decorator]
 async def on_chat_start() -> None:
     await cl.Message(
-        content="""# AuditGuard - AML Investigation System
-
-Evidence-grounded AI for ambiguous fund-flow networks. Start with:
-```
-investigate <alert_id>
-```
-Switch agent mode with `/mode c0_fixed|c1_single|c2_multi`.
-All dispositions require your explicit approval; editing a worksheet invalidates any earlier approval.
-""",
+        content=(
+            "# AuditGuard - AML Investigation System\n\n"
+            "Evidence-grounded AI for ambiguous fund-flow networks. Start with:\n"
+            "```\ninvestigate <alert_id>\n```\n"
+            "Switch agent mode with `/mode c0_fixed|c1_single|c2_multi`.\n"
+            "All dispositions require your explicit approval; editing a worksheet invalidates any earlier approval."
+        ),
         author="AuditGuard",
     ).send()
     cl.user_session.set("mode", "c1_single")
@@ -69,7 +76,23 @@ All dispositions require your explicit approval; editing a worksheet invalidates
     cl.user_session.set("pending", None)
 
 
-@cl.on_message
+async def _handle_pending_reply(content: str) -> None:
+    lower = content.lower()
+    if "reject" in lower:
+        await _decide("reject", content)
+    elif any(w in lower for w in ("approve", "escalate", "confirm")):
+        await _decide("approve", content)
+    elif "benign" in lower:
+        await _decide("close_benign", content)
+    elif "request" in lower or "more info" in lower:
+        await _decide("request_info", content)
+    else:
+        await cl.Message(
+            content="Reply with: **approve**, **close as benign**, **request more info** or **reject**"
+        ).send()
+
+
+@cl.on_message  # type: ignore[untyped-decorator]
 async def on_message(message: cl.Message) -> None:
     content = message.content.strip()
     parts = content.split()
@@ -86,23 +109,11 @@ async def on_message(message: cl.Message) -> None:
         if len(parts) < 2:
             await cl.Message(content="Usage: `investigate <alert_id>`").send()
             return
-        await _run_investigation(parts[1], cl.user_session.get("mode", "c1_single"))
+        await _run_investigation(parts[1], str(cl.user_session.get("mode", "c1_single")))
         return
 
     if cl.user_session.get("pending"):
-        lower = content.lower()
-        if "reject" in lower:
-            await _decide("reject", content)
-        elif any(w in lower for w in ("approve", "escalate", "confirm")):
-            await _decide("approve", content)
-        elif "benign" in lower:
-            await _decide("close_benign", content)
-        elif "request" in lower or "more info" in lower:
-            await _decide("request_info", content)
-        else:
-            await cl.Message(
-                content="Reply with: **approve**, **close as benign**, **request more info** or **reject**"
-            ).send()
+        await _handle_pending_reply(content)
         return
 
     await cl.Message(content="Type `investigate <alert_id>` to start, or `/mode ...` to switch agent mode.").send()
@@ -122,6 +133,46 @@ def _render_event(event: str, data: dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _parse_sse_data(line: str) -> Optional[dict[str, Any]]:
+    try:
+        parsed = json.loads(line[5:].strip())
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+async def _consume_sse_stream(resp: httpx.Response, msg: cl.Message) -> None:
+    if resp.status_code != 200:
+        raise ApiError(f"stream failed (HTTP {resp.status_code})")
+    event = "message"
+    async for line in resp.aiter_lines():
+        if line.startswith("event:"):
+            event = line[6:].strip()
+            continue
+        if not line.startswith("data:"):
+            continue
+        data = _parse_sse_data(line)
+        if data is None:
+            continue
+        if text := _render_event(event, data):
+            await msg.stream_token(text)
+        if event == "interrupt_required":
+            await _show_approval_card(data)
+            return
+        if event == "verification_failed":
+            cl.user_session.set("pending", data)
+            await cl.Message(
+                content=(
+                    f"Verification FAILED (fail-closed): {data.get('message', '')}\n"
+                    "Edit the worksheet in the Workbench or reject."
+                )
+            ).send()
+            return
+        if event in ("completed", "error"):
+            await msg.stream_token(f"\n\n{data.get('message', event)}")
+            return
+
+
 async def _run_investigation(alert_id: str, mode: str) -> None:
     cl.user_session.set("pending", None)
     msg = cl.Message(content=f"Starting **{mode}** investigation for `{alert_id}`...\n")
@@ -129,41 +180,12 @@ async def _run_investigation(alert_id: str, mode: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
             reg = await _api(client, "POST", "/api/v1/investigations", json={"alert_id": alert_id, "mode": mode})
-            thread_id = reg["thread_id"]
+            thread_id = str(reg["thread_id"])
             cl.user_session.set("thread_id", thread_id)
-            async with client.stream(
-                "GET", f"{API_BASE}/api/v1/investigations/{thread_id}/stream", headers=await _headers(client)
-            ) as resp:
-                if resp.status_code != 200:
-                    raise ApiError(f"stream failed (HTTP {resp.status_code})")
-                event = "message"
-                async for line in resp.aiter_lines():
-                    if line.startswith("event:"):
-                        event = line[6:].strip()
-                        continue
-                    if not line.startswith("data:"):
-                        continue
-                    try:
-                        data = json.loads(line[5:].strip())
-                    except json.JSONDecodeError:
-                        continue
-                    if text := _render_event(event, data):
-                        await msg.stream_token(text)
-                    if event == "interrupt_required":
-                        await _show_approval_card(data)
-                        return
-                    if event == "verification_failed":
-                        cl.user_session.set("pending", data)
-                        await cl.Message(
-                            content=(
-                                f"Verification FAILED (fail-closed): {data.get('message', '')}\n"
-                                "Edit the worksheet in the Workbench or reject."
-                            )
-                        ).send()
-                        return
-                    if event in ("completed", "error"):
-                        await msg.stream_token(f"\n\n{data.get('message', event)}")
-                        return
+            headers = await _headers(client)
+            stream_url = f"{API_BASE}/api/v1/investigations/{thread_id}/stream"
+            async with client.stream("GET", stream_url, headers=headers) as r:
+                await _consume_sse_stream(r, msg)
     except (ApiError, httpx.HTTPError) as exc:
         cl.user_session.set("pending", None)
         await cl.Message(content=f"Investigation failed: {exc}. No result was produced.", author="AuditGuard").send()
@@ -190,24 +212,42 @@ async def _show_approval_card(data: dict[str, Any]) -> None:
     ).send()
 
 
-@cl.action_callback("approve")
-async def on_approve(action: cl.Action) -> None:
+@cl.action_callback("approve")  # type: ignore[untyped-decorator]
+async def on_approve(_action: cl.Action) -> None:
     await _decide("approve", "Analyst approved via UI")
 
 
-@cl.action_callback("close_benign")
-async def on_close_benign(action: cl.Action) -> None:
+@cl.action_callback("close_benign")  # type: ignore[untyped-decorator]
+async def on_close_benign(_action: cl.Action) -> None:
     await _decide("close_benign", "Analyst closed as benign via UI")
 
 
-@cl.action_callback("request_info")
-async def on_request_info(action: cl.Action) -> None:
+@cl.action_callback("request_info")  # type: ignore[untyped-decorator]
+async def on_request_info(_action: cl.Action) -> None:
     await _decide("request_info", "Analyst requested more information via UI")
 
 
-@cl.action_callback("reject")
-async def on_reject(action: cl.Action) -> None:
+@cl.action_callback("reject")  # type: ignore[untyped-decorator]
+async def on_reject(_action: cl.Action) -> None:
     await _decide("reject", "Analyst rejected via UI")
+
+
+async def _submit_decision_request(
+    client: httpx.AsyncClient, path: str, pending: dict[str, Any], choice: str, notes: str
+) -> dict[str, Any]:
+    if choice == "reject":
+        return await _api(client, "POST", path, json={"action": "reject", "notes": notes})
+    approved_hash, token = pending.get("approved_hash"), pending.get("approval_token")
+    target = TARGET_DISPOSITION[choice]
+    if target != pending.get("recommended_disposition") or not approved_hash:
+        edited = await _api(client, "POST", path, json={"action": "edit", "edit": {"recommended_disposition": target}})
+        approved_hash, token = edited["approved_hash"], edited["approval_token"]
+    return await _api(
+        client,
+        "POST",
+        path,
+        json={"action": "approve", "approved_hash": approved_hash, "approval_token": token, "notes": notes},
+    )
 
 
 async def _decide(choice: str, notes: str) -> None:
@@ -219,30 +259,7 @@ async def _decide(choice: str, notes: str) -> None:
     path = f"/api/v1/investigations/{thread_id}/decision"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            if choice == "reject":
-                body = await _api(client, "POST", path, json={"action": "reject", "notes": notes})
-            else:
-                approved_hash, token = pending.get("approved_hash"), pending.get("approval_token")
-                target = TARGET_DISPOSITION[choice]
-                if target != pending.get("recommended_disposition") or not approved_hash:
-                    edited = await _api(
-                        client,
-                        "POST",
-                        path,
-                        json={"action": "edit", "edit": {"recommended_disposition": target}},
-                    )
-                    approved_hash, token = edited["approved_hash"], edited["approval_token"]
-                body = await _api(
-                    client,
-                    "POST",
-                    path,
-                    json={
-                        "action": "approve",
-                        "approved_hash": approved_hash,
-                        "approval_token": token,
-                        "notes": notes,
-                    },
-                )
+            body = await _submit_decision_request(client, path, pending, choice, notes)
     except (ApiError, httpx.HTTPError) as exc:
         await cl.Message(content=f"Decision was NOT recorded: {exc}", author="AuditGuard").send()
         return

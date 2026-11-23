@@ -5,18 +5,21 @@ route is authenticated (JWT, role-gated), rate limited and returns masked errors
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
+from src.agent.llm_client import close_shared_llm_client, open_shared_llm_client
 from src.api.users import ensure_seed_users
 from src.config import env_mapping, reload_policy, settings, validate_startup
 from src.db.database import init_db
@@ -25,9 +28,7 @@ from src.observability.loki_shipper import emit_loki_log
 logger = logging.getLogger("auditguard.api")
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema, seeded users."""
+def _startup_sync() -> None:
     for warning in validate_startup():
         logger.warning("startup warning (dev/test only): %s", warning)
     policy = reload_policy()
@@ -40,7 +41,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         policy.budgets.max_cost_usd_per_case,
         seeded,
     )
-    yield
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema, shared HTTP client."""
+    await asyncio.to_thread(_startup_sync)
+    await open_shared_llm_client()
+    try:
+        yield
+    finally:
+        await close_shared_llm_client()
 
 
 app = FastAPI(
@@ -62,7 +73,7 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def loki_http_request_logger(request: Request, call_next):
+async def loki_http_request_logger(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     t0 = time.perf_counter()
     response = await call_next(request)
     path = request.url.path
@@ -84,7 +95,7 @@ async def loki_http_request_logger(request: Request, call_next):
 
 
 @app.exception_handler(Exception)
-async def masked_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+async def masked_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     correlation = uuid.uuid4().hex[:12]
     logger.exception("unhandled error path=%s correlation_id=%s", request.url.path, correlation)
     return JSONResponse(status_code=500, content={"detail": "INTERNAL_ERROR", "correlation_id": correlation})

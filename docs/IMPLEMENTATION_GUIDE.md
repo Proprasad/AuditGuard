@@ -9,7 +9,7 @@ This guide provides the exact prerequisites, architecture summary, environment v
 - **Operating System:** Windows 10/11, macOS, or Linux (CPU-only; no GPU required)
 - **Python:** Python `>= 3.10` (verified on Python `3.10.8`)
 - **Database (Local Default):** Built-in Python `sqlite3` (`data/auditguard.db`) — **zero external database server required to run locally**
-- **Optional Full-Stack Containers:** Docker Desktop `>= 4.30` with Docker Compose v2 (for PostgreSQL 16, Qdrant, 4 HTTP FastMCP containers, Chainlit, Langfuse, Prometheus, and Grafana)
+- **Optional Full-Stack Containers:** Docker Desktop `>= 4.30` with Docker Compose v2 (for PostgreSQL 16, 4 HTTP FastMCP containers, Chainlit, Loki, Prometheus, and Grafana)
 
 ---
 
@@ -24,14 +24,14 @@ cd "c:\Users\User\Desktop\Generative AI\capstone-project"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Install core runtime + test suite (fast, lightweight, zero C-build issues)
+# Install core runtime + LangGraph + FastMCP + test/lint suite
 pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-Optional extras (only needed if connecting live OpenAI/OpenRouter LLMs, Qdrant, PostgreSQL, or Chainlit):
+Optional extras (Chainlit UI, extra RAG/LLM/observability packages):
 ```powershell
-pip install -e ".[llm,rag,postgres,ui,observability]"
+pip install -e ".[llm,rag,ui,observability]"
 ```
 
 ---

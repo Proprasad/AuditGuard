@@ -24,6 +24,7 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "get_kyc_profile",
         "search_regulations",
         "draft_disposition_report",
+        "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
     "c1_single": {
         "search_regulations",
@@ -80,6 +81,7 @@ TRUSTED_CORPUS_TOOLS = {"search_regulations", "get_clause_by_id"}
 
 
 class HookDecision(BaseModel):
+    model_config = {"extra": "forbid"}
     allowed: bool
     error_code: str = ""
     message: str = ""
@@ -120,7 +122,8 @@ def pre_tool_hook(
         if not bounds.allowed:
             return bounds
 
-    if ledger is not None:
+    # Post-interrupt human disposition commit is an administrative gate action, not an autonomous agent tool step.
+    if ledger is not None and tool_name != "submit_case_disposition":
         is_exit_draft = tool_name == "draft_disposition_report"
         verdict = ledger.try_consume_tool_call(
             reserve=0 if is_exit_draft else 1,
@@ -161,9 +164,6 @@ def post_tool_hook(
         flagged = False
         for key, value in container.items():
             if isinstance(value, str) and key in UNTRUSTED_TEXT_FIELDS:
-                if value.startswith("<untrusted_data"):
-                    out[key] = value
-                    continue
                 patterns = [] if trusted_corpus else matched_injection_patterns(value, external=True)
                 if patterns:
                     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]

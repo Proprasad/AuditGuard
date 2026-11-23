@@ -7,9 +7,9 @@
 
 ## 1. Static Analysis & Automated Test Suite
 
-- **Linter (`ruff check src/ eval/ tests/ --select E,F,B,S,DTZ,BLE,T20,C901`):** `All checks passed!` (`0` errors; McCabe cyclomatic complexity `<= 12` across `src/`).
+- **Linter (`ruff check src/ eval/ tests/ scripts/ --select E,F,B,S,DTZ,BLE,T20,C901`):** `All checks passed!` (`0` errors; McCabe cyclomatic complexity `<= 12` across `src/`).
 - **Type Checker (`mypy src/`):** `Success: no issues found in 61 source files`.
-- **Automated Test Suite (`pytest tests/ -q`):** **`92 passed`** (`0` failed, `0` skipped), with every test isolated on `tmp_path / "test_auditguard.db"` and a session-level `mtime` assertion guarding `data/auditguard.db`.
+- **Automated Test Suite (`pytest tests/ -v --cov=src`):** **`93 passed`** (`0` failed, `0` skipped, **`86%` total coverage**), with every test isolated on `tmp_path / "test_auditguard.db"` and a session-level `mtime` assertion guarding `data/auditguard.db`.
 
 | Test Module | Tests | Verified Capabilities |
 |---|---:|---|
@@ -19,7 +19,7 @@
 | [test_api.py](../tests/test_api.py) | 9 | Workbench static assets, `/health`, `/metrics`, PBKDF2-HMAC-SHA256 login & server-assigned roles, navigation endpoints, `edit -> 403 stale token -> 200 fresh token -> 409 replay`, `senior_reviewer` memory erasure |
 | [test_graph_step5.py](../tests/test_graph_step5.py) | 7 | Compiled LangGraph `StateGraph` topology (zero orphans, guaranteed `END`), deduplicating state reducers, `recursion_limit`, evidence-weighted rubric (requiring `multi_hop_path` for `>= 0.70` escalation), `interrupt()` pause & `Command(resume=...)` release, C2 4-specialist execution, and LLM registry grounding |
 | [test_mcp_servers.py](../tests/test_mcp_servers.py) & [test_mcp_http_transport.py](../tests/test_mcp_http_transport.py) | 8 | Real `fastmcp.Client` in-memory and spawned streamable-HTTP contracts, schema validation errors (`MCP_TOOL_ERROR`), unreachable server (`MCP_UNAVAILABLE`), `POLICY_BOUNDS_EXCEEDED`, `INVALID_ALERT_ID`, `ACCOUNT_NOT_FOUND` |
-| [test_security_hooks.py](../tests/test_security_hooks.py), [test_frontend_integrity.py](../tests/test_frontend_integrity.py), [test_approval_invalidation.py](../tests/test_approval_invalidation.py), [test_memory_policy.py](../tests/test_memory_policy.py), [test_graph_engine.py](../tests/test_graph_engine.py), [test_checkpoint_resume.py](../tests/test_checkpoint_resume.py), [test_compliance_kb.py](../tests/test_compliance_kb.py), [test_red_team_suite.py](../tests/test_red_team_suite.py), [test_verification_failed_event.py](../tests/test_verification_failed_event.py) | 22 | Pre/post tool hooks, DOM-ID & live SSE workbench contract, out-of-band DB tamper detection (`TOKEN_INVALIDATED_BY_EDIT`), pair-aware message trimming, mid-run crash recovery (`/resume`), retrieval benchmark, red-team suite, and fail-closed `verification_failed` SSE terminal state |
+| [test_security_hooks.py](../tests/test_security_hooks.py), [test_frontend_integrity.py](../tests/test_frontend_integrity.py), [test_approval_invalidation.py](../tests/test_approval_invalidation.py), [test_memory_policy.py](../tests/test_memory_policy.py), [test_graph_engine.py](../tests/test_graph_engine.py), [test_checkpoint_resume.py](../tests/test_checkpoint_resume.py), [test_compliance_kb.py](../tests/test_compliance_kb.py), [test_red_team_suite.py](../tests/test_red_team_suite.py), [test_verification_failed_event.py](../tests/test_verification_failed_event.py) | 23 | Pre/post tool hooks, DOM-ID & live SSE workbench contract, out-of-band DB tamper detection (`TOKEN_INVALIDATED_BY_EDIT`), pair-aware message trimming, mid-run crash recovery (`/resume`) across `C0`/`C1`/`C2` per-specialist checkpoints, retrieval benchmark, red-team suite, and fail-closed `verification_failed` SSE terminal state |
 
 ---
 
@@ -55,24 +55,24 @@ Confidences in offline mode are computed from `EvidenceFeatures` using weights i
 
 | Mode | Accuracy (6 Cases) | Replan Recovery | Avg Tool Calls | Avg Replans | Avg Tokens / Case | Avg Cost / Case (USD) | Avg Wall Latency | Verified Rate |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `c0_fixed` (Deterministic Baseline) | 33.3% (2/6) | 0.0% | 5.00 | 0.00 | 0 | \$0.00000 | 746.3 ms | 100.0% |
-| `c1_single` (Live `gpt-5-mini`) | 33.3% (2/6) | 25.0% | 14.67 | 0.83 | 11,880 | \$0.01116 | 64,356.7 ms | **100.0%** |
-| `c2_multi` (Live `gpt-5-mini` Supervisor + 4 Specialists) | **50.0%** (3/6) | **75.0%** | 14.00 | 0.67 | **11,070** | **\$0.01053** | **57,425.2 ms** | **100.0%** |
+| `c0_fixed` (Deterministic Baseline) | 33.3% (2/6) | 0.0% | 5.00 | 0.00 | 0 | \$0.00000 | 1,033.4 ms | 100.0% |
+| `c1_single` (Live `gpt-5-mini`) | **100.0%** (6/6) | **100.0%** | 13.67 | 0.33 | 10,572 | \$0.00848 | 42,479.1 ms | **100.0%** |
+| `c2_multi` (Live `gpt-5-mini` Supervisor + 4 Specialists) | **100.0%** (6/6) | **100.0%** | **13.33** | **0.17** | **9,563** | **\$0.00781** | **40,481.2 ms** | **100.0%** |
 
-*Measured Live LLM Findings:* Live `gpt-5-mini` assigned `0.65–0.68` suspicious confidence on several borderline cases (routing them conservatively to `request_info` under `disposition_threshold = 0.70` with zero false `close_benign` clearances). `c2_multi` achieved higher replan recovery (`75.0%` vs. `25.0%`), lower average token consumption (`11,070` vs. `11,880`, `0.93x` because fewer extra replan passes were needed), and `10.8%` lower latency (`57.4s` vs. `64.4s`), while staying at `~7%` of the `\$0.15/case` budget cap and passing deterministic verification on `100.0%` of cases.
+*Measured Live LLM Findings:* Both `c1_single` and `c2_multi` achieved **100.0% accuracy (`6/6`)** and **100.0% replan recovery** across `clear_scatter_gather`, `staggered_timing`, and `fee_skimming` cases vs. `33.3%` (`2/6`) for `c0_fixed`. `c2_multi`'s dedicated `build_c2_graph` specialist dispatch (`supervisor_plan -> flow_tracer -> parallel_specialists -> supervisor_hypotheses -> supervisor_critique -> reporter_critic`) achieved lower average token usage (`9,563` vs. `10,572`, `0.90x`), fewer redundant replans (`0.17` vs. `0.33`), and lower wall latency (`40.5 s` vs. `42.5 s`) while consuming `~5.2%` of the `\$0.15/case` budget cap and passing fail-closed deterministic verification on `100.0%` of cases.
 
 ---
 
 ## 4. Experiment E2 — Security Defenses & 32-Attack Red-Team Suite
 
-`Defenses OFF` executes the 32 attack payloads with `apply_input_guardrails`, `pre_tool_hook`, `apply_output_guardrails`, and `mask_pii` disabled against the real MCP servers.
+`Defenses OFF` executes all 32 attack payloads directly against the real FastMCP servers via `call_mcp_tool` with `apply_input_guardrails`, `pre_tool_hook`, `post_tool_hook`, `apply_output_guardrails`, and `mask_pii` disabled.
 
 | Configuration | Attacks | Blocked | Attack Block Rate | Attack Success Rate (ASR) | Clean-Case False-Block Rate |
 |---|---:|---:|---:|---:|---:|
-| **Defenses OFF** (Hooks & Guardrails Disabled) | 32 | 7 | 21.9% | 78.1% (25/32) | 0.0% |
+| **Defenses OFF** (Hooks & Guardrails Disabled) | 32 | 9 | 28.1% | 71.9% (23/32) | 0.0% |
 | **Defenses ON** (Full Guardrail + Hook Stack) | 32 | **31** | **96.9%** | **3.1%** (1/32) | **0.0%** (0/20) |
 
-*Note:* The `7/32` (`21.9%`) blocked under `Defenses OFF` reflect intrinsic server-side defense-in-depth (`4` out-of-bounds parameter rejections inside `graph-engine` + `3` `submit_case_disposition` HMAC rejections inside `case_repo`). With `Defenses ON`, `31/32` (`96.9%`) are blocked with `0.0%` false blocks on clean dev cases.
+*Note:* The `9/32` (`28.1%`) blocked under `Defenses OFF` reflect intrinsic server-side defense-in-depth (`4` out-of-bounds parameter rejections inside `graph-engine` + `5` `submit_case_disposition` HMAC/token rejections inside `case_repo`). With `Defenses ON`, `31/32` (`96.9%`) are blocked with `0.0%` false blocks on clean dev cases.
 
 ---
 

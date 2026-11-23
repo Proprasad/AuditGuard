@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timezone
+import logging
 from typing import Any
 
-import logging
-
-from src.agent.graph import resume_gate
+from src.agent.graph import resume_and_commit_gate, resume_gate
 from src.core.canonical import utc_now
 from src.core.verifier import verify_worksheet
 from src.db import case_repo
 from src.db.database import get_ro_db, save_checkpoint, utc_now_iso
 from src.guardrails.guardrails import apply_input_guardrails, detect_injection
-from src.mcp_servers.client import call_mcp_tool
 from src.memory.store import memory_store
 from src.models import DecisionRequest, DispositionDecision, EditWorksheetRequest
 
@@ -27,10 +26,13 @@ _STATUS_FOR_CODE = {
     "ALREADY_COMMITTED": 409,
     "ALREADY_CONSUMED": 409,
     "WORKSHEET_NOT_PENDING": 409,
+    "VERIFICATION_FAILED": 409,
+    "PROHIBITED_GUILT_CLAIM": 422,
     "TOKEN_INVALIDATED_BY_EDIT": 403,
     "INVALID_HMAC_SIGNATURE": 403,
     "INVALID_TOKEN_FORMAT": 403,
     "TOKEN_NOT_FOUND": 403,
+    "UNAPPROVED_CRITICAL_ACTION": 403,
 }
 
 
@@ -41,10 +43,10 @@ class DecisionError(Exception):
 
 
 async def _release_gate(thread: dict[str, Any], decision: dict[str, Any]) -> None:
-    """Resume the paused LangGraph `human_gate` interrupt so the graph run terminates cleanly."""
+    """Resume the paused LangGraph `human_gate` interrupt on rejection so the graph run terminates cleanly."""
     try:
         await resume_gate(thread["thread_id"], thread["mode"], decision)
-    except Exception:  # noqa: BLE001 - the case DB is already the source of truth; surface loudly, never mask
+    except Exception:  # noqa: BLE001 - surface loudly, never mask
         logger.exception("failed to resume LangGraph human_gate for thread=%s", thread["thread_id"])
 
 
@@ -123,6 +125,11 @@ def apply_edit(thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str
         {
             "recommended_disposition": candidate["recommended_disposition"],
             "recommendation_rationale": candidate["recommendation_rationale"],
+            "analyst_notes": candidate.get("analyst_notes"),
+            "edited_by": candidate["edited_by"],
+            "edited_at": candidate["edited_at"],
+            "verification_status": candidate["verification_status"],
+            "verification_discrepancies": candidate["verification_discrepancies"],
             "payload_hash": updated["payload_hash"],
         }
     )
@@ -155,8 +162,43 @@ def _customer_for_alert(alert_id: str) -> str | None:
     return str(row["customer_id"]) if row else None
 
 
+def _persist_post_commit(
+    thread: dict[str, Any],
+    final_disposition: str,
+    reviewer: str,
+    current_hash: str,
+) -> None:
+    thread["state"]["workflow_steps"] = [
+        {**s, "status": "completed"} if s.get("step") in (6, 7) else s
+        for s in thread["state"].get("workflow_steps", [])
+    ]
+    _checkpoint(thread, "committed")
+    if customer_id := _customer_for_alert(thread["alert_id"]):
+        now_iso = utc_now().astimezone(timezone.utc).isoformat()
+        memory_store.save_entity_profile(
+            customer_id,
+            {
+                "last_alert_id": thread["alert_id"],
+                "last_disposition": final_disposition,
+                "reviewed_by": reviewer,
+                "reviewed_at": now_iso,
+            },
+        )
+        memory_store.save_case_episode(
+            customer_id,
+            {
+                "alert_id": thread["alert_id"],
+                "disposition": final_disposition,
+                "reviewer_id": reviewer,
+                "payload_hash": current_hash,
+                "archived_at": now_iso,
+            },
+            human_approved=True,
+        )
+
+
 async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
-    ws = _require_open(thread, ("interrupt_required",))
+    ws = await asyncio.to_thread(_require_open, thread, ("interrupt_required",))
     if not (req.approved_hash and req.approval_token):
         raise DecisionError(422, "MISSING_APPROVAL_CREDENTIALS", "approved_hash and approval_token are required")
     if req.approved_hash != ws["current_hash"]:
@@ -173,49 +215,36 @@ async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -
     guard = apply_input_guardrails(req.notes)
     if not guard.allowed:
         raise DecisionError(422, "GUARDRAIL_BLOCKED", guard.blocked_reason)
-    result = await call_mcp_tool(
-        "case-actions",
-        "submit_case_disposition",
+
+    result = await resume_and_commit_gate(
+        thread["thread_id"],
+        thread["mode"],
         {
+            "action": "approve",
             "worksheet_id": ws["worksheet_id"],
             "approval_token": req.approval_token,
-            "reviewer_id": reviewer,
+            "reviewer": reviewer,
             "reviewer_notes": guard.scrubbed_text,
             "thread_id": thread["thread_id"],
+            "disposition": ws["content"].get("recommended_disposition"),
         },
     )
+    if result is None:
+        raise DecisionError(
+            409,
+            "INTERRUPT_NOT_ACTIVE",
+            "LangGraph thread is not paused at human_gate interrupt; commit rejected fail-closed",
+        )
     if not result.get("success"):
         code = str(result.get("error_code") or "COMMIT_FAILED")
-        raise DecisionError(_STATUS_FOR_CODE.get(code, 400), code, str(result.get("error") or code))
+        raise DecisionError(
+            _STATUS_FOR_CODE.get(code, 400),
+            code,
+            str(result.get("error") or result.get("message") or code),
+            result.get("discrepancies"),
+        )
 
-    thread["state"]["workflow_steps"] = [
-        {**s, "status": "completed"} if s.get("step") in (6, 7) else s
-        for s in thread["state"].get("workflow_steps", [])
-    ]
-    _checkpoint(thread, "committed")
-    await _release_gate(thread, {"action": "approve", "disposition": result["final_disposition"], "reviewer": reviewer})
-    if customer_id := _customer_for_alert(thread["alert_id"]):
-        now_iso = utc_now().astimezone(timezone.utc).isoformat()
-        memory_store.save_entity_profile(
-            customer_id,
-            {
-                "last_alert_id": thread["alert_id"],
-                "last_disposition": result["final_disposition"],
-                "reviewed_by": reviewer,
-                "reviewed_at": now_iso,
-            },
-        )
-        memory_store.save_case_episode(
-            customer_id,
-            {
-                "alert_id": thread["alert_id"],
-                "disposition": result["final_disposition"],
-                "reviewer_id": reviewer,
-                "payload_hash": ws["current_hash"],
-                "archived_at": now_iso,
-            },
-            human_approved=True,
-        )
+    await asyncio.to_thread(_persist_post_commit, thread, result["final_disposition"], reviewer, ws["current_hash"])
     return {
         "thread_id": thread["thread_id"],
         "status": "committed",
@@ -224,16 +253,20 @@ async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -
     }
 
 
-async def reject(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
-    ws = _require_open(thread, ("interrupt_required", "verification_failed"))
-    guard = apply_input_guardrails(req.notes)
-    if not guard.allowed:
-        raise DecisionError(422, "GUARDRAIL_BLOCKED", guard.blocked_reason)
-    case_repo.mark_rejected(ws["worksheet_id"], reviewer, thread["thread_id"], guard.scrubbed_text)
+def _persist_reject(thread: dict[str, Any], worksheet_id: str, reviewer: str, notes: str) -> None:
+    case_repo.mark_rejected(worksheet_id, reviewer, thread["thread_id"], notes)
     thread["state"]["workflow_steps"] = [
         {**s, "status": "failed"} if s.get("step") == 6 else s for s in thread["state"].get("workflow_steps", [])
     ]
     _checkpoint(thread, "rejected")
+
+
+async def reject(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
+    ws = await asyncio.to_thread(_require_open, thread, ("interrupt_required", "verification_failed"))
+    guard = apply_input_guardrails(req.notes)
+    if not guard.allowed:
+        raise DecisionError(422, "GUARDRAIL_BLOCKED", guard.blocked_reason)
+    await asyncio.to_thread(_persist_reject, thread, ws["worksheet_id"], reviewer, guard.scrubbed_text)
     await _release_gate(thread, {"action": "reject", "reviewer": reviewer})
     return {
         "thread_id": thread["thread_id"],

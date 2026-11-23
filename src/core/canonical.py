@@ -64,6 +64,16 @@ def to_ratio(value: Any) -> Decimal:
     return to_decimal(value, RATIO_Q)
 
 
+def to_confidence(value: Any) -> Decimal:
+    """Convert `str | int | float | Decimal` in [0, 1] to an exact 4-dp Decimal ratio."""
+    if isinstance(value, float) and not isinstance(value, bool):
+        value = str(value)
+    dec = to_decimal(value, RATIO_Q)
+    if not Decimal("0") <= dec <= Decimal("1"):
+        raise NumericError(f"confidence {dec} outside [0, 1]")
+    return dec
+
+
 def to_usd(value: Any) -> Decimal:
     return to_decimal(value, USD_Q)
 
@@ -86,6 +96,11 @@ Money = Annotated[
 Ratio = Annotated[
     Decimal,
     BeforeValidator(to_ratio),
+    PlainSerializer(_serialise_decimal, return_type=str, when_used="json"),
+]
+Confidence = Annotated[
+    Decimal,
+    BeforeValidator(to_confidence),
     PlainSerializer(_serialise_decimal, return_type=str, when_used="json"),
 ]
 Usd = Annotated[
