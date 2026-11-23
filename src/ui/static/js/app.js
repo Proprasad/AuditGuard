@@ -771,6 +771,16 @@ async function handleDecision(action) {
   const payload = { action, notes };
 
   if (action === "approve") {
+    if (!state.approvalToken) {
+      try {
+        const prep = await api.prepareDecision(state.threadId, state.approvedHash || state.payloadHash);
+        state.approvedHash = prep.approved_hash;
+        state.approvalToken = prep.approval_token;
+      } catch (err) {
+        showGateFeedback(`Approval preparation failed: ${err.message}`, "err");
+        return;
+      }
+    }
     payload.approved_hash = state.approvedHash;
     payload.approval_token = state.approvalToken;
   }

@@ -75,7 +75,7 @@ def test_02_reviewer_id_spoofing_rejected_and_jwt_sub_enforced(client, auth):
     tid = client.post(
         "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c1_single"}, headers=analyst
     ).json()["thread_id"]
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
+    appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=sr).json()
 
     spoof = client.post(
         f"/api/v1/investigations/{tid}/decision",
@@ -110,7 +110,7 @@ def test_03_restream_after_commit_is_readonly(client, auth):
     tid = client.post(
         "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c1_single"}, headers=analyst
     ).json()["thread_id"]
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
+    appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=sr).json()
     commit = client.post(
         f"/api/v1/investigations/{tid}/decision",
         json={
@@ -151,7 +151,7 @@ async def test_04_concurrent_double_approval_atomic_single_winner():
         )
         assert run.status_code == 200
         tid = run.json()["thread_id"]
-        appr = (await ac.get(f"/api/v1/investigations/{tid}/state", headers=h)).json()["approval"]
+        appr = (await ac.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=h)).json()
         payload = {
             "action": "approve",
             "approved_hash": appr["approved_hash"],

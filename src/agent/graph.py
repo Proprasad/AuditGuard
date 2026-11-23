@@ -72,6 +72,18 @@ def _merge_field(old: dict[str, Any], key: str, value: Any) -> Any:
     if key == "specialist_findings" and isinstance(value, list):
         by_task = {f["task_id"]: f for f in [*old.get(key, []), *value] if isinstance(f, dict) and f.get("task_id")}
         return list(by_task.values())
+    if key == "tool_errors" and isinstance(value, list):
+        seen: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for item in [*old.get(key, []), *value]:
+            if isinstance(item, dict):
+                ek = (
+                    str(item.get("server", "")),
+                    str(item.get("tool", "")),
+                    str(item.get("error_code", "")),
+                    str(item.get("message", "")),
+                )
+                seen[ek] = item
+        return list(seen.values())
     if key in LIST_UNION_KEYS and isinstance(value, list):
         return list(dict.fromkeys([*old.get(key, []), *value]))
     return value
@@ -102,7 +114,12 @@ def recursion_limit(policy: PolicyConfig) -> int:
 
 
 def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
+    budget_overrides = flags.pop("budget_overrides", None)
     policy = get_policy()
+    if isinstance(budget_overrides, dict) and budget_overrides:
+        policy = policy.model_copy(
+            update={"budgets": policy.budgets.model_copy(update=budget_overrides)}
+        )
     ledger = policy.new_ledger()
     if mode == "c2_multi":
         boxes = {role: GuardedToolbox(role, ledger, thread_id) for role in C2_ROLES}

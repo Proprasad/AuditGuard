@@ -19,6 +19,7 @@ from src.agent.planning import (
     handoff_for,
     plan_node,
     sync_budget,
+    tool_error_notes,
     upsert_finding,
     widened_params,
 )
@@ -423,7 +424,7 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
     if h_cr := handoff_for(state, "reporter_critic"):
         box.set_sub_budget(h_cr.allowed_tool_budget)
 
-    degraded = sorted({*state.degraded_evidence, *all_security_notes(ctx)})
+    degraded = sorted({*state.degraded_evidence, *all_security_notes(ctx), *tool_error_notes(ctx)})
     has_security_flag = any(b.security_events for b in ctx.boxes.values())
     critical_gap = _has_critical_gap(state, degraded, has_security_flag)
     disposition, confidence = decide_disposition(

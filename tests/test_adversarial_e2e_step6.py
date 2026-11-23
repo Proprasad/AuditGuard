@@ -132,7 +132,7 @@ def test_16_right_to_erasure_purges_all_tables_and_loki_scrubber(client, auth):
         "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c1_single"}, headers=analyst
     )
     tid = run.json()["thread_id"]
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=senior).json()["approval"]
+    appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=senior).json()
     assert (
         client.post(
             f"/api/v1/investigations/{tid}/decision",

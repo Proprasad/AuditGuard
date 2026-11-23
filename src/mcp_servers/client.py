@@ -113,6 +113,7 @@ async def _evict_pooled_http_client(server: str) -> None:
 
 
 def error_envelope(server: str, tool: str, code: str, message: str) -> dict[str, Any]:
+    logger.warning("MCP tool error server=%s tool=%s code=%s message=%s", server, tool, code, message)
     return {
         "status": "error",
         "success": False,

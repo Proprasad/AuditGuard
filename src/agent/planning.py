@@ -39,6 +39,7 @@ class RunContext:
     role: str
     strong: bool = False
     parallel: bool = False
+    configurable_graph: bool = True
     replanning_enabled: bool = True
     deterministic_verifier: bool = True
     reflexion_enabled: bool = False
@@ -51,10 +52,34 @@ class RunContext:
         return self.boxes.get(name) or self.boxes["primary"]
 
 
+def all_tool_errors(ctx: RunContext) -> list[dict[str, Any]]:
+    seen: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for box in ctx.boxes.values():
+        for err in box.tool_errors:
+            key = (
+                str(err.get("server", "")),
+                str(err.get("tool", "")),
+                str(err.get("error_code", "")),
+                str(err.get("message", "")),
+            )
+            seen[key] = err
+    return list(seen.values())
+
+
+def tool_error_notes(ctx: RunContext) -> list[str]:
+    return [
+        f"Tool error [{e['server']}.{e['tool']}]: {e['error_code']}"
+        for e in all_tool_errors(ctx)
+    ]
+
+
 def sync_budget(ctx: RunContext) -> dict[str, Any]:
     cap = ctx.policy.budgets.max_cost_usd_per_case
+    errs = all_tool_errors(ctx)
     return {
         "tool_calls_used": ctx.ledger.calls_used,
+        "tool_error_count": len(errs),
+        "tool_errors": errs,
         "critique_retries_used": ctx.ledger.critique_retries_used,
         "total_tokens_used": ctx.ledger.tokens_used,
         "estimated_cost_usd": ctx.ledger.cost_usd,
@@ -200,6 +225,10 @@ async def plan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
         clause_ids = [reasoning.safe_text(c, "") for c in proposal.clause_ids if c]
     elif meta.used_live_llm:
         degraded.append(f"LLM planning unavailable ({meta.error or 'budget'}); default plan used")
+
+    if not ctx.configurable_graph:
+        params = GraphParams.policy_default()
+        mode = "fixed_detector"
 
     plan = InvestigationPlan(
         steps=steps,

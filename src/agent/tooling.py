@@ -43,9 +43,16 @@ class GuardedToolbox:
         self.allowed_tool_budget = allowed_tool_budget
         self.calls = 0
         self.security_events: list[dict[str, Any]] = []
+        self.tool_errors: list[dict[str, Any]] = []
 
     def set_sub_budget(self, limit: Optional[int]) -> None:
         self.allowed_tool_budget = limit
+
+    async def _record_tool_error(self, server: str, tool: str, code: str, message: str) -> dict[str, Any]:
+        entry = {"server": server, "tool": tool, "error_code": code, "message": message}
+        self.tool_errors.append(entry)
+        await asyncio.to_thread(append_audit_log, self.thread_id, "tool_error_recorded", self.role, entry)
+        return error_envelope(code, message)
 
     async def call(
         self,
@@ -56,7 +63,9 @@ class GuardedToolbox:
         has_human_approval_token: bool = False,
     ) -> dict[str, Any]:
         if self.allowed_tool_budget is not None and self.calls >= self.allowed_tool_budget:
-            return error_envelope(
+            return await self._record_tool_error(
+                server,
+                tool,
                 "SPECIALIST_BUDGET_EXCEEDED",
                 f"Specialist '{self.role}' exhausted handoff tool budget ({self.calls}/{self.allowed_tool_budget})",
             )
@@ -68,9 +77,14 @@ class GuardedToolbox:
             has_human_approval_token=has_human_approval_token,
         )
         if not decision.allowed:
-            return error_envelope(decision.error_code, decision.message)
+            return await self._record_tool_error(server, tool, decision.error_code, decision.message)
         self.calls += 1
         raw = await call_mcp_tool(server, tool, params)
+        if is_error(raw):
+            code = str(raw.get("error_code") or "MCP_TOOL_ERROR")
+            msg = str(raw.get("message") or raw.get("error") or "tool call failed")
+            await self._record_tool_error(server, tool, code, msg)
+            return raw
         flags: list[dict[str, Any]] = []
         sanitized = post_tool_hook(tool, raw, flags=flags)
         for flag in flags:
@@ -83,5 +97,7 @@ class GuardedToolbox:
                 flag,
             )
         if not isinstance(sanitized, dict):
-            return error_envelope("MCP_BAD_RESPONSE", f"{server}.{tool} returned a non-object response")
+            return await self._record_tool_error(
+                server, tool, "MCP_BAD_RESPONSE", f"{server}.{tool} returned a non-object response"
+            )
         return sanitized

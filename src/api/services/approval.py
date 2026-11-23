@@ -29,6 +29,8 @@ _STATUS_FOR_CODE = {
     "VERIFICATION_FAILED": 409,
     "PROHIBITED_GUILT_CLAIM": 422,
     "TOKEN_INVALIDATED_BY_EDIT": 403,
+    "TOKEN_IDENTITY_MISMATCH": 403,
+    "TOKEN_EXPIRED": 403,
     "INVALID_HMAC_SIGNATURE": 403,
     "INVALID_TOKEN_FORMAT": 403,
     "TOKEN_NOT_FOUND": 403,
@@ -81,7 +83,34 @@ def _require_open(thread: dict[str, Any], allowed: tuple[str, ...]) -> dict[str,
     return ws
 
 
-def apply_edit(thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str) -> dict[str, Any]:
+def prepare_decision(thread: dict[str, Any], approved_hash: str | None, reviewer: str) -> dict[str, Any]:
+    """Mint a single-use, 15-minute approval token bound to `(current_hash, reviewer, nonce)`."""
+    ws = _require_open(thread, ("interrupt_required",))
+    if approved_hash and approved_hash != ws["current_hash"]:
+        raise DecisionError(403, "APPROVAL_HASH_MISMATCH", "approved_hash does not match the current worksheet")
+    recheck = verify_worksheet(ws["content"], thread["state"].get("evidence_registry", {}))
+    if not recheck.passed or ws["content"].get("verification_status") == "failed":
+        raise DecisionError(
+            409,
+            "VERIFICATION_FAILED",
+            "worksheet fails deterministic verification",
+            [d.model_dump() for d in recheck.discrepancies] or ws["content"].get("verification_discrepancies"),
+        )
+    approval = case_repo.issue_approval_token(thread["thread_id"], ws["worksheet_id"], reviewer_id=reviewer)
+    return {
+        "thread_id": thread["thread_id"],
+        "worksheet_id": ws["worksheet_id"],
+        "approved_hash": approval["approved_hash"],
+        "approval_token": approval["approval_token"],
+        "issued_to": approval["issued_to"],
+        "issued_at": approval["issued_at"],
+        "expires_at": approval["expires_at"],
+    }
+
+
+def apply_edit(
+    thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str, *, can_approve: bool = False
+) -> dict[str, Any]:
     ws = _require_open(thread, ("interrupt_required", "verification_failed"))
     changes: dict[str, Any] = {}
     if edit.recommended_disposition is not None:
@@ -118,7 +147,11 @@ def apply_edit(thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str
         }
     )
     updated = case_repo.update_worksheet_content(ws["worksheet_id"], candidate, reviewer)
-    approval = case_repo.issue_approval_token(thread["thread_id"], ws["worksheet_id"])
+    approval = (
+        case_repo.issue_approval_token(thread["thread_id"], ws["worksheet_id"], reviewer_id=reviewer)
+        if can_approve
+        else None
+    )
     thread["payload_hash"] = updated["payload_hash"]
     worksheet = thread["state"].get("worksheet") or {}
     worksheet.update(
@@ -141,8 +174,8 @@ def apply_edit(thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str
         "status": "interrupt_required",
         "previous_hash_invalidated": updated["previous_hash"],
         "payload_hash": updated["payload_hash"],
-        "approved_hash": approval["approved_hash"],
-        "approval_token": approval["approval_token"],
+        "approved_hash": approval["approved_hash"] if approval else updated["payload_hash"],
+        "approval_token": approval["approval_token"] if approval else None,
         "updated_content": candidate,
         "message": (
             "Worksheet edited and re-verified. Prior approval tokens are void; approve using the new hash and token."

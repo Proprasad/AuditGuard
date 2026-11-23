@@ -114,7 +114,9 @@ CREATE TABLE IF NOT EXISTS approval_tokens (
     worksheet_id TEXT NOT NULL,
     worksheet_sha256 TEXT NOT NULL,
     hmac_token TEXT NOT NULL,
+    issued_to TEXT NOT NULL DEFAULT 'reviewer',
     issued_at TEXT NOT NULL,
+    expires_at TEXT,
     consumed_at TEXT,
     consumed_by TEXT
 );

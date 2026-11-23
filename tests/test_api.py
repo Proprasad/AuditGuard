@@ -93,7 +93,10 @@ def test_edit_hash_invalidation_approve_and_idempotency(client, auth):
     assert body["status"] == "interrupt_required" and len(h1) == 64
     analyst_view = client.get(f"/api/v1/investigations/{tid}/state", headers=analyst).json()["approval"]
     assert analyst_view["approval_token"] is None
-    approval1 = client.get(f"/api/v1/investigations/{tid}/state", headers=reviewer).json()["approval"]
+    # No token is pre-minted before /decision/prepare
+    unprepared = client.get(f"/api/v1/investigations/{tid}/state", headers=reviewer).json()["approval"]
+    assert unprepared["approved_hash"] == h1 and unprepared["approval_token"] is None
+    approval1 = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=reviewer).json()
     assert approval1["approved_hash"] == h1 and approval1["approval_token"] is not None
 
     edit = client.post(
@@ -110,7 +113,7 @@ def test_edit_hash_invalidation_approve_and_idempotency(client, auth):
     e = edit.json()
     assert e["payload_hash"] != h1 and e["previous_hash_invalidated"] == h1
     assert e["approval_token"] is None
-    reviewer_appr = client.get(f"/api/v1/investigations/{tid}/state", headers=reviewer).json()["approval"]
+    reviewer_appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=reviewer).json()
 
     # Maker-checker: analyst cannot approve
     assert (

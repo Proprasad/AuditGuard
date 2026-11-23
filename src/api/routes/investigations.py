@@ -30,7 +30,14 @@ from src.api.services.threads import get_thread, thread_view
 from src.config import get_policy
 from src.core.canonical import NumericError, to_confidence
 from src.db.database import list_checkpoints, read_events
-from src.models import Alert, DecisionRequest, DispositionWorksheet, InvestigateRequest, InvestigateResponse
+from src.models import (
+    Alert,
+    DecisionRequest,
+    DispositionWorksheet,
+    InvestigateRequest,
+    InvestigateResponse,
+    PrepareDecisionRequest,
+)
 
 logger = logging.getLogger("auditguard.api")
 router = APIRouter()
@@ -62,6 +69,7 @@ def _response_for(thread: dict[str, Any]) -> InvestigateResponse:
         ),
         replan_count=state.get("replan_count", 0),
         tool_calls_used=state.get("tool_calls_used", 0),
+        tool_errors=state.get("tool_error_count", 0),
         cost_usd=state.get("estimated_cost_usd", "0"),
         tokens_used=state.get("total_tokens_used", 0),
     )
@@ -140,6 +148,30 @@ async def stream_investigation(
     )
 
 
+@router.post("/api/v1/investigations/{thread_id}/decision/prepare", dependencies=api_deps)
+async def prepare_human_decision(
+    thread_id: str,
+    request: PrepareDecisionRequest | None = None,
+    principal: Principal = SENIOR,
+) -> dict[str, Any]:
+    thread = await asyncio.to_thread(require_thread, thread_id)
+    approved_hash = request.approved_hash if request else None
+    try:
+        return await asyncio.to_thread(approval_service.prepare_decision, thread, approved_hash, principal.sub)
+    except approval_service.DecisionError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message, "discrepancies": exc.extra},
+        ) from exc
+
+
+@router.post("/decision/prepare", dependencies=api_deps)
+async def prepare_decision_root(request: PrepareDecisionRequest, principal: Principal = SENIOR) -> dict[str, Any]:
+    if not request.thread_id:
+        raise HTTPException(status_code=422, detail={"code": "MISSING_THREAD_ID", "message": "thread_id is required"})
+    return await prepare_human_decision(request.thread_id, request, principal)
+
+
 @router.post("/api/v1/investigations/{thread_id}/decision", dependencies=api_deps)
 async def submit_human_decision(
     thread_id: str,
@@ -156,10 +188,13 @@ async def submit_human_decision(
         if request.action == "edit":
             if request.edit is None:
                 raise approval_service.DecisionError(422, "EMPTY_EDIT", "edit payload is required")
-            edited = await asyncio.to_thread(approval_service.apply_edit, thread, request.edit, principal.sub)
-            if not principal.at_least("senior_reviewer"):
-                edited = {**edited, "approval_token": None}
-            return edited
+            return await asyncio.to_thread(
+                approval_service.apply_edit,
+                thread,
+                request.edit,
+                principal.sub,
+                can_approve=principal.at_least("senior_reviewer"),
+            )
         if request.action == "approve":
             return await approval_service.approve(thread, request, principal.sub)
         return await approval_service.reject(thread, request, principal.sub)
@@ -172,9 +207,10 @@ async def submit_human_decision(
 
 @router.get("/api/v1/investigations/{thread_id}/state", dependencies=api_deps)
 async def get_investigation_state(thread_id: str, principal: Principal = ANALYST) -> dict[str, Any]:
-    thread = await asyncio.to_thread(require_thread, thread_id)
-    if not principal.at_least("senior_reviewer") and isinstance(thread.get("approval"), dict):
-        thread = {**thread, "approval": {**thread["approval"], "approval_token": None}}
+    viewer = principal.sub if principal.at_least("senior_reviewer") else None
+    thread = await asyncio.to_thread(thread_view, thread_id, viewer)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
     return thread
 
 

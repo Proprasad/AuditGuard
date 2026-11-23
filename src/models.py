@@ -251,6 +251,8 @@ class InvestigationState(StrictModel):
     human_decision: Optional[DispositionDecision] = None
 
     tool_calls_used: int = 0
+    tool_error_count: int = 0
+    tool_errors: list[dict[str, Any]] = Field(default_factory=list)
     max_tool_calls: int = Field(default_factory=lambda: _policy().budgets.max_tool_calls)
     critique_retries_used: int = 0
     total_tokens_used: int = 0
@@ -281,8 +283,16 @@ class InvestigateResponse(StrictModel):
     worksheet: Optional[DispositionWorksheet] = None
     replan_count: int = 0
     tool_calls_used: int = 0
+    tool_errors: int = 0
     cost_usd: Usd = Field(default_factory=_zero_usd)
     tokens_used: int = 0
+
+
+class PrepareDecisionRequest(StrictModel):
+    """Request an analyst/reviewer-signed single-use approval token (15-minute TTL)."""
+
+    thread_id: Optional[str] = None
+    approved_hash: Optional[str] = None
 
 
 class EditWorksheetRequest(StrictModel):

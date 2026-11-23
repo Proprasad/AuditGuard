@@ -9,18 +9,20 @@ transaction (all-or-nothing).
 
 from __future__ import annotations
 
+from datetime import timedelta
 import hashlib
 import hmac
 import json
 import sqlite3
-import uuid
 from typing import Any, Optional
+import uuid
 
 from src.config import get_hmac_secret
-from src.core.canonical import canonical_sha256, dumps_json
+from src.core.canonical import canonical_sha256, dumps_json, parse_utc_timestamp, utc_now
 from src.db.database import DbConn, get_db, get_scoped_db, init_db, utc_now_iso
 
 CASE_WRITE_TABLES = frozenset({"worksheets", "approval_tokens", "cases", "audit_logs"})
+APPROVAL_TOKEN_TTL_SECONDS = 15 * 60  # 15 minutes per Phase 0 spec
 
 
 class CaseRepoError(Exception):
@@ -31,14 +33,15 @@ class CaseRepoError(Exception):
 
 
 # ---------------------------------------------------------------------------------------------------
-# Tokens
+# Tokens: HMAC(secret, hash|sub|nonce), single-use, 15-minute TTL
 # ---------------------------------------------------------------------------------------------------
-def _signature(token_id: str, sha: str) -> str:
-    return hmac.new(get_hmac_secret(), f"{token_id}:{sha}".encode(), hashlib.sha256).hexdigest()
+def _signature(token_id: str, sha: str, reviewer_id: str) -> str:
+    msg = f"{sha}|{reviewer_id}|{token_id}".encode("utf-8")
+    return hmac.new(get_hmac_secret(), msg, hashlib.sha256).hexdigest()
 
 
-def build_approval_token(token_id: str, sha: str) -> str:
-    return f"APPROVE:{token_id}:{sha}:{_signature(token_id, sha)}"
+def build_approval_token(token_id: str, sha: str, reviewer_id: str) -> str:
+    return f"APPROVE:{token_id}:{sha}:{_signature(token_id, sha, reviewer_id)}"
 
 
 def parse_approval_token(token: str) -> Optional[tuple[str, str, str]]:
@@ -182,39 +185,51 @@ def update_worksheet_content(worksheet_id: str, new_content: dict[str, Any], edi
     return {"worksheet_id": worksheet_id, "previous_hash": row["payload_hash"], "payload_hash": new_sha}
 
 
-def issue_approval_token(thread_id: str, worksheet_id: str) -> dict[str, Any]:
-    """Issue a fresh single-use token bound to the worksheet's CURRENT canonical hash (older ones are superseded)."""
+def issue_approval_token(
+    thread_id: str,
+    worksheet_id: str,
+    reviewer_id: str = "reviewer",
+    ttl_seconds: int = APPROVAL_TOKEN_TTL_SECONDS,
+) -> dict[str, Any]:
+    """Issue a fresh single-use token bound to `(current_hash, reviewer_id, nonce)` with a 15-minute TTL."""
+    if not reviewer_id.strip():
+        raise CaseRepoError("MISSING_REVIEWER_ID", "reviewer identity is required to mint an approval token")
     ws = get_worksheet(worksheet_id)
     if ws is None:
         raise CaseRepoError("WORKSHEET_NOT_FOUND", f"worksheet {worksheet_id} not found")
-    token_id, now = uuid.uuid4().hex, utc_now_iso()
+    token_id = uuid.uuid4().hex
+    now_dt = utc_now()
+    now = now_dt.isoformat()
+    expires_at = (now_dt + timedelta(seconds=ttl_seconds)).isoformat()
     sha = ws["current_hash"]
-    token = build_approval_token(token_id, sha)
+    token = build_approval_token(token_id, sha, reviewer_id)
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
         conn.execute(
             (
                 "UPDATE approval_tokens SET consumed_at = ?, consumed_by = "
-                "'superseded' WHERE worksheet_id = ? AND consumed_at IS NULL"
+                "'superseded' WHERE worksheet_id = ? AND issued_to = ? AND consumed_at IS NULL"
             ),
-            (now, worksheet_id),
+            (now, worksheet_id, reviewer_id),
         )
         conn.execute(
             "INSERT INTO approval_tokens (token_id, thread_id, worksheet_id, "
-            "worksheet_sha256, hmac_token, issued_at, consumed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, NULL)",
-            (token_id, thread_id, worksheet_id, sha, token, now),
+            "worksheet_sha256, hmac_token, issued_to, issued_at, expires_at, consumed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            (token_id, thread_id, worksheet_id, sha, token, reviewer_id, now, expires_at),
         )
     return {
         "token_id": token_id,
         "worksheet_id": worksheet_id,
         "approved_hash": sha,
         "approval_token": token,
+        "issued_to": reviewer_id,
         "issued_at": now,
+        "expires_at": expires_at,
     }
 
 
 def _validate_commit_token(
-    conn: DbConn, worksheet_id: str, approval_token: str
+    conn: DbConn, worksheet_id: str, approval_token: str, reviewer_id: str
 ) -> tuple[Any, dict[str, Any], str, str]:
     parsed = parse_approval_token(approval_token)
     if parsed is None:
@@ -236,7 +251,12 @@ def _validate_commit_token(
         raise CaseRepoError("ALREADY_CONSUMED", "approval token already consumed or superseded")
     if token_sha != current_sha or tok["worksheet_sha256"] != current_sha:
         raise CaseRepoError("TOKEN_INVALIDATED_BY_EDIT", "worksheet changed since the token was issued")
-    if not hmac.compare_digest(token_sig, _signature(token_id, token_sha)) or tok["hmac_token"] != approval_token:
+    if tok["issued_to"] != reviewer_id:
+        raise CaseRepoError("TOKEN_IDENTITY_MISMATCH", "approval token was signed for a different reviewer")
+    if tok["expires_at"] and parse_utc_timestamp(tok["expires_at"]) <= utc_now():
+        raise CaseRepoError("TOKEN_EXPIRED", "approval token has expired (15-minute TTL)")
+    expected_sig = _signature(token_id, token_sha, reviewer_id)
+    if not hmac.compare_digest(token_sig, expected_sig) or tok["hmac_token"] != approval_token:
         raise CaseRepoError("INVALID_HMAC_SIGNATURE", "approval token signature invalid")
     return ws, content, current_sha, token_id
 
@@ -247,7 +267,7 @@ def commit_case(
     """Atomically verify + consume the single-use token, mark the worksheet submitted and INSERT the case."""
     now = utc_now_iso()
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
-        ws, content, current_sha, token_id = _validate_commit_token(conn, worksheet_id, approval_token)
+        ws, content, current_sha, token_id = _validate_commit_token(conn, worksheet_id, approval_token, reviewer_id)
         consumed = conn.execute(
             (
                 "UPDATE approval_tokens SET consumed_at = ?, consumed_by = ? WHERE "
@@ -257,6 +277,11 @@ def commit_case(
         )
         if consumed.rowcount != 1:
             raise CaseRepoError("ALREADY_CONSUMED", "approval token already consumed")
+        conn.execute(
+            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = 'superseded_by_commit' "
+            "WHERE worksheet_id = ? AND consumed_at IS NULL",
+            (now, worksheet_id),
+        )
         moved = conn.execute(
             "UPDATE worksheets SET status = 'submitted', reviewer_id = ?, "
             "reviewer_decision = ?, reviewer_notes = ?, updated_at = ? "
@@ -316,21 +341,39 @@ def log_rejection(thread_id: str, reviewer_id: str, worksheet_id: str, code: str
         )
 
 
-def current_approval(worksheet_id: str) -> Optional[dict[str, Any]]:
-    init_db()
+def current_approval(worksheet_id: str, reviewer_id: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Read-only lookup of the active (unconsumed, non-expired) token for `reviewer_id` on `worksheet_id`."""
+    ws = get_worksheet(worksheet_id)
+    if ws is None:
+        return None
+    base: dict[str, Any] = {
+        "token_id": None,
+        "approved_hash": ws["current_hash"],
+        "approval_token": None,
+        "issued_to": None,
+        "issued_at": None,
+        "expires_at": None,
+    }
+    if not reviewer_id:
+        return base
     with get_db() as conn:
         row = conn.execute(
-            "SELECT token_id, worksheet_sha256, hmac_token, issued_at FROM approval_tokens "
-            "WHERE worksheet_id = ? AND consumed_at IS NULL ORDER BY issued_at DESC LIMIT 1",
-            (worksheet_id,),
+            "SELECT token_id, worksheet_sha256, hmac_token, issued_to, issued_at, expires_at "
+            "FROM approval_tokens WHERE worksheet_id = ? AND issued_to = ? AND consumed_at IS NULL "
+            "ORDER BY issued_at DESC LIMIT 1",
+            (worksheet_id, reviewer_id),
         ).fetchone()
-    if row is None:
-        return None
+    if row is None or row["worksheet_sha256"] != ws["current_hash"]:
+        return base
+    if row["expires_at"] and parse_utc_timestamp(row["expires_at"]) <= utc_now():
+        return base
     return {
         "token_id": row["token_id"],
         "approved_hash": row["worksheet_sha256"],
         "approval_token": row["hmac_token"],
+        "issued_to": row["issued_to"],
         "issued_at": row["issued_at"],
+        "expires_at": row["expires_at"],
     }
 
 

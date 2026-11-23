@@ -25,8 +25,8 @@ def get_thread(thread_id: str) -> Optional[dict[str, Any]]:
     }
 
 
-def thread_view(thread_id: str) -> Optional[dict[str, Any]]:
-    """Thread record with the CURRENT worksheet (post-edit) and the current unconsumed approval token overlaid."""
+def thread_view(thread_id: str, reviewer_id: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Thread record with the CURRENT worksheet (post-edit) and any active reviewer-bound approval token."""
     thread = get_thread(thread_id)
     if thread is None or not thread["worksheet_id"]:
         return thread
@@ -47,5 +47,5 @@ def thread_view(thread_id: str) -> Optional[dict[str, Any]]:
     thread["payload_hash"] = ws["current_hash"]
     thread["worksheet_status"] = ws["status"]
     thread["verification_discrepancies"] = content.get("verification_discrepancies", [])
-    thread["approval"] = case_repo.current_approval(thread["worksheet_id"])
+    thread["approval"] = case_repo.current_approval(thread["worksheet_id"], reviewer_id=reviewer_id)
     return thread

@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from src.agent.drafting import draft_and_verify, security_notes
 from src.agent.nodes import RunContext
+from src.agent.planning import sync_budget, tool_error_notes
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
 from src.core.adapters import flow_paths_from_result, graph_tx_payload, kyc_summaries
@@ -138,7 +139,7 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
     t0 = time.perf_counter()
     box = ctx.box("primary")
     params = GraphParams.policy_default()
-    degraded = sorted({*state.degraded_evidence, *security_notes(box)})
+    degraded = sorted({*state.degraded_evidence, *security_notes(box), *tool_error_notes(ctx)})
     citations = [c["clause_id"] for c in state.regulatory_clauses if c.get("clause_id")]
     multi_hop = [p for p in state.fund_flow_paths if p.hop_count >= 2]
     window = f"{params.time_window_days}d/{params.max_hops}-hop"
@@ -199,9 +200,9 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
         "is_complete": True,
         "current_node": "interrupt_required",
         "current_step": state.current_step + 1,
-        "tool_calls_used": ctx.ledger.calls_used,
         "workflow_steps": steps,
         "agent_runs": runs,
+        **sync_budget(ctx),
     }
 
 
@@ -209,6 +210,7 @@ async def run_fixed_pipeline(
     alert: Alert,
     thread_id: Optional[str] = None,
     verify: bool = True,
+    budget_overrides: Optional[dict[str, Any]] = None,
     resume: bool = False,
     stop_after_node: Optional[str] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
@@ -222,5 +224,6 @@ async def run_fixed_pipeline(
         resume=resume,
         stop_after_node=stop_after_node,
         deterministic_verifier=verify,
+        budget_overrides=budget_overrides,
         emit=on_event,
     )

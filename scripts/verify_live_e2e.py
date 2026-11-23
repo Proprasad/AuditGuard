@@ -214,8 +214,12 @@ async def run_verification() -> None:
             # Step 4: Adversarial Decision Gate Probes on C2 paused thread
             print("\n=== STEP 4: ADVERSARIAL HUMAN GATE PROBES (401 / 403 / 422 / STALE TOKEN 403 / VALID EDIT) ===")
             c2_state = (await client.get(f"{base}/api/v1/investigations/{c2_tid}/state", headers=sr_headers)).json()
-            h1 = c2_state["approval"]["approved_hash"]
-            t1 = c2_state["approval"]["approval_token"]
+            assert c2_state["approval"]["approval_token"] is None, "GET /state must not pre-mint approval_token"
+            prep = (
+                await client.post(f"{base}/api/v1/investigations/{c2_tid}/decision/prepare", headers=sr_headers)
+            ).json()
+            h1 = prep["approved_hash"]
+            t1 = prep["approval_token"]
             assert c2_terminal.get("approval_token") is None, "analyst SSE stream must not expose approval_token"
 
             r_unauth = await client.post(

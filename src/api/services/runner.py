@@ -193,7 +193,6 @@ def _finalize_thread_db(thread_id: str, alert: Alert, mode: str, state: Investig
         raise RuntimeError("investigation finished without a worksheet")
     failed = state.error == "verification_failed"
     status = "verification_failed" if failed else "interrupt_required"
-    approval = None if failed else case_repo.issue_approval_token(thread_id, worksheet.worksheet_id)
     stored = case_repo.get_worksheet(worksheet.worksheet_id)
     payload_hash = stored["current_hash"] if stored else worksheet.payload_hash
     state_dump = state.model_dump(mode="json")
@@ -220,11 +219,12 @@ def _finalize_thread_db(thread_id: str, alert: Alert, mode: str, state: Investig
         "rationale": worksheet.recommendation_rationale,
         "replan_count": state.replan_count,
         "tool_calls_used": state.tool_calls_used,
+        "tool_errors": state.tool_error_count,
         "duration_seconds": round(duration, 3),
         "worksheet": worksheet.model_dump(mode="json"),
         "state": state_dump,
-        "approved_hash": approval["approved_hash"] if approval else None,
-        "approval_token": approval["approval_token"] if approval else None,
+        "approved_hash": None if failed else payload_hash,
+        "approval_token": None,
         "message": (
             "Verification FAILED (fail-closed): edit the rationale until it verifies; commit is blocked."
             if failed

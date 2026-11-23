@@ -44,7 +44,7 @@ def test_replayed_approval_token_is_409(client, auth):
     analyst = auth("analyst")
     sr = auth("senior_reviewer")
     tid = _run(client, analyst)
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
+    appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=sr).json()
     body = {
         "action": "approve",
         "approved_hash": appr["approved_hash"],
@@ -58,7 +58,7 @@ def test_wrong_hash_is_403(client, auth):
     analyst = auth("analyst")
     sr = auth("senior_reviewer")
     tid = _run(client, analyst)
-    appr = client.get(f"/api/v1/investigations/{tid}/state", headers=sr).json()["approval"]
+    appr = client.post(f"/api/v1/investigations/{tid}/decision/prepare", headers=sr).json()
     body = {"action": "approve", "approved_hash": "0" * 64, "approval_token": appr["approval_token"]}
     assert client.post(f"/api/v1/investigations/{tid}/decision", json=body, headers=sr).status_code == 403
 

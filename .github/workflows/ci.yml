@@ -2,13 +2,21 @@ name: AuditGuard CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   test-and-eval-gate:
     runs-on: ubuntu-latest
+    env:
+      ANALYST_PASSWORD: "ci-analyst-password-0001"
+      REVIEWER_PASSWORD: "ci-reviewer-password-0002"
+      ADMIN_PASSWORD: "ci-admin-password-0003"
+      API_SECRET_KEY: "ci-ephemeral-jwt-secret-0123456789abcdef0123456789abcdef"
+      HMAC_SECRET: "ci-ephemeral-hmac-secret-0123456789abcdef0123456789abcdef"
+      AUTH_REQUIRED: "true"
+      LLM_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,11 +24,9 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pytest pyyaml pydantic pydantic-settings networkx fastapi httpx typer
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[ui,dev]" fastmcp prometheus-client uvicorn pytest-asyncio
       - name: Generate synthetic dataset
         run: python -m data.synthetic_generator
-      - name: Run unit & integration tests
-        run: pytest tests/ -v
-      - name: Run dev eval gate
-        run: python -m eval.run_eval --config E1 --split dev --limit 5
+      - name: Run full verification gate (make verify)
+        run: make verify

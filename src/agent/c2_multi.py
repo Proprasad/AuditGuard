@@ -26,6 +26,7 @@ async def run_multi_agent(
     thread_id: Optional[str] = None,
     reflexion_enabled: bool = False,
     memory_enabled: bool = True,
+    budget_overrides: Optional[dict[str, Any]] = None,
     resume: bool = False,
     stop_after_node: Optional[str] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
@@ -39,5 +40,6 @@ async def run_multi_agent(
         stop_after_node=stop_after_node,
         reflexion_enabled=reflexion_enabled,
         memory_enabled=memory_enabled,
+        budget_overrides=budget_overrides,
         emit=on_event,
     )

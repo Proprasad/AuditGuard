@@ -242,6 +242,9 @@ async def _submit_decision_request(
     if target != pending.get("recommended_disposition") or not approved_hash:
         edited = await _api(client, "POST", path, json={"action": "edit", "edit": {"recommended_disposition": target}})
         approved_hash, token = edited["approved_hash"], edited["approval_token"]
+    if not token:
+        prepared = await _api(client, "POST", f"{path}/prepare", json={"approved_hash": approved_hash})
+        approved_hash, token = prepared["approved_hash"], prepared["approval_token"]
     return await _api(
         client,
         "POST",

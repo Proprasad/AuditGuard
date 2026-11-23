@@ -26,10 +26,12 @@ async def run_investigation(
     thread_id: Optional[str] = None,
     resume: bool = False,
     stop_after_node: Optional[str] = None,
+    configurable_graph: bool = True,
     replanning_enabled: bool = True,
     deterministic_verifier: bool = True,
     reflexion_enabled: bool = False,
     memory_enabled: bool = True,
+    budget_overrides: Optional[dict[str, Any]] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
 ) -> InvestigationState:
     """Execute C1; `resume=True` continues from the durable LangGraph checkpoint of `thread_id`."""
@@ -39,9 +41,11 @@ async def run_investigation(
         thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
         resume=resume,
         stop_after_node=stop_after_node,
+        configurable_graph=configurable_graph,
         replanning_enabled=replanning_enabled,
         deterministic_verifier=deterministic_verifier,
         reflexion_enabled=reflexion_enabled,
         memory_enabled=memory_enabled,
+        budget_overrides=budget_overrides,
         emit=on_event,
     )

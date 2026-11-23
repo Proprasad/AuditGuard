@@ -279,6 +279,10 @@ def _extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
     return found
 
 
+def extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
+    return _extract_prose_amounts(text)
+
+
 def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
     known = _known_amounts(ws, registry)
     for name, text in _narrative_fields(ws):

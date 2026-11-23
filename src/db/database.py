@@ -30,7 +30,7 @@ AuditObserver = Callable[[dict[str, Any]], None]
 
 _DB_LOCK = threading.RLock()
 _DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[2] / "data" / "auditguard.db"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _REFERENCE_TABLES_DROP_ORDER = ("transactions", "alerts", "accounts", "commercial_registry", "customers")
 _initialized_targets: set[str] = set()
 _AUDIT_OBSERVERS: list[AuditObserver] = []
@@ -97,8 +97,8 @@ CREATE TABLE IF NOT EXISTS investigation_events (
 );
 CREATE TABLE IF NOT EXISTS approval_tokens (
     token_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, worksheet_id TEXT NOT NULL,
-    worksheet_sha256 TEXT NOT NULL, hmac_token TEXT NOT NULL, issued_at TEXT NOT NULL,
-    consumed_at TEXT, consumed_by TEXT
+    worksheet_sha256 TEXT NOT NULL, hmac_token TEXT NOT NULL, issued_to TEXT NOT NULL DEFAULT 'reviewer',
+    issued_at TEXT NOT NULL, expires_at TEXT, consumed_at TEXT, consumed_by TEXT
 );
 CREATE TABLE IF NOT EXISTS audit_logs (
     log_id INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT, thread_id TEXT NOT NULL,
@@ -199,6 +199,12 @@ def _migrate_sqlite(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE worksheets ADD COLUMN thread_id TEXT")
         if "revision" not in cols:
             conn.execute("ALTER TABLE worksheets ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+    if "approval_tokens" in existing:
+        tok_cols = {r[1] for r in conn.execute("PRAGMA table_info(approval_tokens)").fetchall()}
+        if "issued_to" not in tok_cols:
+            conn.execute("ALTER TABLE approval_tokens ADD COLUMN issued_to TEXT NOT NULL DEFAULT 'reviewer'")
+        if "expires_at" not in tok_cols:
+            conn.execute("ALTER TABLE approval_tokens ADD COLUMN expires_at TEXT")
 
 
 def _seed_banks(conn: DbConn) -> None:

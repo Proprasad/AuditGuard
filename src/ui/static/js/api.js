@@ -126,6 +126,13 @@ export class AuditGuardAPI {
     return this._json(`/api/v1/investigations/${encodeURIComponent(threadId)}/state`);
   }
 
+  prepareDecision(threadId, approvedHash = null) {
+    return this._json(`/api/v1/investigations/${encodeURIComponent(threadId)}/decision/prepare`, {
+      method: "POST",
+      body: JSON.stringify(approvedHash ? { approved_hash: approvedHash } : {}),
+    });
+  }
+
   submitDecision(threadId, body) {
     return this._json(`/api/v1/investigations/${encodeURIComponent(threadId)}/decision`, {
       method: "POST",
