@@ -66,18 +66,17 @@ def investigate(
 @app.command("retrieval-bench")
 def retrieval_bench() -> None:
     """Run the 35-query regulatory benchmark comparing BM25-only vs Hybrid RRF+Rerank."""
-    from src.mcp_servers import compliance_kb
+    from src.mcp_servers.client import call_mcp_tool
 
     bench_path = Path("eval/retrieval_bench.jsonl")
     queries = [json.loads(line) for line in bench_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    fn = getattr(compliance_kb.search_regulations, "fn", compliance_kb.search_regulations)
 
     async def _eval_mode(mode: str) -> tuple[float, float]:
         hits = 0
         rr_sum = 0.0
         for q in queries:
-            res = await fn(compliance_kb.SearchRegulationsInput(query=q["query"], top_k=5, mode=mode))
-            returned = [c.clause_id for c in res.clauses]
+            res = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": mode})
+            returned = [c["clause_id"] for c in res.get("clauses", [])]
             expected = set(q["expected_ids"])
             if expected & set(returned):
                 hits += 1

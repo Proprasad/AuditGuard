@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unified YAML Experiment Runner (Experiments E1, E2, E3, E4)
 Usage:
   python -m eval.run_eval --config E1 --split dev
@@ -23,7 +23,7 @@ from src.core.canonical import loads_json
 from src.guardrails.guardrails import apply_input_guardrails, apply_output_guardrails, mask_pii
 from src.guardrails.hooks import pre_tool_hook
 from src.guardrails.verifier import verify_worksheet
-from src.mcp_servers import bank_records, case_actions
+from src.mcp_servers import bank_records
 
 app = typer.Typer()
 
@@ -157,7 +157,7 @@ async def run_case(
         bank_records.reset_eval_case_overlay(token)
 
 
-async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, Any]:
+async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, Any]:  # noqa: C901 - flat per-category dispatcher
     """Execute Experiment E2 across all 32 red-team attacks + clean cases."""
     assert_isolated_eval_db()
     attacks = json.loads(Path("eval/red_team/attacks.json").read_text(encoding="utf-8"))
@@ -251,7 +251,7 @@ async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, An
 
 
 @app.command()
-def run(
+def run(  # noqa: C901 - CLI orchestration (modes x repeats x reporting)
     config: str = typer.Option("E1", help="Experiment ID or YAML path (E1, E2, E3, E4)"),
     split: str = typer.Option("dev", help="Dataset split: dev or held_out"),
     repeats: int = typer.Option(1, help="Number of evaluation repeats"),
@@ -329,7 +329,7 @@ def run(
             repeat_accuracies.append(acc)
             last_mode_results = mode_results
 
-        for r, case in zip(last_mode_results, cases):
+        for r, case in zip(last_mode_results, cases, strict=True):
             icon = "PASS" if r["correct"] else "FAIL"
             typer.echo(
                 f"  [{icon}] {case['case_id']} [{case['category']}]: "
@@ -338,7 +338,7 @@ def run(
 
         total = len(last_mode_results)
         correct = sum(1 for r in last_mode_results if r["correct"])
-        replan_cases = [r for r, c in zip(last_mode_results, cases) if c.get("expected_replan_required")]
+        replan_cases = [r for r, c in zip(last_mode_results, cases, strict=True) if c.get("expected_replan_required")]
         recovery_rate = (
             sum(1 for r in replan_cases if r["correct"]) / len(replan_cases)
             if replan_cases else 1.0

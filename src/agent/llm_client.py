@@ -187,7 +187,7 @@ async def ping_openrouter(model: Optional[str] = None) -> dict[str, Any]:
                 "reply": reply or "READY",
                 "tokens": usage.get("total_tokens", 0),
             }
-    except Exception as exc:
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
         return {"ok": False, "model": chosen_model, "error": str(exc)}
 
 
@@ -325,7 +325,7 @@ async def synthesize_investigation_narrative(
             "tokens_used": total_toks,
             "cost_usd": est_cost,
         }
-    except Exception:
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
         return {
             "used_live_llm": False,
             "model": "offline-fallback",

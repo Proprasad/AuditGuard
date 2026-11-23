@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -112,31 +112,26 @@ def _as_money(value: Any) -> Decimal | None:
         return None
 
 
-def _known_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any]) -> set[Decimal]:
+def _path_totals(ws: Mapping[str, Any]) -> set[Decimal]:
+    """Every per-path amount plus the sums across paths (the only figures a narrative may quote from graph results)."""
     known: set[Decimal] = set()
-
-    def add(value: Any) -> None:
-        if (m := _as_money(value)) is not None:
-            known.add(m)
-
-    add(ws.get("alert_amount_inr"))
-    outs: list[Any] = []
-    cons: list[Any] = []
-    nets: list[Any] = []
+    series: dict[str, list[Decimal]] = {"total_outflow_inr": [], "total_consolidated_inr": [], "net_difference_inr": []}
     for path in ws.get("candidate_paths", []):
-        for key in ("total_outflow_inr", "total_consolidated_inr", "net_difference_inr"):
-            add(path.get(key))
-        for acc, key in ((outs, "total_outflow_inr"), (cons, "total_consolidated_inr"), (nets, "net_difference_inr")):
+        for key, acc in series.items():
             if (m := _as_money(path.get(key))) is not None:
+                known.add(m)
                 acc.append(m)
-    for series in (outs, cons, nets):
-        if series:
-            known.add(sum(series, Decimal("0.00")))
+    known.update(sum(values, Decimal("0.00")) for values in series.values() if values)
+    return known
+
+
+def _known_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any]) -> set[Decimal]:
+    known = _path_totals(ws)
+    if (alert_amount := _as_money(ws.get("alert_amount_inr"))) is not None:
+        known.add(alert_amount)
     for item in registry.values():
         if isinstance(item, Mapping):
-            for key, value in item.items():
-                if "inr" in key or "amount" in key:
-                    add(value)
+            known.update(m for key, value in item.items() if "inr" in key or "amount" in key if (m := _as_money(value)) is not None)
     return known
 
 
@@ -182,6 +177,29 @@ def _referenced_ids(ws: Mapping[str, Any]) -> Iterable[tuple[str, str]]:
                 yield f"hypotheses[{i}]", str(ref)
 
 
+_FailFn = Callable[[str, str, str, str], None]
+
+
+def _check_citations(ws: Mapping[str, Any], registry: Mapping[str, Any], disposition: Any, fail: _FailFn) -> None:
+    citations = list(ws.get("regulatory_citations", []))
+    if not citations and not (bool(ws.get("degraded_evidence")) and disposition == "request_info"):
+        fail("has_citations", "NO_CITATIONS", "regulatory_citations", "at least one resolvable citation is required")
+    for cite in citations:
+        if not _CITATION_FORMAT.match(str(cite)):
+            fail("citation_format_valid", "BAD_CITATION_FORMAT", "regulatory_citations", str(cite))
+        elif cite not in registry:
+            fail("citations_resolved", "UNRESOLVED_CITATION", "regulatory_citations", f"{cite!r} not in evidence_registry")
+
+
+def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
+    known = _known_amounts(ws, registry)
+    for name, text in _narrative_fields(ws):
+        for raw in _AMOUNT_PATTERN.findall(text):
+            amount = _as_money(raw.replace(",", ""))
+            if amount is None or amount not in known:
+                fail("narrative_amounts_grounded", "UNGROUNDED_AMOUNT", name, f"INR {raw} does not match any verified amount")
+
+
 def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[str, Any] | None = None) -> VerificationResult:
     issues: list[Discrepancy] = []
     checks: dict[str, bool] = {}
@@ -213,18 +231,9 @@ def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[st
         fail("valid_disposition", "INVALID_DISPOSITION", "recommended_disposition", str(disposition))
     checks.setdefault("valid_disposition", True)
 
-    citations = list(worksheet.get("regulatory_citations", []))
-    degraded = bool(worksheet.get("degraded_evidence"))
-    if not citations and not (degraded and disposition == "request_info"):
-        fail("has_citations", "NO_CITATIONS", "regulatory_citations", "at least one resolvable citation is required")
-    checks.setdefault("has_citations", True)
-    for cite in citations:
-        if not _CITATION_FORMAT.match(str(cite)):
-            fail("citation_format_valid", "BAD_CITATION_FORMAT", "regulatory_citations", str(cite))
-        elif cite not in registry:
-            fail("citations_resolved", "UNRESOLVED_CITATION", "regulatory_citations", f"{cite!r} not in evidence_registry")
-    checks.setdefault("citation_format_valid", True)
-    checks.setdefault("citations_resolved", True)
+    _check_citations(worksheet, registry, disposition, fail)
+    for name in ("has_citations", "citation_format_valid", "citations_resolved"):
+        checks.setdefault(name, True)
 
     for field, ref in _referenced_ids(worksheet):
         if ref not in registry:
@@ -235,12 +244,7 @@ def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[st
     checks["inr_math_verified"] = _check_paths(worksheet, registry, path_issues)
     issues += path_issues
 
-    known = _known_amounts(worksheet, registry)
-    for name, text in _narrative_fields(worksheet):
-        for raw in _AMOUNT_PATTERN.findall(text):
-            amount = _as_money(raw.replace(",", ""))
-            if amount is None or amount not in known:
-                fail("narrative_amounts_grounded", "UNGROUNDED_AMOUNT", name, f"INR {raw} does not match any verified amount")
+    _check_narrative_amounts(worksheet, registry, fail)
     checks.setdefault("narrative_amounts_grounded", True)
 
     return VerificationResult(

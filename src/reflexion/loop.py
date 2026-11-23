@@ -70,7 +70,7 @@ def export_playbook(path: str = "config/reflexion_playbook.json", store: LongTer
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     data = {
         "frozen": store.is_playbook_frozen(),
-        "lessons": [l.model_dump() for l in store.list_all_lessons()],
+        "lessons": [lesson.model_dump() for lesson in store.list_all_lessons()],
     }
     with open(path, "w") as f:
         json.dump(data, f, indent=2)

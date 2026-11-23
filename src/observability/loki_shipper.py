@@ -14,14 +14,17 @@ Key Design Properties:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
 from src.observability.redaction import redact_for_logs, redact_text
 
+logger = logging.getLogger("auditguard.loki")
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="loki-shipper")
 
 
@@ -40,17 +43,20 @@ def _post_to_loki(labels: dict[str, str], line_str: str, ts_ns: int) -> None:
         ]
     }
     body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 - scheme validated below before any request is made
         _loki_push_url(),
         data=body,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    if urllib.parse.urlparse(req.full_url).scheme not in ("http", "https"):
+        logger.debug("loki push skipped: unsupported URL scheme")
+        return
     try:
-        with urllib.request.urlopen(req, timeout=1.5) as _resp:
+        with urllib.request.urlopen(req, timeout=1.5):  # noqa: S310 - scheme validated above
             pass
-    except Exception:
-        pass
+    except (OSError, ValueError) as exc:  # Loki being down must never break the app, but is visible at debug level
+        logger.debug("loki push failed: %s", exc)
 
 
 def emit_loki_log(
@@ -82,5 +88,5 @@ def emit_loki_log(
     line_str = json.dumps(record, default=str)
     try:
         _EXECUTOR.submit(_post_to_loki, labels, line_str, ts_ns)
-    except Exception:
-        pass
+    except RuntimeError as exc:  # executor already shut down (interpreter exit)
+        logger.debug("loki submit failed: %s", exc)

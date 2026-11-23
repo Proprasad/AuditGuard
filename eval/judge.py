@@ -15,7 +15,7 @@ def cohens_kappa(labels_a: Sequence[str], labels_b: Sequence[str]) -> float:
 
     n = len(labels_a)
     categories = sorted(set(labels_a) | set(labels_b))
-    p_o = sum(1 for a, b in zip(labels_a, labels_b) if a == b) / n
+    p_o = sum(1 for a, b in zip(labels_a, labels_b, strict=True) if a == b) / n
 
     p_e = 0.0
     for cat in categories:
