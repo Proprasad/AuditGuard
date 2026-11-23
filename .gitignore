@@ -30,3 +30,8 @@ data/*.db-wal
 Thumbs.db
 .vscode/
 .idea/
+
+.coverage
+*.db-shm
+*.db-wal
+*.langgraph.sqlite*

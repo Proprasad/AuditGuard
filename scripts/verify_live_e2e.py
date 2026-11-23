@@ -153,7 +153,7 @@ async def run_verification() -> None:
 
     try:
         print("=== BOOTING LIVE FLEET (4 FastMCP HTTP Servers + FastAPI Uvicorn + Live OpenRouter) ===")
-        for name, cmd, port in specs:
+        for _name, cmd, _port in specs:
             p = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             procs.append(p)
         for (name, _, port), p in zip(specs, procs, strict=True):
