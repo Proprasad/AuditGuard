@@ -625,6 +625,7 @@ def _db_uri(read_only: bool) -> str:
 @contextmanager
 def get_ro_db(timeout_s: float = 5.0) -> Iterator[sqlite3.Connection]:
     """Read-only connection (`mode=ro` + `PRAGMA query_only`) with a statement deadline for read-path MCP tools."""
+    init_db()
     conn = sqlite3.connect(_db_uri(read_only=True), uri=True, timeout=timeout_s)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only = ON")

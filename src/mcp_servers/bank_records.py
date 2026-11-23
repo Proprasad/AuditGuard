@@ -1,4 +1,4 @@
-"""
+﻿"""
 MCP Server: bank-records (READ-ONLY)
 
 Parameterised, read-only SQL against the operational database. Connections are opened with `mode=ro` +
@@ -123,7 +123,7 @@ def get_alert_record(alert_id: str) -> Optional[dict[str, Any]]:
 
 
 @mcp.tool()
-async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
+def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
     """Alert metadata, seed account and multi-bank network transactions."""
     overlay = _eval_case_ctx.get()
     if overlay and overlay.get("alert_id") == params.alert_id:
@@ -149,7 +149,7 @@ async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
+def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
     """Transaction history for an account (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
@@ -168,7 +168,7 @@ async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[
 
 
 @mcp.tool()
-async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
+def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
     """KYC profile & risk tier for an account (`ACCOUNT_NOT_FOUND` if unknown - nothing is fabricated)."""
     overlay = _eval_case_ctx.get()
     if overlay and params.account_id in overlay.get("kyc_profiles", {}):
@@ -195,7 +195,7 @@ async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
+def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
     """Historical transfers between two accounts (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
@@ -220,7 +220,7 @@ def _registered(entity: str, kind: str, number: str, status: str, since: str, ev
 
 
 @mcp.tool()
-async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
+def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
     """GST / MCA / Section 80G / Chit registration lookup (a clean NOT_FOUND is a legitimate answer)."""
     overlay = _eval_case_ctx.get()
     not_found = {"status": "ok", "evidence_id": f"REGISTRY-NONE-{params.entity_name}", "entity_name": params.entity_name,

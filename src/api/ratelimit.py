@@ -1,4 +1,4 @@
-﻿"""In-memory sliding-window rate limiting (per client IP, per limiter). Exceeding the limit returns HTTP 429."""
+"""In-memory sliding-window rate limiting (per client IP, per limiter). Exceeding the limit returns HTTP 429."""
 from __future__ import annotations
 
 import threading

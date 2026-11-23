@@ -36,6 +36,7 @@ from src.core.canonical import to_money
 from src.db.database import append_audit_log, get_ro_db, init_db, list_audit_logs, list_checkpoints, read_events, utc_now_iso
 from src.guardrails.guardrails import apply_input_guardrails
 from src.mcp_servers import bank_records, compliance_kb
+from src.mcp_servers.client import call_mcp_tool
 from src.models import (
     Alert,
     DecisionRequest,
@@ -240,10 +241,10 @@ async def list_regulations(
     _p: Principal = ANALYST,
 ):
     if q and q.strip():
-        fn = getattr(compliance_kb.search_regulations, "fn", compliance_kb.search_regulations)
-        res = await fn(compliance_kb.SearchRegulationsInput(query=q.strip(), top_k=top_k, decompose=True))
-        return {"clauses": [c.model_dump() for c in res.clauses], "total": len(res.clauses),
-                "retrieval_method": res.retrieval_method}
+        res = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q.strip(), "top_k": top_k, "decompose": True})
+        if res.get("status") == "error":
+            raise HTTPException(status_code=502, detail=f"{res.get('error_code')}: {res.get('error')}")
+        return {"clauses": res["clauses"], "total": len(res["clauses"]), "retrieval_method": res.get("retrieval_method")}
     idx = compliance_kb.get_regulatory_index()
     return {"clauses": [c.model_dump() for c in idx.clauses], "total": len(idx.clauses), "retrieval_method": "full_corpus"}
 

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import pytest
 
-from src.mcp_servers import compliance_kb
+from src.mcp_servers.client import call_mcp_tool
 
 
 @pytest.mark.asyncio
@@ -12,18 +12,16 @@ async def test_35_query_hybrid_retrieval_benchmark():
     queries = [json.loads(line) for line in bench_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(queries) >= 35
 
-    fn = getattr(compliance_kb.search_regulations, "fn", compliance_kb.search_regulations)
-
     bm25_hits = 0
     hybrid_hits = 0
     for q in queries:
         expected = set(q["expected_ids"])
-        r_bm25 = await fn(compliance_kb.SearchRegulationsInput(query=q["query"], top_k=5, mode="bm25_only"))
-        r_hyb = await fn(compliance_kb.SearchRegulationsInput(query=q["query"], top_k=5, mode="hybrid_rrf_rerank"))
+        r_bm25 = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": "bm25_only"})
+        r_hyb = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": "hybrid_rrf_rerank"})
 
-        if expected & {c.clause_id for c in r_bm25.clauses}:
+        if expected & {c["clause_id"] for c in r_bm25["clauses"]}:
             bm25_hits += 1
-        if expected & {c.clause_id for c in r_hyb.clauses}:
+        if expected & {c["clause_id"] for c in r_hyb["clauses"]}:
             hybrid_hits += 1
 
     bm25_recall5 = bm25_hits / len(queries)

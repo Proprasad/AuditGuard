@@ -1,4 +1,4 @@
-"""
+﻿"""
 MCP Server: compliance-kb (READ)
 True Hybrid RAG Pipeline over the 32-clause Indian AML Regulatory Corpus:
   1. Sparse Lexical Index: Okapi BM25 (k1=1.5, b=0.75)
@@ -18,7 +18,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -339,4 +339,4 @@ async def get_clause_by_id(params: GetClauseInput) -> RegulationClause:
 
 if __name__ == "__main__":
     port = int(os.getenv("MCP_COMPLIANCE_KB_PORT", "8010"))
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)  # noqa: S104 - container bind

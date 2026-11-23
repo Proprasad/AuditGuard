@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # MCP
     mcp_transport: Literal["inprocess", "http"] = "inprocess"
     mcp_host: str = "localhost"
+    mcp_timeout_s: float = 30.0
     mcp_compliance_kb_port: int = 8010
     mcp_graph_engine_port: int = 8011
     mcp_bank_records_port: int = 8012

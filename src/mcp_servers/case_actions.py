@@ -1,4 +1,4 @@
-"""
+﻿"""
 MCP Server: case-actions (WRITE - approval gated)
 
 Thin FastMCP adapter over the write-scoped `src.db.case_repo`:
@@ -76,7 +76,7 @@ class SubmitCaseDispositionOutput(_Strict):
 
 
 @mcp.tool()
-async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispositionOutput:
+def draft_disposition_report(params: DraftDispositionInput) -> DraftDispositionOutput:
     """Persist a draft disposition worksheet and return its canonical SHA-256 hash (idempotent per thread revision)."""
     now = utc_now_iso()
     content = {**params.model_dump(exclude={"thread_id"}), "drafted_at": now}
@@ -88,7 +88,7 @@ async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispos
 
 
 @mcp.tool()
-async def submit_case_disposition(params: SubmitCaseDispositionInput) -> SubmitCaseDispositionOutput:
+def submit_case_disposition(params: SubmitCaseDispositionInput) -> SubmitCaseDispositionOutput:
     """Commit the approved disposition. Replays, tampered payloads and invalid tokens are rejected."""
     now = utc_now_iso()
     try:
