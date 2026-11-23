@@ -1,6 +1,8 @@
 """Workbench navigation data (read-only DB connections) and admin LLM configuration."""
+
 from __future__ import annotations
 
+import asyncio
 import logging
 from decimal import Decimal
 from typing import Optional
@@ -9,7 +11,10 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.api.auth import Principal
 from src.api.deps import (
-    ADMIN, ANALYST, LlmConfigUpdateRequest, api_deps,
+    ADMIN,
+    ANALYST,
+    LlmConfigUpdateRequest,
+    api_deps,
 )
 from src.config import get_policy, settings
 from src.core.canonical import to_money
@@ -20,12 +25,13 @@ from src.mcp_servers.client import call_mcp_tool
 logger = logging.getLogger("auditguard.api")
 router = APIRouter()
 
+
 # ---------------------------------------------------------------------------
 # Workbench Navigation Data Endpoints (read-only DB connections)
 # ---------------------------------------------------------------------------
 @router.get("/api/v1/alerts", dependencies=api_deps)
 async def get_queued_alerts(limit: int = Query(50, ge=1, le=500), _p: Principal = ANALYST):
-    alerts = bank_records.list_queued_alerts(limit=limit)
+    alerts = await asyncio.to_thread(bank_records.list_queued_alerts, limit)
     open_count = sum(1 for a in alerts if str(a.get("status", "OPEN")).upper() == "OPEN")
     return {"alerts": alerts, "total": len(alerts), "open_count": open_count}
 
@@ -34,12 +40,23 @@ async def get_queued_alerts(limit: int = Query(50, ge=1, le=500), _p: Principal 
 async def get_cases(limit: int = Query(50, ge=1, le=500), _p: Principal = ANALYST):
     init_db()
     with get_ro_db() as conn:
-        committed = [dict(r) for r in conn.execute(
-            "SELECT case_id, alert_id, worksheet_id, disposition, payload_hash, approver_id, committed_at "
-            "FROM cases ORDER BY committed_at DESC LIMIT ?", (limit,)).fetchall()]
-        worksheets = [dict(r) for r in conn.execute(
-            "SELECT worksheet_id, alert_id, payload_hash, status, reviewer_id, reviewer_decision, created_at, updated_at "
-            "FROM worksheets ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()]
+        committed = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT case_id, alert_id, worksheet_id, disposition, payload_hash, approver_id, committed_at "
+                "FROM cases ORDER BY committed_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        ]
+        worksheets = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT worksheet_id, alert_id, payload_hash, status, "
+                "reviewer_id, reviewer_decision, created_at, updated_at "
+                "FROM worksheets ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        ]
     return {"cases": committed, "worksheets": worksheets, "total_committed": len(committed)}
 
 
@@ -73,17 +90,29 @@ async def list_regulations(
     _p: Principal = ANALYST,
 ):
     if q and q.strip():
-        res = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q.strip(), "top_k": top_k, "decompose": True})
+        res = await call_mcp_tool(
+            "compliance-kb", "search_regulations", {"query": q.strip(), "top_k": top_k, "decompose": True}
+        )
         if res.get("status") == "error":
             raise HTTPException(status_code=502, detail=f"{res.get('error_code')}: {res.get('error')}")
-        return {"clauses": res["clauses"], "total": len(res["clauses"]), "retrieval_method": res.get("retrieval_method")}
+        return {
+            "clauses": res["clauses"],
+            "total": len(res["clauses"]),
+            "retrieval_method": res.get("retrieval_method"),
+        }
     idx = compliance_kb.get_regulatory_index()
-    return {"clauses": [c.model_dump() for c in idx.clauses], "total": len(idx.clauses), "retrieval_method": "full_corpus"}
+    return {
+        "clauses": [c.model_dump() for c in idx.clauses],
+        "total": len(idx.clauses),
+        "retrieval_method": "full_corpus",
+    }
 
 
 @router.get("/api/v1/audit-logs", dependencies=api_deps)
-async def get_audit_logs(thread_id: Optional[str] = None, limit: int = Query(60, ge=1, le=500), _p: Principal = ANALYST):
-    logs = list_audit_logs(thread_id=thread_id, limit=limit)
+async def get_audit_logs(
+    thread_id: Optional[str] = None, limit: int = Query(60, ge=1, le=500), _p: Principal = ANALYST
+):
+    logs = await asyncio.to_thread(list_audit_logs, thread_id, limit)
     return {"audit_logs": logs, "total": len(logs)}
 
 
@@ -91,8 +120,14 @@ async def get_audit_logs(thread_id: Optional[str] = None, limit: int = Query(60,
 async def get_analytics(_p: Principal = ANALYST):
     init_db()
     with get_ro_db() as conn:
-        alert_counts = {r["status"]: r["c"] for r in conn.execute("SELECT status, COUNT(*) AS c FROM alerts GROUP BY status").fetchall()}
-        disp_counts = {r["disposition"]: r["c"] for r in conn.execute("SELECT disposition, COUNT(*) AS c FROM cases GROUP BY disposition").fetchall()}
+        alert_counts = {
+            r["status"]: r["c"]
+            for r in conn.execute("SELECT status, COUNT(*) AS c FROM alerts GROUP BY status").fetchall()
+        }
+        disp_counts = {
+            r["disposition"]: r["c"]
+            for r in conn.execute("SELECT disposition, COUNT(*) AS c FROM cases GROUP BY disposition").fetchall()
+        }
         totals = conn.execute(
             """
             SELECT (SELECT COUNT(*) FROM alerts) AS total_alerts,
@@ -102,7 +137,10 @@ async def get_analytics(_p: Principal = ANALYST):
                    (SELECT COUNT(*) FROM checkpoints) AS total_threads
             """
         ).fetchone()
-        volume = sum((to_money(r[0]) for r in conn.execute("SELECT amount_inr FROM transactions").fetchall()), Decimal("0.00"))
+        volume = sum(
+            (to_money(r[0]) for r in conn.execute("SELECT amount_inr FROM transactions").fetchall()),
+            Decimal("0.00"),
+        )
     summary = dict(totals) if totals else {}
     summary["total_tx_volume_inr"] = format(volume, "f")
     return {"summary": summary, "alerts_by_status": alert_counts, "cases_by_disposition": disp_counts}
@@ -140,13 +178,18 @@ async def update_llm_config(req: LlmConfigUpdateRequest, principal: Principal = 
     from src.agent.llm_client import set_runtime_llm_config
 
     try:
-        updated = set_runtime_llm_config(enabled=req.enabled, model=req.model, strong_model=req.strong_model)
+        updated = await asyncio.to_thread(set_runtime_llm_config, req.enabled, req.model, req.strong_model)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"INVALID_LLM_CONFIG: {exc}") from exc
     append_audit_log(
-        thread_id="system-config", event_type="llm_config_updated", actor=principal.sub,
-        details={"llm_enabled": updated["llm_enabled"], "c1_and_specialist_model": updated["c1_and_specialist_model"],
-                 "c2_supervisor_model": updated["c2_supervisor_model"]},
+        thread_id="system-config",
+        event_type="llm_config_updated",
+        actor=principal.sub,
+        details={
+            "llm_enabled": updated["llm_enabled"],
+            "c1_and_specialist_model": updated["c1_and_specialist_model"],
+            "c2_supervisor_model": updated["c2_supervisor_model"],
+        },
     )
     return updated
 
@@ -156,5 +199,3 @@ async def test_llm_connection(model: Optional[str] = None, _p: Principal = ADMIN
     from src.agent.llm_client import ping_openrouter
 
     return await ping_openrouter(model=model)
-
-

@@ -1,4 +1,5 @@
-﻿"""T5: Security Hooks, RBAC & Guardrail Tests"""
+"""T5: Security Hooks, RBAC & Guardrail Tests"""
+
 from src.config import get_policy
 from src.guardrails.guardrails import apply_input_guardrails, apply_output_guardrails
 from src.guardrails.hooks import pre_tool_hook, post_tool_hook

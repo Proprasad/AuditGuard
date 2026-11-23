@@ -5,6 +5,7 @@ Parallel transfers between the same account pair are preserved individually as m
 aggregated per hop with exact Decimal sums and complete tx-ID lists. Path / calculation identifiers are
 SHA-256 derived from sorted transaction IDs so identical evidence always yields identical IDs.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -88,7 +89,9 @@ class Conservation:
 
 
 # --------------------------------------------------------------------------------------------------
-def build_multigraph(txns: Iterable[Txn], window_days: int, anchor: datetime | None, lookback_days: int) -> nx.MultiDiGraph:
+def build_multigraph(
+    txns: Iterable[Txn], window_days: int, anchor: datetime | None, lookback_days: int
+) -> nx.MultiDiGraph:
     graph: nx.MultiDiGraph = nx.MultiDiGraph()
     ordered = sorted(txns, key=lambda t: (t.timestamp, t.tx_id))
     if not ordered:
@@ -120,11 +123,20 @@ def _span_days(items: Sequence[Txn]) -> Decimal:
 
 
 def _classify(
-    leaked: Decimal, span: Decimal, node_count: int, fan_in: int,
-    params: GraphParams, rules: SuspicionRules, retention: Decimal,
+    leaked: Decimal,
+    span: Decimal,
+    node_count: int,
+    fan_in: int,
+    params: GraphParams,
+    rules: SuspicionRules,
+    retention: Decimal,
 ) -> tuple[bool, str]:
     hops = node_count - 1
-    if leaked <= params.amount_tolerance and node_count >= rules.scatter_gather_min_nodes and fan_in >= params.min_intermediaries:
+    if (
+        leaked <= params.amount_tolerance
+        and node_count >= rules.scatter_gather_min_nodes
+        and fan_in >= params.min_intermediaries
+    ):
         return True, f"scatter_gather: {hops} hops, {retention}% retained"
     if span <= Decimal(rules.rapid_layering_max_days) and node_count >= rules.rapid_layering_min_nodes:
         return True, f"rapid_layering: {hops} hops in {span} days"
@@ -134,7 +146,11 @@ def _classify(
 
 
 def compute_path_metrics(
-    graph: nx.MultiDiGraph, path: Sequence[str], params: GraphParams, rules: SuspicionRules, fan_in: int,
+    graph: nx.MultiDiGraph,
+    path: Sequence[str],
+    params: GraphParams,
+    rules: SuspicionRules,
+    fan_in: int,
 ) -> PathMetrics:
     hops = [hop_transactions(graph, u, v) for u, v in zip(path, path[1:], strict=False)]
     outflow = _sum(hops[0])
@@ -178,7 +194,11 @@ def _enumerate_paths(graph: nx.MultiDiGraph, root: str, max_hops: int, max_raw: 
 
 
 def find_candidate_paths(
-    txns: Sequence[Txn], root: str, params: GraphParams, rules: SuspicionRules, limits: GraphLimits,
+    txns: Sequence[Txn],
+    root: str,
+    params: GraphParams,
+    rules: SuspicionRules,
+    limits: GraphLimits,
 ) -> GraphRun:
     graph = build_multigraph(txns, params.time_window_days, params.anchor, limits.anchor_lookback_days)
     params_used = params.as_dict()
@@ -213,13 +233,21 @@ def flow_conservation(paths: Sequence[PathMetrics], tolerance: Decimal, structur
     total_out = to_money(_dsum(p.total_consolidated_inr for p in paths))
     net = abs(total_in - total_out).quantize(CENT)
     leakage = (net / total_in).quantize(RATIO_Q) if total_in > 0 else Decimal("0.0000")
-    near_threshold = [
-        p for p in paths if structuring.floor_inr <= p.total_outflow_inr < structuring.threshold_inr
-    ]
+    near_threshold = [p for p in paths if structuring.floor_inr <= p.total_outflow_inr < structuring.threshold_inr]
     reason = (
-        f"{len(near_threshold)} paths just below INR {structuring.threshold_inr:,.2f} threshold" if near_threshold else "none"
+        f"{len(near_threshold)} paths just below INR {structuring.threshold_inr:,.2f} threshold"
+        if near_threshold
+        else "none"
     )
-    return Conservation(leakage <= to_decimal(tolerance, RATIO_Q), total_in, total_out, net, leakage, bool(near_threshold), reason)
+    return Conservation(
+        leakage <= to_decimal(tolerance, RATIO_Q),
+        total_in,
+        total_out,
+        net,
+        leakage,
+        bool(near_threshold),
+        reason,
+    )
 
 
 def _dsum(values: Iterable[Decimal]) -> Decimal:

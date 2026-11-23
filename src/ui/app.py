@@ -6,6 +6,7 @@ A thin client of the authenticated FastAPI service: it logs in with a service ac
 follows its durable event stream and submits decisions with the exact `approved_hash` + single-use `approval_token`.
 It never fabricates results: any failure is shown as an error and no approval card is created.
 """
+
 import json
 import os
 from typing import Any, Optional
@@ -15,7 +16,11 @@ import httpx
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 MODES = ("c0_fixed", "c1_single", "c2_multi")
-TARGET_DISPOSITION = {"approve": "escalate_str", "close_benign": "close_benign", "request_info": "request_info"}
+TARGET_DISPOSITION = {
+    "approve": "escalate_str",
+    "close_benign": "close_benign",
+    "request_info": "request_info",
+}
 _token_cache: dict[str, str] = {}
 
 
@@ -95,7 +100,9 @@ async def on_message(message: cl.Message) -> None:
         elif "request" in lower or "more info" in lower:
             await _decide("request_info", content)
         else:
-            await cl.Message(content="Reply with: **approve**, **close as benign**, **request more info** or **reject**").send()
+            await cl.Message(
+                content="Reply with: **approve**, **close as benign**, **request more info** or **reject**"
+            ).send()
         return
 
     await cl.Message(content="Type `investigate <alert_id>` to start, or `/mode ...` to switch agent mode.").send()
@@ -124,7 +131,9 @@ async def _run_investigation(alert_id: str, mode: str) -> None:
             reg = await _api(client, "POST", "/api/v1/investigations", json={"alert_id": alert_id, "mode": mode})
             thread_id = reg["thread_id"]
             cl.user_session.set("thread_id", thread_id)
-            async with client.stream("GET", f"{API_BASE}/api/v1/investigations/{thread_id}/stream", headers=await _headers(client)) as resp:
+            async with client.stream(
+                "GET", f"{API_BASE}/api/v1/investigations/{thread_id}/stream", headers=await _headers(client)
+            ) as resp:
                 if resp.status_code != 200:
                     raise ApiError(f"stream failed (HTTP {resp.status_code})")
                 event = "message"
@@ -145,7 +154,12 @@ async def _run_investigation(alert_id: str, mode: str) -> None:
                         return
                     if event == "verification_failed":
                         cl.user_session.set("pending", data)
-                        await cl.Message(content=f"Verification FAILED (fail-closed): {data.get('message', '')}\nEdit the worksheet in the Workbench or reject.").send()
+                        await cl.Message(
+                            content=(
+                                f"Verification FAILED (fail-closed): {data.get('message', '')}\n"
+                                "Edit the worksheet in the Workbench or reject."
+                            )
+                        ).send()
                         return
                     if event in ("completed", "error"):
                         await msg.stream_token(f"\n\n{data.get('message', event)}")
@@ -211,18 +225,34 @@ async def _decide(choice: str, notes: str) -> None:
                 approved_hash, token = pending.get("approved_hash"), pending.get("approval_token")
                 target = TARGET_DISPOSITION[choice]
                 if target != pending.get("recommended_disposition") or not approved_hash:
-                    edited = await _api(client, "POST", path, json={"action": "edit", "edit": {"recommended_disposition": target}})
+                    edited = await _api(
+                        client,
+                        "POST",
+                        path,
+                        json={"action": "edit", "edit": {"recommended_disposition": target}},
+                    )
                     approved_hash, token = edited["approved_hash"], edited["approval_token"]
-                body = await _api(client, "POST", path, json={"action": "approve", "approved_hash": approved_hash,
-                                                              "approval_token": token, "notes": notes})
+                body = await _api(
+                    client,
+                    "POST",
+                    path,
+                    json={
+                        "action": "approve",
+                        "approved_hash": approved_hash,
+                        "approval_token": token,
+                        "notes": notes,
+                    },
+                )
     except (ApiError, httpx.HTTPError) as exc:
         await cl.Message(content=f"Decision was NOT recorded: {exc}", author="AuditGuard").send()
         return
     receipt = body.get("receipt") or {}
     await cl.Message(
-        content=(f"## Decision recorded: `{str(body.get('decision', choice)).upper()}`\n"
-                 f"**Case:** `{receipt.get('case_id', '-')}`  **Audit entry:** `{receipt.get('audit_entry_id', '-')}`\n\n"
-                 "Type `investigate <alert_id>` to start another."),
+        content=(
+            f"## Decision recorded: `{str(body.get('decision', choice)).upper()}`\n"
+            f"**Case:** `{receipt.get('case_id', '-')}`  **Audit entry:** `{receipt.get('audit_entry_id', '-')}`\n\n"
+            "Type `investigate <alert_id>` to start another."
+        ),
         author="AuditGuard",
     ).send()
     cl.user_session.set("pending", None)

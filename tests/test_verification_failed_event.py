@@ -1,12 +1,18 @@
 """verification_failed is a first-class terminal SSE event and blocks the approval token (fail-closed)."""
+
 import pytest
 
 from src.api.services import runner
 from src.db.database import read_events
 from src.models import Alert, RiskLevel
 
-ALERT = Alert(alert_id="ALT-2026-0412", rule_name="SCATTER_GATHER_900K", root_account="ACC-IND-1042",
-              total_amount_inr="900000.00", risk_level=RiskLevel.HIGH)
+ALERT = Alert(
+    alert_id="ALT-2026-0412",
+    rule_name="SCATTER_GATHER_900K",
+    root_account="ACC-IND-1042",
+    total_amount_inr="900000.00",
+    risk_level=RiskLevel.HIGH,
+)
 
 
 @pytest.mark.asyncio

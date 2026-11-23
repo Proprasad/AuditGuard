@@ -1,4 +1,5 @@
-"""Step 2 gate: pure core (Decimal + MultiDiGraph + canonical hashing), PolicyConfig, BudgetLedger, startup validation."""
+"""Step 2 gate: pure core (Decimal, MultiDiGraph, canonical hash), PolicyConfig, BudgetLedger & startup."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -38,7 +39,9 @@ def _params(window: int = 7) -> graph_math.GraphParams:
 
 # ------------------------------------------------------------------------------------ (a) MultiDiGraph
 def test_five_parallel_transfers_preserved_with_exact_decimal_totals() -> None:
-    txns = [_txn(f"TXN-A{i}", "A", "B", "1000.10", minutes=i) for i in range(5)] + [_txn("TXN-B1", "B", "C", "5000.00", 30)]
+    txns = [_txn(f"TXN-A{i}", "A", "B", "1000.10", minutes=i) for i in range(5)] + [
+        _txn("TXN-B1", "B", "C", "5000.00", 30)
+    ]
     graph = graph_math.build_multigraph(txns, 7, None, 1)
     assert graph.number_of_edges() == 5 + 1  # 5 parallel A->B edges + B->C, none collapsed
 
@@ -139,13 +142,24 @@ def test_policy_graph_bounds_validation_uses_yaml_not_literals() -> None:
 
 # ------------------------------------------------------------------------------------ startup validation
 def test_startup_refuses_insecure_config_outside_dev() -> None:
-    insecure = Settings(_env_file=None, app_env="production", api_secret_key="auditguard-dev-jwt-secret-change-in-prod",
-                        hmac_secret="short", auth_required=False)
+    insecure = Settings(
+        _env_file=None,
+        app_env="production",
+        api_secret_key="auditguard-dev-jwt-secret-change-in-prod",
+        hmac_secret="short",
+        auth_required=False,
+    )
     with pytest.raises(StartupConfigError) as exc:
         validate_startup(insecure)
     assert "API_SECRET_KEY" in str(exc.value) and "HMAC_SECRET" in str(exc.value) and "AUTH_REQUIRED" in str(exc.value)
 
-    secure = Settings(_env_file=None, app_env="production", api_secret_key="x" * 48, hmac_secret="y" * 48, auth_required=True)
+    secure = Settings(
+        _env_file=None,
+        app_env="production",
+        api_secret_key="x" * 48,
+        hmac_secret="y" * 48,
+        auth_required=True,
+    )
     assert validate_startup(secure) == []
 
 
@@ -170,7 +184,8 @@ def test_legacy_numeric_schema_is_migrated(tmp_path: Path, monkeypatch: pytest.M
     conn.executescript(
         "CREATE TABLE alerts (alert_id TEXT PRIMARY KEY, initial_amount_inr NUMERIC);"
         "CREATE TABLE worksheets (worksheet_id TEXT PRIMARY KEY, alert_id TEXT, content_json TEXT, payload_hash TEXT,"
-        " status TEXT, reviewer_id TEXT, reviewer_decision TEXT, reviewer_notes TEXT, created_at TEXT, updated_at TEXT);"
+        " status TEXT, reviewer_id TEXT, reviewer_decision TEXT, "
+        "reviewer_notes TEXT, created_at TEXT, updated_at TEXT);"
         "INSERT INTO alerts VALUES ('A1', 12.5);"
     )
     conn.commit()

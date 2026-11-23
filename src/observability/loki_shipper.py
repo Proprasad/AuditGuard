@@ -11,6 +11,7 @@ Key Design Properties:
     with zero latency or error impact on investigations.
   - Automatically disabled during `pytest` runs (`PYTEST_CURRENT_TEST`).
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,10 @@ def _post_to_loki(labels: dict[str, str], line_str: str, ts_ns: int) -> None:
     try:
         with urllib.request.urlopen(req, timeout=1.5):  # noqa: S310 - scheme validated above
             pass
-    except (OSError, ValueError) as exc:  # Loki being down must never break the app, but is visible at debug level
+    except (
+        OSError,
+        ValueError,
+    ) as exc:  # Loki being down must never break the app, but is visible at debug level
         logger.debug("loki push failed: %s", exc)
 
 

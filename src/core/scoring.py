@@ -4,6 +4,7 @@ Pure, framework-free hypothesis scoring (offline mode) and disposition decision.
 Confidences are *computed from evidence features* with weights loaded from `config/models.yaml` (`scoring:`);
 there are no per-case constants. When a live LLM scores the hypotheses instead, this module is not used.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -24,7 +25,17 @@ class EvidenceFeatures:
     low_kyc_risk: bool = False
 
     def active_suspicious(self) -> list[str]:
-        return [k for k in ("multi_hop_path", "flagged_path", "income_mismatch", "high_kyc_risk", "unregistered_root") if getattr(self, k)]
+        return [
+            k
+            for k in (
+                "multi_hop_path",
+                "flagged_path",
+                "income_mismatch",
+                "high_kyc_risk",
+                "unregistered_root",
+            )
+            if getattr(self, k)
+        ]
 
     def active_benign(self) -> list[str]:
         return [k for k in ("registered_root", "verified_merchants_low_risk", "low_kyc_risk") if getattr(self, k)]

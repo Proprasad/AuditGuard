@@ -5,6 +5,7 @@ Input/Output Guardrails - AuditGuard Security Layer
 - Untrusted-data containment: payloads are XML-escaped so `</untrusted_data>` breakout is impossible
 - Output screening for guilt assertions (shared normalised families from `src.core.verifier`)
 """
+
 from __future__ import annotations
 
 import html
@@ -23,11 +24,38 @@ PII_PATTERNS = {
 
 _ZERO_WIDTH = {ord(c): None for c in "\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e"}
 # Common Cyrillic / Greek look-alikes folded to Latin so homoglyph evasion does not bypass detection.
-_CONFUSABLES = {ord(k): v for k, v in {
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s", "ј": "j",
-    "ԁ": "d", "ɡ": "g", "һ": "h", "ո": "n", "ս": "u", "ν": "v", "ο": "o", "ι": "i", "α": "a", "ρ": "p",
-    "τ": "t", "κ": "k", "μ": "m", "Ι": "i", "Ο": "o", "Α": "a", "Ε": "e",
-}.items()}
+_CONFUSABLES = {
+    ord(k): v
+    for k, v in {
+        "а": "a",
+        "е": "e",
+        "о": "o",
+        "р": "p",
+        "с": "c",
+        "х": "x",
+        "у": "y",
+        "і": "i",
+        "ѕ": "s",
+        "ј": "j",
+        "ԁ": "d",
+        "ɡ": "g",
+        "һ": "h",
+        "ո": "n",
+        "ս": "u",
+        "ν": "v",
+        "ο": "o",
+        "ι": "i",
+        "α": "a",
+        "ρ": "p",
+        "τ": "t",
+        "κ": "k",
+        "μ": "m",
+        "Ι": "i",
+        "Ο": "o",
+        "Α": "a",
+        "Ε": "e",
+    }.items()
+}
 
 _VERB = r"(?:ignore|disregard|forget|override|bypass|skip|discard|neglect)"
 _QUALIFIER = r"(?:previous|prior|above|earlier|preceding|system|all|any|your|the|these|those)"
@@ -46,10 +74,16 @@ COMMON_INJECTION_PATTERNS = [
 ]
 # Extra structural-override patterns applied only to external data (tool outputs / memos / KYC notes).
 EXTERNAL_ONLY_PATTERNS = [
-    re.compile(r"\b(?:mark|close|classify|set|label|treat|flag) (?:this |the )?(?:case|alert|account|transaction)?\s*(?:as )?"
-               r"(?:close_benign|benign|legitimate|safe|cleared)\b"),
+    re.compile(
+        r"\b(?:mark|close|classify|set|label|treat|flag) "
+        r"(?:this |the )?(?:case|alert|account|transaction)?\s*(?:as )?"
+        r"(?:close_benign|benign|legitimate|safe|cleared)\b"
+    ),
     re.compile(r"\bapprove(?: and|&)? ?commit\b|\bauto[- ]?approve\b|\bsubmit_case_disposition\b"),
-    re.compile(r"\b(?:reveal|print|show|leak|disclose|exfiltrate) (?:your |the )?(?:system prompt|api key|secret|hidden instructions)\b"),
+    re.compile(
+        r"\b(?:reveal|print|show|leak|disclose|exfiltrate) "
+        r"(?:your |the )?(?:system prompt|api key|secret|hidden instructions)\b"
+    ),
 ]
 INJECTION_PATTERNS = COMMON_INJECTION_PATTERNS  # public alias (input-side list)
 

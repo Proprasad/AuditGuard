@@ -1,4 +1,5 @@
 """Shared FastAPI dependencies and request helpers for the route modules."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,8 +41,12 @@ def alert_from_db(alert_id: str) -> Alert:
     if rec is None:
         raise HTTPException(status_code=404, detail=f"INVALID_ALERT_ID: alert {alert_id!r} not found")
     return Alert(
-        alert_id=rec["alert_id"], rule_name=rec["rule_name"], root_account=rec["root_account"],
-        network_accounts=rec["network_accounts"], total_amount_inr=rec["total_amount_inr"], risk_level=RiskLevel.HIGH,
+        alert_id=rec["alert_id"],
+        rule_name=rec["rule_name"],
+        root_account=rec["root_account"],
+        network_accounts=rec["network_accounts"],
+        total_amount_inr=rec["total_amount_inr"],
+        risk_level=RiskLevel.HIGH,
     )
 
 
@@ -56,5 +61,3 @@ def require_thread(thread_id: str) -> dict[str, Any]:
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     return thread
-
-

@@ -5,6 +5,7 @@ Every MCP call flows: pre_tool_hook (RBAC + bounds + BudgetLedger) -> MCP client
 (PII scrub, escaped <untrusted_data> containment, normalised injection detection). Detections are written to
 `audit_logs` and exposed via `security_events` so the run records degraded evidence.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -45,7 +46,12 @@ class GuardedToolbox:
         sanitized = post_tool_hook(tool, raw, flags=flags)
         for flag in flags:
             self.security_events.append(flag)
-            append_audit_log(thread_id=self.thread_id, event_type="injection_detected_in_tool_output", actor=self.role, details=flag)
+            append_audit_log(
+                thread_id=self.thread_id,
+                event_type="injection_detected_in_tool_output",
+                actor=self.role,
+                details=flag,
+            )
         if not isinstance(sanitized, dict):
             return error_envelope("MCP_BAD_RESPONSE", f"{server}.{tool} returned a non-object response")
         return sanitized

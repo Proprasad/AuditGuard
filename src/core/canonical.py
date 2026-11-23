@@ -11,6 +11,7 @@ Rules enforced here for the whole code-base:
     Decimals serialise as fixed-point strings (never scientific notation), datetimes as UTC ISO-8601,
     sets as sorted lists, keys sorted.
 """
+
 from __future__ import annotations
 
 import enum

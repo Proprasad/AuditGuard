@@ -1,4 +1,5 @@
 """Hybrid RAG Compliance KB & 35-Query Retrieval Benchmark Tests"""
+
 import json
 from pathlib import Path
 import pytest
@@ -16,8 +17,14 @@ async def test_35_query_hybrid_retrieval_benchmark():
     hybrid_hits = 0
     for q in queries:
         expected = set(q["expected_ids"])
-        r_bm25 = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": "bm25_only"})
-        r_hyb = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": "hybrid_rrf_rerank"})
+        r_bm25 = await call_mcp_tool(
+            "compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": "bm25_only"}
+        )
+        r_hyb = await call_mcp_tool(
+            "compliance-kb",
+            "search_regulations",
+            {"query": q["query"], "top_k": 5, "mode": "hybrid_rrf_rerank"},
+        )
 
         if expected & {c["clause_id"] for c in r_bm25["clauses"]}:
             bm25_hits += 1

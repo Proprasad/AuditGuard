@@ -6,6 +6,7 @@ Connections come from `get_scoped_db`, whose SQL authorizer denies any write/DDL
 canonical SHA-256 of the exact worksheet content; consumption + case insert + worksheet transition happen in ONE
 transaction (all-or-nothing).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,8 +70,15 @@ def get_worksheet(worksheet_id: str) -> Optional[dict[str, Any]]:
     }
 
 
-def _audit(conn: sqlite3.Connection, thread_id: str, event_type: str, actor: str, details: dict[str, Any],
-           payload_hash: Optional[str] = None, case_id: Optional[str] = None) -> None:
+def _audit(
+    conn: sqlite3.Connection,
+    thread_id: str,
+    event_type: str,
+    actor: str,
+    details: dict[str, Any],
+    payload_hash: Optional[str] = None,
+    case_id: Optional[str] = None,
+) -> None:
     conn.execute(
         "INSERT INTO audit_logs (case_id, thread_id, event_type, actor, payload_hash, details_json, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -90,27 +98,50 @@ def upsert_draft(content: dict[str, Any], thread_id: Optional[str], revision: in
         existing = None
         if thread_id:
             existing = conn.execute(
-                "SELECT worksheet_id, status, content_json, payload_hash FROM worksheets WHERE thread_id = ? AND revision = ?",
+                (
+                    "SELECT worksheet_id, status, content_json, payload_hash "
+                    "FROM worksheets WHERE thread_id = ? AND revision = ?"
+                ),
                 (thread_id, revision),
             ).fetchone()
         if existing and existing["status"] == "submitted":
-            return {"worksheet_id": existing["worksheet_id"], "payload_hash": existing["payload_hash"],
-                    "content": json.loads(existing["content_json"]), "created": False}
+            return {
+                "worksheet_id": existing["worksheet_id"],
+                "payload_hash": existing["payload_hash"],
+                "content": json.loads(existing["content_json"]),
+                "created": False,
+            }
         if existing:
             worksheet_id = existing["worksheet_id"]
             conn.execute(
-                "UPDATE worksheets SET content_json = ?, payload_hash = ?, status = 'pending_review', updated_at = ? WHERE worksheet_id = ?",
+                (
+                    "UPDATE worksheets SET content_json = ?, payload_hash = ?, status "
+                    "= 'pending_review', updated_at = ? WHERE worksheet_id = ?"
+                ),
                 (dumps_json(content), sha, now, worksheet_id),
             )
         else:
             worksheet_id = f"DWS-{uuid.uuid4().hex[:8].upper()}"
             conn.execute(
-                "INSERT INTO worksheets (worksheet_id, alert_id, content_json, payload_hash, status, thread_id, revision, created_at, updated_at) "
+                "INSERT INTO worksheets (worksheet_id, alert_id, content_json, "
+                "payload_hash, status, thread_id, revision, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, 'pending_review', ?, ?, ?, ?)",
                 (worksheet_id, content["alert_id"], dumps_json(content), sha, thread_id, revision, now, now),
             )
-        _audit(conn, thread_id or "draft", "draft_created", "auditguard_agent", {"worksheet_id": worksheet_id, "alert_id": content["alert_id"]}, sha)
-    return {"worksheet_id": worksheet_id, "payload_hash": sha, "content": content, "created": existing is None}
+        _audit(
+            conn,
+            thread_id or "draft",
+            "draft_created",
+            "auditguard_agent",
+            {"worksheet_id": worksheet_id, "alert_id": content["alert_id"]},
+            sha,
+        )
+    return {
+        "worksheet_id": worksheet_id,
+        "payload_hash": sha,
+        "content": content,
+        "created": existing is None,
+    }
 
 
 def update_worksheet_content(worksheet_id: str, new_content: dict[str, Any], editor_id: str) -> dict[str, Any]:
@@ -118,21 +149,36 @@ def update_worksheet_content(worksheet_id: str, new_content: dict[str, Any], edi
     now = utc_now_iso()
     new_sha = canonical_sha256(new_content)
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
-        row = conn.execute("SELECT status, payload_hash, thread_id, revision FROM worksheets WHERE worksheet_id = ?", (worksheet_id,)).fetchone()
+        row = conn.execute(
+            "SELECT status, payload_hash, thread_id, revision FROM worksheets WHERE worksheet_id = ?",
+            (worksheet_id,),
+        ).fetchone()
         if row is None:
             raise CaseRepoError("WORKSHEET_NOT_FOUND", f"worksheet {worksheet_id} not found")
         if row["status"] != "pending_review":
             raise CaseRepoError("WORKSHEET_NOT_PENDING", f"worksheet is {row['status']}")
         conn.execute(
-            "UPDATE worksheets SET content_json = ?, payload_hash = ?, revision = revision + 1, updated_at = ? WHERE worksheet_id = ?",
+            (
+                "UPDATE worksheets SET content_json = ?, payload_hash = ?, "
+                "revision = revision + 1, updated_at = ? WHERE worksheet_id = ?"
+            ),
             (dumps_json(new_content), new_sha, now, worksheet_id),
         )
         conn.execute(
-            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = 'superseded_by_edit' WHERE worksheet_id = ? AND consumed_at IS NULL",
+            (
+                "UPDATE approval_tokens SET consumed_at = ?, consumed_by = "
+                "'superseded_by_edit' WHERE worksheet_id = ? AND consumed_at IS NULL"
+            ),
             (now, worksheet_id),
         )
-        _audit(conn, row["thread_id"] or "edit", "worksheet_edited_hash_invalidated", editor_id,
-               {"worksheet_id": worksheet_id, "previous_hash": row["payload_hash"], "new_hash": new_sha}, new_sha)
+        _audit(
+            conn,
+            row["thread_id"] or "edit",
+            "worksheet_edited_hash_invalidated",
+            editor_id,
+            {"worksheet_id": worksheet_id, "previous_hash": row["payload_hash"], "new_hash": new_sha},
+            new_sha,
+        )
     return {"worksheet_id": worksheet_id, "previous_hash": row["payload_hash"], "payload_hash": new_sha}
 
 
@@ -146,18 +192,30 @@ def issue_approval_token(thread_id: str, worksheet_id: str) -> dict[str, Any]:
     token = build_approval_token(token_id, sha)
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
         conn.execute(
-            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = 'superseded' WHERE worksheet_id = ? AND consumed_at IS NULL",
+            (
+                "UPDATE approval_tokens SET consumed_at = ?, consumed_by = "
+                "'superseded' WHERE worksheet_id = ? AND consumed_at IS NULL"
+            ),
             (now, worksheet_id),
         )
         conn.execute(
-            "INSERT INTO approval_tokens (token_id, thread_id, worksheet_id, worksheet_sha256, hmac_token, issued_at, consumed_at) "
+            "INSERT INTO approval_tokens (token_id, thread_id, worksheet_id, "
+            "worksheet_sha256, hmac_token, issued_at, consumed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, NULL)",
             (token_id, thread_id, worksheet_id, sha, token, now),
         )
-    return {"token_id": token_id, "worksheet_id": worksheet_id, "approved_hash": sha, "approval_token": token, "issued_at": now}
+    return {
+        "token_id": token_id,
+        "worksheet_id": worksheet_id,
+        "approved_hash": sha,
+        "approval_token": token,
+        "issued_at": now,
+    }
 
 
-def commit_case(worksheet_id: str, approval_token: str, reviewer_id: str, reviewer_notes: str, thread_id: str) -> dict[str, Any]:
+def commit_case(
+    worksheet_id: str, approval_token: str, reviewer_id: str, reviewer_notes: str, thread_id: str
+) -> dict[str, Any]:
     """Atomically verify + consume the single-use token, mark the worksheet submitted and INSERT the case."""
     parsed = parse_approval_token(approval_token)
     if parsed is None:
@@ -172,7 +230,9 @@ def commit_case(worksheet_id: str, approval_token: str, reviewer_id: str, review
             raise CaseRepoError("ALREADY_COMMITTED", "worksheet already committed")
         content = json.loads(ws["content_json"])
         current_sha = canonical_sha256(content)
-        tok = conn.execute("SELECT * FROM approval_tokens WHERE token_id = ? AND worksheet_id = ?", (token_id, worksheet_id)).fetchone()
+        tok = conn.execute(
+            "SELECT * FROM approval_tokens WHERE token_id = ? AND worksheet_id = ?", (token_id, worksheet_id)
+        ).fetchone()
         if tok is None:
             raise CaseRepoError("TOKEN_NOT_FOUND", "approval token was not issued for this worksheet")
         if tok["consumed_at"] is not None:
@@ -183,13 +243,17 @@ def commit_case(worksheet_id: str, approval_token: str, reviewer_id: str, review
             raise CaseRepoError("INVALID_HMAC_SIGNATURE", "approval token signature invalid")
 
         consumed = conn.execute(
-            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = ? WHERE token_id = ? AND worksheet_sha256 = ? AND consumed_at IS NULL",
+            (
+                "UPDATE approval_tokens SET consumed_at = ?, consumed_by = ? WHERE "
+                "token_id = ? AND worksheet_sha256 = ? AND consumed_at IS NULL"
+            ),
             (now, reviewer_id, token_id, current_sha),
         )
         if consumed.rowcount != 1:
             raise CaseRepoError("ALREADY_CONSUMED", "approval token already consumed")
         moved = conn.execute(
-            "UPDATE worksheets SET status = 'submitted', reviewer_id = ?, reviewer_decision = ?, reviewer_notes = ?, updated_at = ? "
+            "UPDATE worksheets SET status = 'submitted', reviewer_id = ?, "
+            "reviewer_decision = ?, reviewer_notes = ?, updated_at = ? "
             "WHERE worksheet_id = ? AND status = 'pending_review'",
             (reviewer_id, content["recommended_disposition"], reviewer_notes, now, worksheet_id),
         )
@@ -198,25 +262,63 @@ def commit_case(worksheet_id: str, approval_token: str, reviewer_id: str, review
         case_id = f"CASE-DISP-{uuid.uuid4().hex[:8].upper()}"
         try:
             conn.execute(
-                "INSERT INTO cases (case_id, alert_id, worksheet_id, disposition, worksheet_json, payload_hash, approver_id, committed_at) "
+                "INSERT INTO cases (case_id, alert_id, worksheet_id, disposition, "
+                "worksheet_json, payload_hash, approver_id, committed_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (case_id, ws["alert_id"], worksheet_id, content["recommended_disposition"], dumps_json(content), current_sha, reviewer_id, now),
+                (
+                    case_id,
+                    ws["alert_id"],
+                    worksheet_id,
+                    content["recommended_disposition"],
+                    dumps_json(content),
+                    current_sha,
+                    reviewer_id,
+                    now,
+                ),
             )
         except sqlite3.IntegrityError as exc:
             raise CaseRepoError("ALREADY_COMMITTED", f"a case already exists for alert {ws['alert_id']}") from exc
         cur = conn.execute(
-            "INSERT INTO audit_logs (case_id, thread_id, event_type, actor, payload_hash, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (case_id, thread_id, "case_committed", reviewer_id, current_sha,
-             dumps_json({"worksheet_id": worksheet_id, "alert_id": ws["alert_id"], "disposition": content["recommended_disposition"]}), now),
+            (
+                "INSERT INTO audit_logs (case_id, thread_id, event_type, actor, "
+                "payload_hash, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                case_id,
+                thread_id,
+                "case_committed",
+                reviewer_id,
+                current_sha,
+                dumps_json(
+                    {
+                        "worksheet_id": worksheet_id,
+                        "alert_id": ws["alert_id"],
+                        "disposition": content["recommended_disposition"],
+                    }
+                ),
+                now,
+            ),
         )
         log_id = int(cur.lastrowid or 0)
-    return {"case_id": case_id, "alert_id": ws["alert_id"], "disposition": content["recommended_disposition"],
-            "payload_hash": current_sha, "audit_entry_id": f"AUD-{log_id:06d}", "committed_at": now}
+    return {
+        "case_id": case_id,
+        "alert_id": ws["alert_id"],
+        "disposition": content["recommended_disposition"],
+        "payload_hash": current_sha,
+        "audit_entry_id": f"AUD-{log_id:06d}",
+        "committed_at": now,
+    }
 
 
 def log_rejection(thread_id: str, reviewer_id: str, worksheet_id: str, code: str) -> None:
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
-        _audit(conn, thread_id, "submission_rejected", reviewer_id, {"worksheet_id": worksheet_id, "reason": code})
+        _audit(
+            conn,
+            thread_id,
+            "submission_rejected",
+            reviewer_id,
+            {"worksheet_id": worksheet_id, "reason": code},
+        )
 
 
 def current_approval(worksheet_id: str) -> Optional[dict[str, Any]]:
@@ -229,8 +331,12 @@ def current_approval(worksheet_id: str) -> Optional[dict[str, Any]]:
         ).fetchone()
     if row is None:
         return None
-    return {"token_id": row["token_id"], "approved_hash": row["worksheet_sha256"],
-            "approval_token": row["hmac_token"], "issued_at": row["issued_at"]}
+    return {
+        "token_id": row["token_id"],
+        "approved_hash": row["worksheet_sha256"],
+        "approval_token": row["hmac_token"],
+        "issued_at": row["issued_at"],
+    }
 
 
 def mark_rejected(worksheet_id: str, reviewer_id: str, thread_id: str, notes: str) -> None:
@@ -242,7 +348,16 @@ def mark_rejected(worksheet_id: str, reviewer_id: str, thread_id: str, notes: st
             (reviewer_id, notes, now, worksheet_id),
         )
         conn.execute(
-            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = 'rejected' WHERE worksheet_id = ? AND consumed_at IS NULL",
+            (
+                "UPDATE approval_tokens SET consumed_at = ?, consumed_by = "
+                "'rejected' WHERE worksheet_id = ? AND consumed_at IS NULL"
+            ),
             (now, worksheet_id),
         )
-        _audit(conn, thread_id, "disposition_rejected_by_human", reviewer_id, {"worksheet_id": worksheet_id, "notes": notes})
+        _audit(
+            conn,
+            thread_id,
+            "disposition_rejected_by_human",
+            reviewer_id,
+            {"worksheet_id": worksheet_id, "notes": notes},
+        )

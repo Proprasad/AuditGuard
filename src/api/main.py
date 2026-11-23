@@ -2,6 +2,7 @@
 AuditGuard FastAPI application: thin HTTP layer. Business logic lives in `src/api/services/*`; every `/api/v1/*`
 route is authenticated (JWT, role-gated), rate limited and returns masked errors with a correlation id.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,8 +33,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     policy = reload_policy()
     init_db()
     seeded = ensure_seed_users(env_mapping())
-    logger.info("PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s); users=%s", policy.config_version,
-                policy.budgets.max_tool_calls, policy.budgets.max_cost_usd_per_case, seeded)
+    logger.info(
+        "PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s); users=%s",
+        policy.config_version,
+        policy.budgets.max_tool_calls,
+        policy.budgets.max_cost_usd_per_case,
+        seeded,
+    )
     yield
 
 
@@ -63,10 +69,16 @@ async def loki_http_request_logger(request: Request, call_next):
     if path.startswith("/api/v1/"):
         ms = round((time.perf_counter() - t0) * 1000, 1)
         emit_loki_log(
-            stream_type="http_api", event="api_request",
+            stream_type="http_api",
+            event="api_request",
             message=f"{request.method} {path} -> {response.status_code} ({ms}ms)",
             level="WARN" if response.status_code >= 400 else "INFO",
-            extra={"method": request.method, "path": path, "status_code": response.status_code, "duration_ms": ms},
+            extra={
+                "method": request.method,
+                "path": path,
+                "status_code": response.status_code,
+                "duration_ms": ms,
+            },
         )
     return response
 
@@ -82,7 +94,6 @@ async def masked_exception_handler(request: Request, exc: Exception) -> JSONResp
 async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
     errors = [{"loc": list(e.get("loc", [])), "msg": str(e.get("msg", ""))} for e in exc.errors()]
     return JSONResponse(status_code=422, content={"detail": errors})
-
 
 
 from src.api.deps import STATIC_DIR  # noqa: E402

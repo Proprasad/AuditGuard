@@ -1,9 +1,12 @@
 """
 AuditGuard C1 single-agent investigator: one LLM-driven agent running the compiled LangGraph (`src/agent/graph.py`).
 
-`plan -> gather_evidence -> form_hypotheses -> critique -> [replan -> gather_evidence]* -> draft -> human_gate(interrupt)`
-Every tool call is RBAC-checked, bounds-checked and budget-enforced by `GuardedToolbox`; all money flows through `Decimal`.
+`plan -> gather_evidence -> form_hypotheses -> critique -> [replan -> gather_evidence]* -> draft ->
+human_gate(interrupt)`
+Every tool call is RBAC-checked, bounds-checked and budget-enforced by `GuardedToolbox`; all money flows through
+`Decimal`.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,7 +34,14 @@ async def run_investigation(
 ) -> InvestigationState:
     """Execute C1; `resume=True` continues from the durable LangGraph checkpoint of `thread_id`."""
     return await run_graph(
-        alert=alert, mode="c1_single", thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}", resume=resume,
-        stop_after_node=stop_after_node, replanning_enabled=replanning_enabled, deterministic_verifier=deterministic_verifier,
-        reflexion_enabled=reflexion_enabled, memory_enabled=memory_enabled, emit=on_event,
+        alert=alert,
+        mode="c1_single",
+        thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
+        resume=resume,
+        stop_after_node=stop_after_node,
+        replanning_enabled=replanning_enabled,
+        deterministic_verifier=deterministic_verifier,
+        reflexion_enabled=reflexion_enabled,
+        memory_enabled=memory_enabled,
+        emit=on_event,
     )

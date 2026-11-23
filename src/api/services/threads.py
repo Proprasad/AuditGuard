@@ -1,4 +1,5 @@
-"""Investigation thread access: the database (checkpoints + worksheets + approval tokens) is the single source of truth."""
+"""Investigation thread access: DB (checkpoints + worksheets + approval tokens) is the single source of truth."""
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -12,9 +13,15 @@ def get_thread(thread_id: str) -> Optional[dict[str, Any]]:
     if cp is None:
         return None
     return {
-        "thread_id": cp["thread_id"], "alert_id": cp["alert_id"], "mode": cp["mode"], "status": cp["status"],
-        "current_node": cp["current_node"], "worksheet_id": cp["worksheet_id"], "payload_hash": cp["payload_hash"],
-        "state": cp["state"], "alert": cp["state"].get("alert", {}),
+        "thread_id": cp["thread_id"],
+        "alert_id": cp["alert_id"],
+        "mode": cp["mode"],
+        "status": cp["status"],
+        "current_node": cp["current_node"],
+        "worksheet_id": cp["worksheet_id"],
+        "payload_hash": cp["payload_hash"],
+        "state": cp["state"],
+        "alert": cp["state"].get("alert", {}),
     }
 
 
@@ -28,12 +35,14 @@ def thread_view(thread_id: str) -> Optional[dict[str, Any]]:
         return thread
     content = ws["content"]
     worksheet = thread["state"].get("worksheet") or {}
-    worksheet.update({
-        "recommended_disposition": content.get("recommended_disposition"),
-        "recommendation_rationale": content.get("recommendation_rationale"),
-        "payload_hash": ws["current_hash"],
-        "verification_status": content.get("verification_status", "passed"),
-    })
+    worksheet.update(
+        {
+            "recommended_disposition": content.get("recommended_disposition"),
+            "recommendation_rationale": content.get("recommendation_rationale"),
+            "payload_hash": ws["current_hash"],
+            "verification_status": content.get("verification_status", "passed"),
+        }
+    )
     thread["state"]["worksheet"] = worksheet
     thread["payload_hash"] = ws["current_hash"]
     thread["worksheet_status"] = ws["status"]

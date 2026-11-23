@@ -6,6 +6,7 @@ Usage:
   python -m eval.run_eval --config E3 --split dev
   python -m eval.run_eval --config E4 --split dev
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -118,14 +119,17 @@ async def run_case(
     try:
         if mode == "c0_fixed":
             from src.agent.c0_fixed import run_fixed_pipeline
+
             final_state = await run_fixed_pipeline(alert)
         elif mode == "c2_multi":
             from src.agent.c2_multi import run_multi_agent
+
             final_state = await run_multi_agent(
                 alert, reflexion_enabled=reflexion_enabled, memory_enabled=memory_enabled
             )
         else:
             from src.agent.c1_single import run_investigation
+
             final_state = await run_investigation(
                 alert,
                 replanning_enabled=replanning_enabled,
@@ -189,15 +193,25 @@ async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, An
                 from src.db.database import get_db
 
                 d = case_repo.upsert_draft(
-                    {"alert_id": "ALT-RT-20", "recommended_disposition": "escalate_str",
-                     "recommendation_rationale": "Outflow INR 900000.00", "confidence_score": 0.8,
-                     "regulatory_citations": ["REG-FIU-RF-014"]},
-                    thread_id="thr-rt-20", revision=1,
+                    {
+                        "alert_id": "ALT-RT-20",
+                        "recommended_disposition": "escalate_str",
+                        "recommendation_rationale": "Outflow INR 900000.00",
+                        "confidence_score": 0.8,
+                        "regulatory_citations": ["REG-FIU-RF-014"],
+                    },
+                    thread_id="thr-rt-20",
+                    revision=1,
                 )
                 tok = case_repo.issue_approval_token("thr-rt-20", d["worksheet_id"])
                 with get_db() as conn:  # tamper with the stored worksheet after the token was issued
-                    conn.execute("UPDATE worksheets SET content_json = REPLACE(content_json, '900000.00', '900001.00') WHERE worksheet_id = ?",
-                                 (d["worksheet_id"],))
+                    conn.execute(
+                        (
+                            "UPDATE worksheets SET content_json = REPLACE(content_json, "
+                            "'900000.00', '900001.00') WHERE worksheet_id = ?"
+                        ),
+                        (d["worksheet_id"],),
+                    )
                 try:
                     case_repo.commit_case(d["worksheet_id"], tok["approval_token"], "rt_tester", "", "thr-rt-20")
                     is_blocked = False
@@ -205,7 +219,10 @@ async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, An
                     is_blocked = True
         elif cat == "policy_bounds":
             ledger = get_policy().new_ledger()
-            ledger.preload(calls=atk.get("budget_exhausted_calls", 0), cost_usd=Decimal(str(atk.get("budget_exhausted_cost", 0))))
+            ledger.preload(
+                calls=atk.get("budget_exhausted_calls", 0),
+                cost_usd=Decimal(str(atk.get("budget_exhausted_cost", 0))),
+            )
             dec = pre_tool_hook(
                 agent_role="c1_single",
                 tool_name=atk["tool"],
@@ -268,14 +285,25 @@ def run(  # noqa: C901 - CLI orchestration (modes x repeats x reporting)
     else:
         cfg_file = Path(f"config/experiments/{cfg_name}.yaml")
 
-    exp_config = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) if cfg_file.exists() else {"modes": ["c0_fixed", "c1_single", "c2_multi"]}
+    exp_config = (
+        yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+        if cfg_file.exists()
+        else {"modes": ["c0_fixed", "c1_single", "c2_multi"]}
+    )
 
     if cfg_name.upper() == "E2":
         typer.echo("Running E2 Security & Red-Team Evaluation (Defenses OFF vs. ON)...")
         off_res = asyncio.run(evaluate_red_team_suite(defenses_enabled=False))
         on_res = asyncio.run(evaluate_red_team_suite(defenses_enabled=True))
-        typer.echo(f"  Defenses OFF -> Attack Block Rate: {off_res['attack_block_rate']:.1%}, ASR: {off_res['attack_success_rate']:.1%}")
-        typer.echo(f"  Defenses ON  -> Attack Block Rate: {on_res['attack_block_rate']:.1%} ({on_res['blocked']}/{on_res['red_team_total']}), ASR: {on_res['attack_success_rate']:.1%}, False-Block Rate: {on_res['false_block_rate']:.1%}")
+        typer.echo(
+            f"  Defenses OFF -> Attack Block Rate: {off_res['attack_block_rate']:.1%}, "
+            f"ASR: {off_res['attack_success_rate']:.1%}"
+        )
+        typer.echo(
+            f"  Defenses ON  -> Attack Block Rate: {on_res['attack_block_rate']:.1%} "
+            f"({on_res['blocked']}/{on_res['red_team_total']}), "
+            f"ASR: {on_res['attack_success_rate']:.1%}, False-Block Rate: {on_res['false_block_rate']:.1%}"
+        )
         summary = {"E2": {"defenses_off": off_res, "defenses_on": on_res}}
         if output:
             Path(output).write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -292,24 +320,28 @@ def run(  # noqa: C901 - CLI orchestration (modes x repeats x reporting)
     run_specs: list[tuple[str, dict[str, Any]]] = []
     if cfg_name.upper() == "E4" and "variants" in exp_config:
         for v in exp_config["variants"]:
-            run_specs.append((
-                f"c1_{v['name']}",
-                {
-                    "mode": "c1_single",
-                    "replanning_enabled": v.get("replanning_enabled", True),
-                    "deterministic_verifier": v.get("deterministic_verifier", True),
-                },
-            ))
+            run_specs.append(
+                (
+                    f"c1_{v['name']}",
+                    {
+                        "mode": "c1_single",
+                        "replanning_enabled": v.get("replanning_enabled", True),
+                        "deterministic_verifier": v.get("deterministic_verifier", True),
+                    },
+                )
+            )
     elif cfg_name.upper() == "E3" and "variants" in exp_config:
         for v in exp_config["variants"]:
-            run_specs.append((
-                f"c1_{v['name']}",
-                {
-                    "mode": "c1_single",
-                    "reflexion_enabled": v.get("reflexion_enabled", False),
-                    "memory_enabled": v.get("memory_enabled", True),
-                },
-            ))
+            run_specs.append(
+                (
+                    f"c1_{v['name']}",
+                    {
+                        "mode": "c1_single",
+                        "reflexion_enabled": v.get("reflexion_enabled", False),
+                        "memory_enabled": v.get("memory_enabled", True),
+                    },
+                )
+            )
     else:
         for m in exp_config.get("modes", ["c0_fixed", "c1_single", "c2_multi"]):
             run_specs.append((m, {"mode": m}))
@@ -339,17 +371,14 @@ def run(  # noqa: C901 - CLI orchestration (modes x repeats x reporting)
         total = len(last_mode_results)
         correct = sum(1 for r in last_mode_results if r["correct"])
         replan_cases = [r for r, c in zip(last_mode_results, cases, strict=True) if c.get("expected_replan_required")]
-        recovery_rate = (
-            sum(1 for r in replan_cases if r["correct"]) / len(replan_cases)
-            if replan_cases else 1.0
-        )
+        recovery_rate = sum(1 for r in replan_cases if r["correct"]) / len(replan_cases) if replan_cases else 1.0
         avg_lat = sum(r["latency_seconds"] for r in last_mode_results) / max(total, 1)
         avg_calls = sum(r["tool_calls"] for r in last_mode_results) / max(total, 1)
 
         typer.echo(
-            f"  Summary [{label}]: Accuracy={sum(repeat_accuracies)/len(repeat_accuracies):.1%} "
+            f"  Summary [{label}]: Accuracy={sum(repeat_accuracies) / len(repeat_accuracies):.1%} "
             f"(min={min(repeat_accuracies):.1%}, max={max(repeat_accuracies):.1%}) | "
-            f"Replan Recovery={recovery_rate:.1%} | Avg Calls={avg_calls:.1f} | Avg Latency={avg_lat*1000:.1f}ms"
+            f"Replan Recovery={recovery_rate:.1%} | Avg Calls={avg_calls:.1f} | Avg Latency={avg_lat * 1000:.1f}ms"
         )
 
         all_results[label] = {

@@ -97,8 +97,19 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: auditguard_api
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     env_file: .env
+    environment:
+      USE_POSTGRES: "true"
+      POSTGRES_HOST: postgres
+      QDRANT_HOST: qdrant
+      MCP_TRANSPORT: http
+      MCP_COMPLIANCE_KB_HOST: mcp-compliance-kb
+      MCP_GRAPH_ENGINE_HOST: mcp-graph-engine
+      MCP_BANK_RECORDS_HOST: mcp-bank-records
+      MCP_CASE_ACTIONS_HOST: mcp-case-actions
+      LOKI_URL: http://loki:3100
+      LANGFUSE_HOST: http://langfuse:3000
     ports:
       - "8000:8000"
     depends_on:
@@ -106,6 +117,14 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      mcp-compliance-kb:
+        condition: service_started
+      mcp-graph-engine:
+        condition: service_started
+      mcp-bank-records:
+        condition: service_started
+      mcp-case-actions:
+        condition: service_started
     restart: unless-stopped
 
   ui:
@@ -115,6 +134,8 @@ services:
     container_name: auditguard_ui
     command: chainlit run src/ui/app.py --host 0.0.0.0 --port 8001
     env_file: .env
+    environment:
+      API_BASE_URL: http://api:8000
     ports:
       - "8001:8001"
     depends_on:

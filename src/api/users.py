@@ -1,4 +1,5 @@
 """Local user store: PBKDF2-HMAC-SHA256 password hashes, three roles, env-seeded accounts."""
+
 from __future__ import annotations
 
 import hashlib
@@ -57,10 +58,15 @@ def ensure_seed_users(environ: Mapping[str, str]) -> list[str]:
                 continue
             row = conn.execute("SELECT password_hash FROM users WHERE username = ?", (username,)).fetchone()
             if row is None:
-                conn.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                             (username, hash_password(password), role, utc_now_iso()))
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                    (username, hash_password(password), role, utc_now_iso()),
+                )
             elif not verify_password(password, row["password_hash"]):
-                conn.execute("UPDATE users SET password_hash = ?, role = ? WHERE username = ?", (hash_password(password), role, username))
+                conn.execute(
+                    "UPDATE users SET password_hash = ?, role = ? WHERE username = ?",
+                    (hash_password(password), role, username),
+                )
             seeded.append(username)
     return seeded
 

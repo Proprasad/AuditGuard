@@ -3,6 +3,7 @@ Pure adapters shared by C0 / C1 / C2 (replaces three copy-pasted mappers).
 
 No framework imports: converts raw tool/DB records into core types and back into API-model types.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence

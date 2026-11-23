@@ -3,6 +3,7 @@ Pre-Tool & Post-Tool Enforcement Hooks
 - Pre-tool: RBAC allow-list, policy-bound validation (from PolicyConfig), BudgetLedger enforcement
 - Post-tool: PII scrubber, <untrusted_data> tagging, structured audit logging
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -64,8 +65,17 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
     },
 }
 
-UNTRUSTED_TEXT_FIELDS = {"memo", "memo_text", "kyc_notes", "business_description", "entity_name", "counterparty_name", "text"}
-# Curated internal regulatory corpus: still escaped/wrapped, but not injection-screened (SOP text quotes the attack phrases).
+UNTRUSTED_TEXT_FIELDS = {
+    "memo",
+    "memo_text",
+    "kyc_notes",
+    "business_description",
+    "entity_name",
+    "counterparty_name",
+    "text",
+}
+# Curated internal regulatory corpus: still escaped/wrapped, but not injection-screened (SOP text quotes the attack
+# phrases).
 TRUSTED_CORPUS_TOOLS = {"search_regulations", "get_clause_by_id"}
 
 
@@ -111,7 +121,11 @@ def pre_tool_hook(
             return bounds
 
     if ledger is not None:
-        verdict = ledger.try_consume_tool_call()
+        is_exit_draft = tool_name == "draft_disposition_report"
+        verdict = ledger.try_consume_tool_call(
+            reserve=0 if is_exit_draft else 1,
+            allow_over_cost=is_exit_draft,
+        )
         if not verdict.allowed:
             return HookDecision(allowed=False, error_code=verdict.error_code, message=verdict.message)
 
@@ -153,9 +167,18 @@ def post_tool_hook(
                 patterns = [] if trusted_corpus else matched_injection_patterns(value, external=True)
                 if patterns:
                     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
-                    detections.append({"tool": tool_name, "source": f"{ident}.{key}", "field": key,
-                                       "patterns": patterns, "content_sha256": digest})
-                    out[key] = wrap_untrusted_data(f"[WITHHELD: possible prompt-injection sha256:{digest}]", f"{ident}.{key}")
+                    detections.append(
+                        {
+                            "tool": tool_name,
+                            "source": f"{ident}.{key}",
+                            "field": key,
+                            "patterns": patterns,
+                            "content_sha256": digest,
+                        }
+                    )
+                    out[key] = wrap_untrusted_data(
+                        f"[WITHHELD: possible prompt-injection sha256:{digest}]", f"{ident}.{key}"
+                    )
                     flagged = True
                 else:
                     scrubbed, _ = mask_pii(value)
@@ -177,9 +200,11 @@ def post_tool_hook(
 
     sanitized = sanitize(result)
     if audit_log is not None:
-        audit_log.append({
-            "event_type": "tool_executed",
-            "tool_name": tool_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        audit_log.append(
+            {
+                "event_type": "tool_executed",
+                "tool_name": tool_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
     return sanitized

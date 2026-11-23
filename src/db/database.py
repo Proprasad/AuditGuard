@@ -11,6 +11,7 @@ LangGraph state checkpoints (FR-6) and long-term memory tables (Section 11.1):
 Zero external daemon required for local execution (defaults to `data/auditguard.db` via sqlite3),
 while supporting PostgreSQL (`psycopg`) when `USE_POSTGRES=true` in Docker/production.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -128,7 +129,8 @@ CREATE TABLE IF NOT EXISTS cases (
     case_id TEXT PRIMARY KEY,
     alert_id TEXT UNIQUE NOT NULL,
     worksheet_id TEXT NOT NULL,
-    disposition TEXT CHECK (disposition IN ('ESCALATE_STR_REVIEW', 'CLOSE_BENIGN', 'INSUFFICIENT_DATA', 'REJECTED', 'escalate_str', 'close_benign', 'request_info', 'rejected')),
+    disposition TEXT CHECK (disposition IN ('ESCALATE_STR_REVIEW', 'CLOSE_BENIGN', 'INSUFFICIENT_DATA', 'REJECTED',
+    'escalate_str', 'close_benign', 'request_info', 'rejected')),
     worksheet_json TEXT NOT NULL,
     payload_hash TEXT NOT NULL,
     approver_id TEXT NOT NULL,
@@ -216,7 +218,8 @@ CREATE INDEX IF NOT EXISTS idx_txn_from ON transactions(from_account_id, txn_tim
 CREATE INDEX IF NOT EXISTS idx_txn_to ON transactions(to_account_id, txn_timestamp);
 CREATE INDEX IF NOT EXISTS idx_audit_thread ON audit_logs(thread_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_cust ON case_episodes(customer_id);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_worksheet_thread_revision ON worksheets(thread_id, revision) WHERE thread_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_worksheet_thread_revision ON worksheets(thread_id, revision) WHERE thread_id IS
+NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_approval_worksheet ON approval_tokens(worksheet_id);
 CREATE INDEX IF NOT EXISTS idx_events_thread ON investigation_events(thread_id, event_id);
 """
@@ -294,7 +297,12 @@ def _upsert_case_into_db(conn: sqlite3.Connection, case: dict[str, Any]) -> None
 
     # Collect every referenced account across root, network, and transactions
     all_accounts: list[str] = []
-    for acc in [root_acc, *net_accs, *[t["sender_account"] for t in txs], *[t["receiver_account"] for t in txs]]:
+    for acc in [
+        root_acc,
+        *net_accs,
+        *[t["sender_account"] for t in txs],
+        *[t["receiver_account"] for t in txs],
+    ]:
         if acc and acc not in all_accounts:
             all_accounts.append(acc)
 
@@ -439,18 +447,90 @@ def seed_operational_db(dev_dir: Optional[Path] = None) -> int:
                     "is_commercially_registered": False,
                     "kyc_notes": "Declared retail clerk; sudden high-value outward transfers",
                 },
-                "ACC-IND-2011": {"account_id": "ACC-IND-2011", "entity_type": "individual", "risk_category": "MEDIUM", "declared_annual_income_inr": 300000.00, "is_commercially_registered": False},
-                "ACC-IND-2044": {"account_id": "ACC-IND-2044", "entity_type": "individual", "risk_category": "MEDIUM", "declared_annual_income_inr": 320000.00, "is_commercially_registered": False},
-                "ACC-IND-2089": {"account_id": "ACC-IND-2089", "entity_type": "individual", "risk_category": "MEDIUM", "declared_annual_income_inr": 280000.00, "is_commercially_registered": False},
-                "ACC-IND-9001": {"account_id": "ACC-IND-9001", "entity_type": "individual", "risk_category": "HIGH", "declared_annual_income_inr": 500000.00, "is_commercially_registered": False},
+                "ACC-IND-2011": {
+                    "account_id": "ACC-IND-2011",
+                    "entity_type": "individual",
+                    "risk_category": "MEDIUM",
+                    "declared_annual_income_inr": 300000.00,
+                    "is_commercially_registered": False,
+                },
+                "ACC-IND-2044": {
+                    "account_id": "ACC-IND-2044",
+                    "entity_type": "individual",
+                    "risk_category": "MEDIUM",
+                    "declared_annual_income_inr": 320000.00,
+                    "is_commercially_registered": False,
+                },
+                "ACC-IND-2089": {
+                    "account_id": "ACC-IND-2089",
+                    "entity_type": "individual",
+                    "risk_category": "MEDIUM",
+                    "declared_annual_income_inr": 280000.00,
+                    "is_commercially_registered": False,
+                },
+                "ACC-IND-9001": {
+                    "account_id": "ACC-IND-9001",
+                    "entity_type": "individual",
+                    "risk_category": "HIGH",
+                    "declared_annual_income_inr": 500000.00,
+                    "is_commercially_registered": False,
+                },
             },
             "transactions": [
-                {"tx_id": "TXN-8801", "sender_account": "ACC-IND-1042", "receiver_account": "ACC-IND-2011", "amount_inr": 300000.00, "timestamp": "2026-09-10T09:00:00Z", "channel": "NEFT", "memo": "Transfer"},
-                {"tx_id": "TXN-8802", "sender_account": "ACC-IND-1042", "receiver_account": "ACC-IND-2044", "amount_inr": 300000.00, "timestamp": "2026-09-10T09:15:00Z", "channel": "NEFT", "memo": "Transfer"},
-                {"tx_id": "TXN-8803", "sender_account": "ACC-IND-1042", "receiver_account": "ACC-IND-2089", "amount_inr": 300000.00, "timestamp": "2026-09-10T09:30:00Z", "channel": "IMPS", "memo": "Transfer"},
-                {"tx_id": "TXN-8891", "sender_account": "ACC-IND-2011", "receiver_account": "ACC-IND-9001", "amount_inr": 276000.00, "timestamp": "2026-09-21T14:00:00Z", "channel": "RTGS", "memo": "Settlement"},
-                {"tx_id": "TXN-8892", "sender_account": "ACC-IND-2044", "receiver_account": "ACC-IND-9001", "amount_inr": 276000.00, "timestamp": "2026-09-21T14:20:00Z", "channel": "RTGS", "memo": "Settlement"},
-                {"tx_id": "TXN-8893", "sender_account": "ACC-IND-2089", "receiver_account": "ACC-IND-9001", "amount_inr": 276000.00, "timestamp": "2026-09-21T14:45:00Z", "channel": "RTGS", "memo": "Settlement"},
+                {
+                    "tx_id": "TXN-8801",
+                    "sender_account": "ACC-IND-1042",
+                    "receiver_account": "ACC-IND-2011",
+                    "amount_inr": 300000.00,
+                    "timestamp": "2026-09-10T09:00:00Z",
+                    "channel": "NEFT",
+                    "memo": "Transfer",
+                },
+                {
+                    "tx_id": "TXN-8802",
+                    "sender_account": "ACC-IND-1042",
+                    "receiver_account": "ACC-IND-2044",
+                    "amount_inr": 300000.00,
+                    "timestamp": "2026-09-10T09:15:00Z",
+                    "channel": "NEFT",
+                    "memo": "Transfer",
+                },
+                {
+                    "tx_id": "TXN-8803",
+                    "sender_account": "ACC-IND-1042",
+                    "receiver_account": "ACC-IND-2089",
+                    "amount_inr": 300000.00,
+                    "timestamp": "2026-09-10T09:30:00Z",
+                    "channel": "IMPS",
+                    "memo": "Transfer",
+                },
+                {
+                    "tx_id": "TXN-8891",
+                    "sender_account": "ACC-IND-2011",
+                    "receiver_account": "ACC-IND-9001",
+                    "amount_inr": 276000.00,
+                    "timestamp": "2026-09-21T14:00:00Z",
+                    "channel": "RTGS",
+                    "memo": "Settlement",
+                },
+                {
+                    "tx_id": "TXN-8892",
+                    "sender_account": "ACC-IND-2044",
+                    "receiver_account": "ACC-IND-9001",
+                    "amount_inr": 276000.00,
+                    "timestamp": "2026-09-21T14:20:00Z",
+                    "channel": "RTGS",
+                    "memo": "Settlement",
+                },
+                {
+                    "tx_id": "TXN-8893",
+                    "sender_account": "ACC-IND-2089",
+                    "receiver_account": "ACC-IND-9001",
+                    "amount_inr": 276000.00,
+                    "timestamp": "2026-09-21T14:45:00Z",
+                    "channel": "RTGS",
+                    "memo": "Settlement",
+                },
             ],
         }
         _upsert_case_into_db(conn, wt1)
@@ -475,16 +555,80 @@ def seed_operational_db(dev_dir: Optional[Path] = None) -> int:
                     "registry_type": "MARKETPLACE",
                     "kyc_notes": "Active GST-registered handicraft marketplace; 18 months weekly artisan payouts",
                 },
-                "ACC-SEL-5082": {"account_id": "ACC-SEL-5082", "entity_name": "Jaipur Looms", "entity_type": "company", "risk_category": "LOW", "declared_annual_income_inr": 4800000.00, "is_commercially_registered": True, "registry_type": "MERCHANT"},
-                "ACC-SEL-5083": {"account_id": "ACC-SEL-5083", "entity_name": "Kutch Artisans", "entity_type": "company", "risk_category": "LOW", "declared_annual_income_inr": 3600000.00, "is_commercially_registered": True, "registry_type": "MERCHANT"},
-                "ACC-SEL-5084": {"account_id": "ACC-SEL-5084", "entity_name": "Bastar Crafts", "entity_type": "company", "risk_category": "LOW", "declared_annual_income_inr": 3100000.00, "is_commercially_registered": True, "registry_type": "MERCHANT"},
-                "ACC-LOG-5090": {"account_id": "ACC-LOG-5090", "entity_name": "SwiftShip Courier Escrow", "entity_type": "company", "risk_category": "LOW", "declared_annual_income_inr": 90000000.00, "is_commercially_registered": True, "registry_type": "MERCHANT"},
+                "ACC-SEL-5082": {
+                    "account_id": "ACC-SEL-5082",
+                    "entity_name": "Jaipur Looms",
+                    "entity_type": "company",
+                    "risk_category": "LOW",
+                    "declared_annual_income_inr": 4800000.00,
+                    "is_commercially_registered": True,
+                    "registry_type": "MERCHANT",
+                },
+                "ACC-SEL-5083": {
+                    "account_id": "ACC-SEL-5083",
+                    "entity_name": "Kutch Artisans",
+                    "entity_type": "company",
+                    "risk_category": "LOW",
+                    "declared_annual_income_inr": 3600000.00,
+                    "is_commercially_registered": True,
+                    "registry_type": "MERCHANT",
+                },
+                "ACC-SEL-5084": {
+                    "account_id": "ACC-SEL-5084",
+                    "entity_name": "Bastar Crafts",
+                    "entity_type": "company",
+                    "risk_category": "LOW",
+                    "declared_annual_income_inr": 3100000.00,
+                    "is_commercially_registered": True,
+                    "registry_type": "MERCHANT",
+                },
+                "ACC-LOG-5090": {
+                    "account_id": "ACC-LOG-5090",
+                    "entity_name": "SwiftShip Courier Escrow",
+                    "entity_type": "company",
+                    "risk_category": "LOW",
+                    "declared_annual_income_inr": 90000000.00,
+                    "is_commercially_registered": True,
+                    "registry_type": "MERCHANT",
+                },
             },
             "transactions": [
-                {"tx_id": "TXN-9501", "sender_account": "ACC-MKT-5081", "receiver_account": "ACC-SEL-5082", "amount_inr": 400000.00, "timestamp": "2026-09-15T10:00:00Z", "channel": "NEFT", "memo": "Weekly marketplace seller payout"},
-                {"tx_id": "TXN-9502", "sender_account": "ACC-MKT-5081", "receiver_account": "ACC-SEL-5083", "amount_inr": 425000.00, "timestamp": "2026-09-15T10:05:00Z", "channel": "NEFT", "memo": "Weekly marketplace seller payout"},
-                {"tx_id": "TXN-9503", "sender_account": "ACC-MKT-5081", "receiver_account": "ACC-SEL-5084", "amount_inr": 425000.00, "timestamp": "2026-09-15T10:10:00Z", "channel": "NEFT", "memo": "Weekly marketplace seller payout"},
-                {"tx_id": "TXN-9504", "sender_account": "ACC-SEL-5082", "receiver_account": "ACC-LOG-5090", "amount_inr": 35000.00, "timestamp": "2026-09-16T12:00:00Z", "channel": "UPI", "memo": "Courier logistics settlement"},
+                {
+                    "tx_id": "TXN-9501",
+                    "sender_account": "ACC-MKT-5081",
+                    "receiver_account": "ACC-SEL-5082",
+                    "amount_inr": 400000.00,
+                    "timestamp": "2026-09-15T10:00:00Z",
+                    "channel": "NEFT",
+                    "memo": "Weekly marketplace seller payout",
+                },
+                {
+                    "tx_id": "TXN-9502",
+                    "sender_account": "ACC-MKT-5081",
+                    "receiver_account": "ACC-SEL-5083",
+                    "amount_inr": 425000.00,
+                    "timestamp": "2026-09-15T10:05:00Z",
+                    "channel": "NEFT",
+                    "memo": "Weekly marketplace seller payout",
+                },
+                {
+                    "tx_id": "TXN-9503",
+                    "sender_account": "ACC-MKT-5081",
+                    "receiver_account": "ACC-SEL-5084",
+                    "amount_inr": 425000.00,
+                    "timestamp": "2026-09-15T10:10:00Z",
+                    "channel": "NEFT",
+                    "memo": "Weekly marketplace seller payout",
+                },
+                {
+                    "tx_id": "TXN-9504",
+                    "sender_account": "ACC-SEL-5082",
+                    "receiver_account": "ACC-LOG-5090",
+                    "amount_inr": 35000.00,
+                    "timestamp": "2026-09-16T12:00:00Z",
+                    "channel": "UPI",
+                    "memo": "Courier logistics settlement",
+                },
             ],
         }
         _upsert_case_into_db(conn, wt2)
@@ -650,7 +794,9 @@ def get_scoped_db(allowed_write_tables: Iterable[str]) -> Iterator[sqlite3.Conne
     """Read-write connection whose SQL authorizer DENIES writes/DDL outside `allowed_write_tables`."""
     allowed = frozenset(allowed_write_tables)
 
-    def authorizer(action: int, arg1: Optional[str], _arg2: Optional[str], _db: Optional[str], _src: Optional[str]) -> int:
+    def authorizer(
+        action: int, arg1: Optional[str], _arg2: Optional[str], _db: Optional[str], _src: Optional[str]
+    ) -> int:
         if action in _WRITE_ACTIONS and arg1 not in allowed:
             return sqlite3.SQLITE_DENY
         if action in _DDL_ACTIONS:
@@ -693,6 +839,11 @@ def read_events(thread_id: str, after_id: int = 0) -> list[dict[str, Any]]:
             (thread_id, after_id),
         ).fetchall()
     return [
-        {"event_id": r["event_id"], "event": r["event"], "created_at": r["created_at"], **json.loads(r["payload_json"])}
+        {
+            "event_id": r["event_id"],
+            "event": r["event"],
+            "created_at": r["created_at"],
+            **json.loads(r["payload_json"]),
+        }
         for r in rows
     ]

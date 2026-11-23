@@ -1,15 +1,20 @@
-﻿"""
+"""
 Compiled LangGraph `StateGraph` runtime shared by C1 and C2.
 
-Topology:  START -> plan -> gather_evidence -> form_hypotheses -> critique --(contradiction & budget)--> replan -> gather_evidence
-                                                                   \\--(otherwise)--> draft -> human_gate (interrupt) -> END
+Topology:  START -> plan -> gather_evidence -> form_hypotheses -> critique --(contradiction & budget)--> replan ->
+gather_evidence
+                                                                   \\--(otherwise)--> draft -> human_gate (interrupt)
+                                                                   -> END
 
 * Durable checkpointing: `AsyncSqliteSaver` locally / `AsyncPostgresSaver` when `USE_POSTGRES=true`.
-* Native `interrupt()` pauses the run at `human_gate`; the API resumes it with `Command(resume=...)` after the human decision.
+* Native `interrupt()` pauses the run at `human_gate`; the API resumes it with `Command(resume=...)` after the human
+decision.
 * `recursion_limit` is derived from the replan budget so the loop always terminates (replan edge is budget-gated).
-* State reducers: `evidence_registry` merges by key; `degraded_evidence` / `regulatory_snippets` / `retrieved_lessons` union with
+* State reducers: `evidence_registry` merges by key; `degraded_evidence` / `regulatory_snippets` / `retrieved_lessons`
+union with
   de-duplication (safe across retries and resumes); every other field is last-writer-wins.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +56,11 @@ def merge_investigation(old: Optional[dict[str, Any]], new: Optional[dict[str, A
     for key, value in (new or {}).items():
         if key in DICT_MERGE_KEYS and isinstance(value, dict):
             out[key] = {**old.get(key, {}), **value}
+        elif key == "regulatory_clauses" and isinstance(value, list):
+            by_id = {
+                c["clause_id"]: c for c in [*old.get(key, []), *value] if isinstance(c, dict) and c.get("clause_id")
+            }
+            out[key] = list(by_id.values())
         elif key in LIST_UNION_KEYS and isinstance(value, list):
             out[key] = list(dict.fromkeys([*old.get(key, []), *value]))
         else:
@@ -78,10 +88,38 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
     if mode == "c2_multi":
         boxes = {role: GuardedToolbox(role, ledger, thread_id) for role in C2_ROLES}
         boxes["primary"] = boxes["reporter_critic"]
-        return RunContext(mode=mode, policy=policy, ledger=ledger, boxes=boxes, label="auditguard-c2", role="c2_supervisor",
-                          strong=True, parallel=True, **flags)
+        return RunContext(
+            mode=mode,
+            policy=policy,
+            ledger=ledger,
+            boxes=boxes,
+            label="auditguard-c2",
+            role="c2_supervisor",
+            strong=True,
+            parallel=True,
+            **flags,
+        )
+    if mode == "c0_fixed":
+        box = GuardedToolbox("c0_fixed", ledger, thread_id)
+        return RunContext(
+            mode=mode,
+            policy=policy,
+            ledger=ledger,
+            boxes={"primary": box},
+            label="auditguard-c0-fixed",
+            role="c1_investigator",
+            **flags,
+        )
     box = GuardedToolbox("c1_single", ledger, thread_id)
-    return RunContext(mode=mode, policy=policy, ledger=ledger, boxes={"primary": box}, label="auditguard-c1", role="c1_investigator", **flags)
+    return RunContext(
+        mode=mode,
+        policy=policy,
+        ledger=ledger,
+        boxes={"primary": box},
+        label="auditguard-c1",
+        role="c1_investigator",
+        **flags,
+    )
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -115,8 +153,16 @@ NodeFn = Callable[[InvestigationState, RunContext], Awaitable[dict[str, Any]]]
 def _persist(thread_id: str, mode: str, inv: dict[str, Any], status: str = "running") -> None:
     ws = inv.get("worksheet") or {}
     alert_id = (inv.get("alert") or {}).get("alert_id", "")
-    save_checkpoint(thread_id=thread_id, alert_id=alert_id, mode=mode, current_node=str(inv.get("current_node", "")), status=status,
-                    state_dict=inv, worksheet_id=ws.get("worksheet_id"), payload_hash=ws.get("payload_hash"))
+    save_checkpoint(
+        thread_id=thread_id,
+        alert_id=alert_id,
+        mode=mode,
+        current_node=str(inv.get("current_node", "")),
+        status=status,
+        state_dict=inv,
+        worksheet_id=ws.get("worksheet_id"),
+        payload_hash=ws.get("payload_hash"),
+    )
 
 
 def _wrap(name: str, fn: NodeFn, ctx: RunContext, thread_id: str) -> Callable[[GState], Awaitable[GState]]:
@@ -138,16 +184,25 @@ async def _human_gate(gs: GState, config: RunnableConfig) -> GState:
     # Python < 3.11 does not propagate the runnable context into async nodes, so bind it explicitly for `interrupt()`.
     token = var_child_runnable_config.set(config)
     try:
-        decision = interrupt({
-            "thread_id": inv.get("thread_id"), "worksheet_id": ws.get("worksheet_id"), "payload_hash": ws.get("payload_hash"),
-            "recommended_disposition": ws.get("recommended_disposition"), "verification_failed": inv.get("error") == "verification_failed",
-        })
+        decision = interrupt(
+            {
+                "thread_id": inv.get("thread_id"),
+                "worksheet_id": ws.get("worksheet_id"),
+                "payload_hash": ws.get("payload_hash"),
+                "recommended_disposition": ws.get("recommended_disposition"),
+                "verification_failed": inv.get("error") == "verification_failed",
+            }
+        )
     finally:
         var_child_runnable_config.reset(token)
     approved = isinstance(decision, dict) and decision.get("action") == "approve"
-    return {"inv": {"current_node": "committed" if approved else "rejected",
-                    "human_decision": decision.get("disposition") if approved else None},
-            "gate": decision if isinstance(decision, dict) else {}}
+    return {
+        "inv": {
+            "current_node": "committed" if approved else "rejected",
+            "human_decision": decision.get("disposition") if approved else None,
+        },
+        "gate": decision if isinstance(decision, dict) else {},
+    }
 
 
 def build_graph(ctx: RunContext, thread_id: str) -> StateGraph:
@@ -163,8 +218,25 @@ def build_graph(ctx: RunContext, thread_id: str) -> StateGraph:
     graph.add_edge("plan", "gather_evidence")
     graph.add_edge("gather_evidence", "form_hypotheses")
     graph.add_edge("form_hypotheses", "critique")
-    graph.add_conditional_edges("critique", lambda gs: nodes.should_replan(as_state(gs["inv"]), ctx), {"replan": "replan", "draft": "draft"})
+    graph.add_conditional_edges(
+        "critique",
+        lambda gs: nodes.should_replan(as_state(gs["inv"]), ctx),
+        {"replan": "replan", "draft": "draft"},
+    )
     graph.add_edge("replan", "gather_evidence")
+    graph.add_edge("draft", "human_gate")
+    graph.add_edge("human_gate", END)
+    return graph
+
+
+def build_c0_graph(ctx: RunContext, thread_id: str, scan_fn: NodeFn, draft_fn: NodeFn) -> StateGraph:
+    """Fixed linear StateGraph for C0 baseline (`scan -> draft -> human_gate(interrupt) -> END`)."""
+    graph = StateGraph(GState)
+    graph.add_node("gather_evidence", _wrap("gather_evidence", scan_fn, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("draft", _wrap("draft", draft_fn, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node("human_gate", _human_gate)  # type: ignore[call-overload]
+    graph.add_edge(START, "gather_evidence")
+    graph.add_edge("gather_evidence", "draft")
     graph.add_edge("draft", "human_gate")
     graph.add_edge("human_gate", END)
     return graph
@@ -179,20 +251,35 @@ def _is_paused(snapshot: Any) -> bool:
 
 
 async def run_graph(
-    *, alert: Alert, mode: str, thread_id: str, resume: bool = False, stop_after_node: Optional[str] = None, **flags: Any,
+    *,
+    alert: Alert,
+    mode: str,
+    thread_id: str,
+    resume: bool = False,
+    stop_after_node: Optional[str] = None,
+    **flags: Any,
 ) -> InvestigationState:
     """Run (or resume) the compiled graph until the human-approval `interrupt()`; returns the paused state."""
     ctx = make_context(mode, thread_id, **flags)
     config = _config(thread_id, ctx.policy)
     async with open_saver() as saver:
-        compiled = build_graph(ctx, thread_id).compile(checkpointer=saver)
+        from src.agent import c0_fixed
+
+        sg = (
+            build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
+            if mode == "c0_fixed"
+            else build_graph(ctx, thread_id)
+        )
+        compiled = sg.compile(checkpointer=saver)
         snapshot = await compiled.aget_state(config)
         graph_input: Optional[dict[str, Any]]
         if resume and snapshot.values:
             if _is_paused(snapshot):
                 return as_state(snapshot.values["inv"])
             saved = as_state(snapshot.values["inv"])
-            ctx.ledger.preload(calls=saved.tool_calls_used, cost_usd=saved.estimated_cost_usd, replans=saved.replan_count)
+            ctx.ledger.preload(
+                calls=saved.tool_calls_used, cost_usd=saved.estimated_cost_usd, replans=saved.replan_count
+            )
             graph_input = None
         else:
             initial = InvestigationState(thread_id=thread_id, alert=alert)
@@ -214,7 +301,14 @@ async def resume_gate(thread_id: str, mode: str, decision: dict[str, Any]) -> bo
     ctx = make_context(mode, thread_id)
     config = _config(thread_id, ctx.policy)
     async with open_saver() as saver:
-        compiled = build_graph(ctx, thread_id).compile(checkpointer=saver)
+        from src.agent import c0_fixed
+
+        sg = (
+            build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
+            if mode == "c0_fixed"
+            else build_graph(ctx, thread_id)
+        )
+        compiled = sg.compile(checkpointer=saver)
         if not _is_paused(await compiled.aget_state(config)):
             return False
         await compiled.ainvoke(Command(resume=decision), config)

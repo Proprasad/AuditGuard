@@ -1,4 +1,4 @@
-﻿"""
+"""
 MCP Server: bank-records (READ-ONLY)
 
 Parameterised, read-only SQL against the operational database. Connections are opened with `mode=ro` +
@@ -11,6 +11,7 @@ overlay (`set_eval_case_overlay`) instead of mounting held-out data into the dat
 
 Tools: get_alert_context, get_account_transactions, get_kyc_profile, get_counterparty_history, check_commercial_registry
 """
+
 from __future__ import annotations
 
 import contextvars
@@ -31,10 +32,12 @@ MAX_ROWS = 200
 mcp = FastMCP(
     name="bank-records",
     instructions="Read-only parameterized SQL access to multi-bank alerts, transactions, "
-                 "KYC profiles, counterparty history, and commercial registry records.",
+    "KYC profiles, counterparty history, and commercial registry records.",
 )
 
-_eval_case_ctx: contextvars.ContextVar[Optional[dict[str, Any]]] = contextvars.ContextVar("_eval_case_ctx", default=None)
+_eval_case_ctx: contextvars.ContextVar[Optional[dict[str, Any]]] = contextvars.ContextVar(
+    "_eval_case_ctx", default=None
+)
 
 
 def set_eval_case_overlay(case: Optional[dict[str, Any]]) -> contextvars.Token[Optional[dict[str, Any]]]:
@@ -116,9 +119,13 @@ def get_alert_record(alert_id: str) -> Optional[dict[str, Any]]:
     if row is None:
         return None
     return {
-        "alert_id": row["alert_id"], "rule_name": row["rule_triggered"], "root_account": row["seed_account_id"],
+        "alert_id": row["alert_id"],
+        "rule_name": row["rule_triggered"],
+        "root_account": row["seed_account_id"],
         "network_accounts": json.loads(row["network_accounts_json"] or "[]"),
-        "total_amount_inr": to_money(row["initial_amount_inr"]), "triggered_at": row["triggered_at"], "status": row["status"],
+        "total_amount_inr": to_money(row["initial_amount_inr"]),
+        "triggered_at": row["triggered_at"],
+        "status": row["status"],
     }
 
 
@@ -128,10 +135,15 @@ def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
     overlay = _eval_case_ctx.get()
     if overlay and overlay.get("alert_id") == params.alert_id:
         return {
-            "status": "ok", "alert_id": overlay["alert_id"], "case_id": overlay.get("case_id"),
-            "rule_name": overlay.get("rule_name", "SCATTER_GATHER"), "triggered_at": overlay["triggered_at"],
-            "root_account": overlay["root_account"], "network_accounts": overlay["network_accounts"],
-            "total_amount_inr": dec_str(to_money(overlay["total_amount_inr"])), "transactions": overlay["transactions"],
+            "status": "ok",
+            "alert_id": overlay["alert_id"],
+            "case_id": overlay.get("case_id"),
+            "rule_name": overlay.get("rule_name", "SCATTER_GATHER"),
+            "triggered_at": overlay["triggered_at"],
+            "root_account": overlay["root_account"],
+            "network_accounts": overlay["network_accounts"],
+            "total_amount_inr": dec_str(to_money(overlay["total_amount_inr"])),
+            "transactions": overlay["transactions"],
             "risk_level": "high",
         }
     with get_ro_db() as conn:
@@ -141,10 +153,16 @@ def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
         network = json.loads(row["network_accounts_json"] or "[]")
         txs = _alert_transactions(conn, row["seed_account_id"], network)
     return {
-        "status": "ok", "alert_id": row["alert_id"], "rule_name": row["rule_triggered"], "triggered_at": row["triggered_at"],
-        "root_account": row["seed_account_id"], "network_accounts": network,
-        "total_amount_inr": dec_str(to_money(row["initial_amount_inr"])), "transactions": txs,
-        "alert_status": row["status"], "risk_level": "high",
+        "status": "ok",
+        "alert_id": row["alert_id"],
+        "rule_name": row["rule_triggered"],
+        "triggered_at": row["triggered_at"],
+        "root_account": row["seed_account_id"],
+        "network_accounts": network,
+        "total_amount_inr": dec_str(to_money(row["initial_amount_inr"])),
+        "transactions": txs,
+        "alert_status": row["status"],
+        "risk_level": "high",
     }
 
 
@@ -153,8 +171,11 @@ def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, A
     """Transaction history for an account (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
     if overlay:
-        txs = [t for t in overlay.get("transactions", [])
-               if params.account_id in (t.get("sender_account"), t.get("receiver_account"))][: params.limit]
+        txs = [
+            t
+            for t in overlay.get("transactions", [])
+            if params.account_id in (t.get("sender_account"), t.get("receiver_account"))
+        ][: params.limit]
     else:
         with get_ro_db() as conn:
             rows = conn.execute(
@@ -163,8 +184,13 @@ def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, A
                 (params.account_id, params.account_id, min(params.limit, MAX_ROWS)),
             ).fetchall()
         txs = [_tx_dict(r) for r in rows]
-    return {"status": "ok", "account_id": params.account_id, "period_days": params.days_back,
-            "total_transactions": len(txs), "transactions": txs}
+    return {
+        "status": "ok",
+        "account_id": params.account_id,
+        "period_days": params.days_back,
+        "total_transactions": len(txs),
+        "transactions": txs,
+    }
 
 
 @mcp.tool()
@@ -172,11 +198,16 @@ def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
     """KYC profile & risk tier for an account (`ACCOUNT_NOT_FOUND` if unknown - nothing is fabricated)."""
     overlay = _eval_case_ctx.get()
     if overlay and params.account_id in overlay.get("kyc_profiles", {}):
-        return {"status": "ok", "evidence_id": f"KYC-{params.account_id}", **overlay["kyc_profiles"][params.account_id]}
+        return {
+            "status": "ok",
+            "evidence_id": f"KYC-{params.account_id}",
+            **overlay["kyc_profiles"][params.account_id],
+        }
     with get_ro_db() as conn:
         row = conn.execute(
             "SELECT a.account_id, a.account_type, b.bank_name, c.customer_id, c.full_name, c.kyc_tier, c.occupation, "
-            "c.declared_annual_income_inr, c.risk_rating, c.kyc_notes, cr.entity_type AS registry_type, cr.status AS registry_status "
+            "c.declared_annual_income_inr, c.risk_rating, c.kyc_notes, "
+            "cr.entity_type AS registry_type, cr.status AS registry_status "
             "FROM accounts a JOIN customers c ON a.customer_id = c.customer_id "
             "LEFT JOIN banks b ON a.bank_id = b.bank_id "
             "LEFT JOIN commercial_registry cr ON c.customer_id = cr.customer_id WHERE a.account_id = ?",
@@ -185,12 +216,21 @@ def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
     if row is None:
         return _error("ACCOUNT_NOT_FOUND", f"No KYC record for account {params.account_id}")
     return {
-        "status": "ok", "evidence_id": f"KYC-{params.account_id}", "account_id": row["account_id"],
-        "customer_id": row["customer_id"], "entity_name": row["full_name"], "entity_type": row["occupation"],
-        "bank_name": row["bank_name"], "kyc_tier": row["kyc_tier"], "risk_category": str(row["risk_rating"]).lower(),
+        "status": "ok",
+        "evidence_id": f"KYC-{params.account_id}",
+        "account_id": row["account_id"],
+        "customer_id": row["customer_id"],
+        "entity_name": row["full_name"],
+        "entity_type": row["occupation"],
+        "bank_name": row["bank_name"],
+        "kyc_tier": row["kyc_tier"],
+        "risk_category": str(row["risk_rating"]).lower(),
         "declared_annual_income_inr": dec_str(to_money(row["declared_annual_income_inr"])),
-        "is_commercially_registered": row["registry_status"] == "ACTIVE", "registry_type": row["registry_type"],
-        "kyc_notes": row["kyc_notes"] or "", "pep_flag": False, "sanctions_flag": False,
+        "is_commercially_registered": row["registry_status"] == "ACTIVE",
+        "registry_type": row["registry_type"],
+        "kyc_notes": row["kyc_notes"] or "",
+        "pep_flag": False,
+        "sanctions_flag": False,
     }
 
 
@@ -200,7 +240,9 @@ def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, A
     overlay = _eval_case_ctx.get()
     if overlay:
         pair = {params.account_id, params.counterparty_id}
-        txs = [t for t in overlay.get("transactions", []) if {t.get("sender_account"), t.get("receiver_account")} == pair]
+        txs = [
+            t for t in overlay.get("transactions", []) if {t.get("sender_account"), t.get("receiver_account")} == pair
+        ]
     else:
         with get_ro_db() as conn:
             rows = conn.execute(
@@ -210,28 +252,56 @@ def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, A
             ).fetchall()
         txs = [_tx_dict(r) for r in rows]
     total = sum((to_money(t.get("amount_inr", "0")) for t in txs), Decimal("0.00"))
-    return {"status": "ok", "account_id": params.account_id, "counterparty_id": params.counterparty_id,
-            "total_transactions": len(txs), "total_amount_inr": dec_str(total), "transactions": txs}
+    return {
+        "status": "ok",
+        "account_id": params.account_id,
+        "counterparty_id": params.counterparty_id,
+        "total_transactions": len(txs),
+        "total_amount_inr": dec_str(total),
+        "transactions": txs,
+    }
 
 
 def _registered(entity: str, kind: str, number: str, status: str, since: str, evidence: str) -> dict[str, Any]:
-    return {"status": "ok", "evidence_id": evidence, "entity_name": entity, "is_registered": True, "registry_type": kind,
-            "registration_number": number, "registry_status": status, "registered_since": since}
+    return {
+        "status": "ok",
+        "evidence_id": evidence,
+        "entity_name": entity,
+        "is_registered": True,
+        "registry_type": kind,
+        "registration_number": number,
+        "registry_status": status,
+        "registered_since": since,
+    }
 
 
 @mcp.tool()
 def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
     """GST / MCA / Section 80G / Chit registration lookup (a clean NOT_FOUND is a legitimate answer)."""
     overlay = _eval_case_ctx.get()
-    not_found = {"status": "ok", "evidence_id": f"REGISTRY-NONE-{params.entity_name}", "entity_name": params.entity_name,
-                 "is_registered": False, "registry_status": "NOT_FOUND"}
+    not_found = {
+        "status": "ok",
+        "evidence_id": f"REGISTRY-NONE-{params.entity_name}",
+        "entity_name": params.entity_name,
+        "is_registered": False,
+        "registry_status": "NOT_FOUND",
+    }
     if overlay:
         profiles = overlay.get("kyc_profiles", {})
-        kyc = profiles.get(params.account_id) if params.account_id in profiles else next(
-            (r for r in profiles.values() if r.get("entity_name") == params.entity_name), None)
+        kyc = (
+            profiles.get(params.account_id)
+            if params.account_id in profiles
+            else next((r for r in profiles.values() if r.get("entity_name") == params.entity_name), None)
+        )
         if kyc and kyc.get("is_commercially_registered"):
-            return {"status": "ok", "evidence_id": f"REGISTRY-{kyc['account_id']}", "entity_name": params.entity_name,
-                    "is_registered": True, "registry_type": kyc.get("registry_type", "MERCHANT"), "registry_status": "ACTIVE"}
+            return {
+                "status": "ok",
+                "evidence_id": f"REGISTRY-{kyc['account_id']}",
+                "entity_name": params.entity_name,
+                "is_registered": True,
+                "registry_type": kyc.get("registry_type", "MERCHANT"),
+                "registry_status": "ACTIVE",
+            }
         return not_found
     columns = "cr.registry_id, cr.entity_type, cr.registration_number, cr.status, cr.registered_since, c.full_name"
     with get_ro_db() as conn:
@@ -249,8 +319,14 @@ def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str,
                 (params.entity_name,),
             ).fetchone()
     if row and row["status"] == "ACTIVE":
-        return _registered(row["full_name"], row["entity_type"], row["registration_number"], row["status"],
-                           row["registered_since"], row["registry_id"])
+        return _registered(
+            row["full_name"],
+            row["entity_type"],
+            row["registration_number"],
+            row["status"],
+            row["registered_since"],
+            row["registry_id"],
+        )
     return not_found
 
 
@@ -259,7 +335,8 @@ def list_queued_alerts(limit: int = 30) -> list[dict[str, Any]]:
     with get_ro_db() as conn:
         rows = conn.execute(
             "SELECT a.alert_id, a.seed_account_id, a.triggered_at, a.rule_triggered, a.initial_amount_inr, "
-            "a.network_accounts_json, COALESCE((SELECT UPPER(k.disposition) FROM cases k WHERE k.alert_id = a.alert_id), a.status) AS status, "
+            "a.network_accounts_json, COALESCE((SELECT UPPER(k.disposition) "
+            "FROM cases k WHERE k.alert_id = a.alert_id), a.status) AS status, "
             "c.customer_id, c.full_name, c.risk_rating FROM alerts a "
             "LEFT JOIN accounts acc ON a.seed_account_id = acc.account_id "
             "LEFT JOIN customers c ON acc.customer_id = c.customer_id "

@@ -1,4 +1,5 @@
 """Backward-compatible import path; the implementation lives in `src.core.verifier`."""
+
 from src.core.verifier import (  # noqa: F401
     PROHIBITED_PHRASES,
     VerificationResult,

@@ -1,4 +1,4 @@
-﻿"""
+"""
 MCP Server: case-actions (WRITE - approval gated)
 
 Thin FastMCP adapter over the write-scoped `src.db.case_repo`:
@@ -7,6 +7,7 @@ Thin FastMCP adapter over the write-scoped `src.db.case_repo`:
                                 transitions the worksheet and INSERTs the case in ONE transaction
 Zero automated external regulatory filings (commits strictly to the Case Management DB).
 """
+
 from __future__ import annotations
 
 import os
@@ -22,7 +23,7 @@ from src.db.database import utc_now_iso
 mcp = FastMCP(
     name="case-actions",
     instructions="Write-gated server for case dispositions. Commits require a single-use HMAC approval token "
-                 "bound to the exact SHA-256 hash of the reviewed worksheet.",
+    "bound to the exact SHA-256 hash of the reviewed worksheet.",
 )
 
 
@@ -82,8 +83,11 @@ def draft_disposition_report(params: DraftDispositionInput) -> DraftDispositionO
     content = {**params.model_dump(exclude={"thread_id"}), "drafted_at": now}
     record = case_repo.upsert_draft(content, thread_id=params.thread_id, revision=1)
     return DraftDispositionOutput(
-        worksheet_id=record["worksheet_id"], alert_id=params.alert_id, payload_hash=record["payload_hash"],
-        created_at=now, content=record["content"],
+        worksheet_id=record["worksheet_id"],
+        alert_id=params.alert_id,
+        payload_hash=record["payload_hash"],
+        created_at=now,
+        content=record["content"],
     )
 
 
@@ -92,15 +96,30 @@ def submit_case_disposition(params: SubmitCaseDispositionInput) -> SubmitCaseDis
     """Commit the approved disposition. Replays, tampered payloads and invalid tokens are rejected."""
     now = utc_now_iso()
     try:
-        receipt = case_repo.commit_case(params.worksheet_id, params.approval_token, params.reviewer_id,
-                                        params.reviewer_notes, params.thread_id)
+        receipt = case_repo.commit_case(
+            params.worksheet_id,
+            params.approval_token,
+            params.reviewer_id,
+            params.reviewer_notes,
+            params.thread_id,
+        )
     except CaseRepoError as exc:
         case_repo.log_rejection(params.thread_id, params.reviewer_id, params.worksheet_id, exc.code)
-        return SubmitCaseDispositionOutput(success=False, status="error", worksheet_id=params.worksheet_id, submitted_at=now,
-                                           error_code=exc.code, error=f"Approval rejected: {exc.code}: {exc.message}")
+        return SubmitCaseDispositionOutput(
+            success=False,
+            status="error",
+            worksheet_id=params.worksheet_id,
+            submitted_at=now,
+            error_code=exc.code,
+            error=f"Approval rejected: {exc.code}: {exc.message}",
+        )
     return SubmitCaseDispositionOutput(
-        success=True, case_id=receipt["case_id"], worksheet_id=params.worksheet_id,
-        final_disposition=receipt["disposition"], submitted_at=receipt["committed_at"], audit_entry_id=receipt["audit_entry_id"],
+        success=True,
+        case_id=receipt["case_id"],
+        worksheet_id=params.worksheet_id,
+        final_disposition=receipt["disposition"],
+        submitted_at=receipt["committed_at"],
+        audit_entry_id=receipt["audit_entry_id"],
     )
 
 

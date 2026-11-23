@@ -8,6 +8,7 @@ Checks every worksheet against the run's `evidence_registry`:
   * canonical SHA-256 payload hash
 `evidence_registry=None` is itself a failure. Failures carry structured discrepancies used as critique feedback.
 """
+
 from __future__ import annotations
 
 import re
@@ -31,22 +32,42 @@ PROHIBITED_PHRASES = [
     "criminal activity confirmed",
 ]
 _GUILT_FAMILIES = [
-    re.compile(r"money laundering (?:has |have )?(?:been )?(?:occurred|confirmed|proven|proved|established|committed)"),
-    re.compile(r"\b(?:laundering|fraud|offen[cs]e) (?:is|was|has been|have been) (?:confirmed|proven|proved|established|committed|occurred)"),
+    re.compile(
+        r"money laundering (?:has |have )?(?:been )?(?:occurred|"
+        r"confirmed|proven|proved|established|committed)"
+    ),
+    re.compile(
+        r"\b(?:laundering|fraud|offen[cs]e) (?:is|was|has been|have been) "
+        r"(?:confirmed|proven|proved|established|committed|occurred)"
+    ),
     re.compile(r"\b(?:confirmed|proven|definitive|undeniable) (?:money )?laundering\b"),
     re.compile(r"\b(?:is|are|was|were) (?:a |an )?(?:guilty|criminal|money launderers?|launderers?|fraudsters?)\b"),
     re.compile(r"\bguilty of\b"),
     re.compile(r"\b(?:customer|account holder|accused|subject|entity|he|she|they) (?:has |have )?launder(?:ed|s)\b"),
     re.compile(r"\blaundered (?:the |these )?(?:funds|money|proceeds)\b"),
-    re.compile(r"\bcriminal (?:intent|activity|conduct) (?:is |was |has been )?(?:confirmed|proven|proved|established)\b"),
-    re.compile(r"\bconfirms? (?:the )?(?:money )?laundering\b|\bproves? (?:the )?(?:money laundering|fraud)\b|\bdefinitive(?:ly)? launder"),
+    re.compile(
+        r"\bcriminal (?:intent|activity|conduct) (?:is |"
+        r"was |has been )?(?:confirmed|proven|proved|established)\b"
+    ),
+    re.compile(
+        r"\bconfirms? (?:the )?(?:money )?laundering\b|"
+        r"\bproves? (?:the )?(?:money laundering|fraud)\b|\bdefinitive(?:ly)? launder"
+    ),
 ]
 
 _REF_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
 _AMOUNT_PATTERN = re.compile(r"(?:INR|₹|Rs\.?)\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
 _CITATION_FORMAT = re.compile(r"^[A-Z][A-Z0-9\-]+$")
 _VALID_DISPOSITIONS = {"escalate_str", "close_benign", "request_info", "pending"}
-_HASH_EXCLUDED = {"approval_token", "reviewer_id", "reviewer_decision", "reviewer_notes", "reviewed_at", "payload_hash", "_payload_hash"}
+_HASH_EXCLUDED = {
+    "approval_token",
+    "reviewer_id",
+    "reviewer_decision",
+    "reviewer_notes",
+    "reviewed_at",
+    "payload_hash",
+    "_payload_hash",
+}
 
 
 class Discrepancy(BaseModel):
@@ -75,7 +96,9 @@ def check_prohibited_claims(text: str) -> list[str]:
     return hits
 
 
-def verify_inr_math(outflow: str | Decimal | int, inflow: str | Decimal | int, tolerance: str | Decimal = "0.05") -> tuple[bool, str]:
+def verify_inr_math(
+    outflow: str | Decimal | int, inflow: str | Decimal | int, tolerance: str | Decimal = "0.05"
+) -> tuple[bool, str]:
     """Exact Decimal conservation check: |out - in| / out <= tolerance."""
     try:
         out, infl = to_money(outflow), to_money(inflow)
@@ -93,8 +116,10 @@ def compute_canonical_hash(payload: Mapping[str, Any]) -> str:
 
 # ------------------------------------------------------------------------------------------------
 def _narrative_fields(ws: Mapping[str, Any]) -> list[tuple[str, str]]:
-    fields: list[tuple[str, str]] = [("recommendation_rationale", str(ws.get("recommendation_rationale", ""))),
-                                     ("analyst_notes", str(ws.get("analyst_notes", "")))]
+    fields: list[tuple[str, str]] = [
+        ("recommendation_rationale", str(ws.get("recommendation_rationale", ""))),
+        ("analyst_notes", str(ws.get("analyst_notes", ""))),
+    ]
     fields += [(f"kyc_summaries[{i}]", str(s)) for i, s in enumerate(ws.get("kyc_summaries", []))]
     for i, hyp in enumerate(ws.get("hypotheses", [])):
         if not isinstance(hyp, Mapping):
@@ -131,7 +156,12 @@ def _known_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any]) -> set[De
         known.add(alert_amount)
     for item in registry.values():
         if isinstance(item, Mapping):
-            known.update(m for key, value in item.items() if "inr" in key or "amount" in key if (m := _as_money(value)) is not None)
+            known.update(
+                m
+                for key, value in item.items()
+                if "inr" in key or "amount" in key
+                if (m := _as_money(value)) is not None
+            )
     return known
 
 
@@ -148,18 +178,33 @@ def _check_paths(ws: Mapping[str, Any], registry: Mapping[str, Any], out: list[D
             ok = False
             continue
         if net != (outflow - cons).quantize(CENT):
-            out.append(Discrepancy(code="INR_NET_MISMATCH", field=field, detail=f"net {net} != outflow {outflow} - consolidated {cons}"))
+            out.append(
+                Discrepancy(
+                    code="INR_NET_MISMATCH", field=field, detail=f"net {net} != outflow {outflow} - consolidated {cons}"
+                )
+            )
             ok = False
         expected_ret = (net / outflow * 100).quantize(CENT) if outflow > 0 else Decimal("0.00")
         if retention != expected_ret:
-            out.append(Discrepancy(code="INR_RETENTION_MISMATCH", field=field, detail=f"retention {retention}% != recomputed {expected_ret}%"))
+            out.append(
+                Discrepancy(
+                    code="INR_RETENTION_MISMATCH",
+                    field=field,
+                    detail=f"retention {retention}% != recomputed {expected_ret}%",
+                )
+            )
             ok = False
         reg_path = registry.get(pid)
         if not isinstance(reg_path, Mapping):
-            out.append(Discrepancy(code="UNRESOLVED_EVIDENCE_ID", field=field, detail=f"path {pid!r} not in evidence_registry"))
+            out.append(
+                Discrepancy(code="UNRESOLVED_EVIDENCE_ID", field=field, detail=f"path {pid!r} not in evidence_registry")
+            )
             ok = False
             continue
-        for label, stated, key in (("outflow", outflow, "total_outflow_inr"), ("consolidated", cons, "total_consolidated_inr")):
+        for label, stated, key in (
+            ("outflow", outflow, "total_outflow_inr"),
+            ("consolidated", cons, "total_consolidated_inr"),
+        ):
             same, detail = verify_inr_math(stated, reg_path.get(key, "0"), tolerance="0")
             if not same:
                 out.append(Discrepancy(code="INR_REGISTRY_MISMATCH", field=field, detail=f"{label}: {detail}"))
@@ -188,7 +233,12 @@ def _check_citations(ws: Mapping[str, Any], registry: Mapping[str, Any], disposi
         if not _CITATION_FORMAT.match(str(cite)):
             fail("citation_format_valid", "BAD_CITATION_FORMAT", "regulatory_citations", str(cite))
         elif cite not in registry:
-            fail("citations_resolved", "UNRESOLVED_CITATION", "regulatory_citations", f"{cite!r} not in evidence_registry")
+            fail(
+                "citations_resolved",
+                "UNRESOLVED_CITATION",
+                "regulatory_citations",
+                f"{cite!r} not in evidence_registry",
+            )
 
 
 def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
@@ -197,10 +247,17 @@ def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any],
         for raw in _AMOUNT_PATTERN.findall(text):
             amount = _as_money(raw.replace(",", ""))
             if amount is None or amount not in known:
-                fail("narrative_amounts_grounded", "UNGROUNDED_AMOUNT", name, f"INR {raw} does not match any verified amount")
+                fail(
+                    "narrative_amounts_grounded",
+                    "UNGROUNDED_AMOUNT",
+                    name,
+                    f"INR {raw} does not match any verified amount",
+                )
 
 
-def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[str, Any] | None = None) -> VerificationResult:
+def verify_worksheet(
+    worksheet: Mapping[str, Any], evidence_registry: Mapping[str, Any] | None = None
+) -> VerificationResult:
     issues: list[Discrepancy] = []
     checks: dict[str, bool] = {}
 
@@ -211,7 +268,12 @@ def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[st
     registry: Mapping[str, Any] = evidence_registry if evidence_registry is not None else {}
     checks["evidence_registry_present"] = evidence_registry is not None
     if evidence_registry is None:
-        fail("evidence_registry_present", "EVIDENCE_REGISTRY_MISSING", "evidence_registry", "verification requires the run's evidence registry")
+        fail(
+            "evidence_registry_present",
+            "EVIDENCE_REGISTRY_MISSING",
+            "evidence_registry",
+            "verification requires the run's evidence registry",
+        )
 
     for name, text in _narrative_fields(worksheet):
         if hits := check_prohibited_claims(text):
@@ -224,7 +286,9 @@ def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[st
         conf_ok = False
     checks["confidence_in_range"] = conf_ok
     if not conf_ok:
-        fail("confidence_in_range", "CONFIDENCE_OUT_OF_RANGE", "confidence_score", str(worksheet.get("confidence_score")))
+        fail(
+            "confidence_in_range", "CONFIDENCE_OUT_OF_RANGE", "confidence_score", str(worksheet.get("confidence_score"))
+        )
 
     disposition = worksheet.get("recommended_disposition", "")
     if disposition not in _VALID_DISPOSITIONS:
@@ -237,7 +301,9 @@ def verify_worksheet(worksheet: Mapping[str, Any], evidence_registry: Mapping[st
 
     for field, ref in _referenced_ids(worksheet):
         if ref not in registry:
-            fail("evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in this run's evidence_registry")
+            fail(
+                "evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in this run's evidence_registry"
+            )
     checks.setdefault("evidence_ids_resolved", True)
 
     path_issues: list[Discrepancy] = []

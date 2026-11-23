@@ -5,6 +5,7 @@ PolicyConfig (validated, fail-fast) and the per-run BudgetLedger.
 suspicion rules and structuring thresholds. Selected environment variables override individual values
 (see `ENV_OVERRIDES`). Pure module: callers pass the environment mapping explicitly.
 """
+
 from __future__ import annotations
 
 import threading
@@ -160,7 +161,14 @@ class ScoringConfig(_Strict):
     suspicious_weights: dict[str, Decimal]
     benign_weights: dict[str, Decimal]
 
-    @field_validator("prior", "min_confidence", "max_confidence", "disposition_threshold", "request_info_floor", mode="before")
+    @field_validator(
+        "prior",
+        "min_confidence",
+        "max_confidence",
+        "disposition_threshold",
+        "request_info_floor",
+        mode="before",
+    )
     @classmethod
     def _ratio(cls, v: Any) -> Decimal:
         return to_ratio(_lenient_decimal(v))
@@ -188,7 +196,9 @@ class PolicyConfig(_Strict):
 
     @model_validator(mode="after")
     def _models_allowed(self) -> PolicyConfig:
-        bad = [f"{role}={spec.model_id}" for role, spec in self.models.items() if spec.model_id not in self.allowed_models]
+        bad = [
+            f"{role}={spec.model_id}" for role, spec in self.models.items() if spec.model_id not in self.allowed_models
+        ]
         if bad:
             raise ValueError(f"model slugs not in allowed_models: {bad}")
         if "default" not in self.pricing:
@@ -234,13 +244,17 @@ class PolicyConfig(_Strict):
                 tol = None
             rng_t = gb.amount_tolerance
             if tol is None or not rng_t.min <= tol <= rng_t.max:
-                errors.append(f"amount_tolerance={params['amount_tolerance']} outside allowed [{rng_t.min}, {rng_t.max}]")
+                errors.append(
+                    f"amount_tolerance={params['amount_tolerance']} outside allowed [{rng_t.min}, {rng_t.max}]"
+                )
         return errors
 
     def estimate_cost_usd(self, model_id: str, tokens_in: int, tokens_out: int) -> Decimal:
         price = self.pricing.get(model_id, self.pricing["default"])
         million = Decimal(1_000_000)
-        cost = (Decimal(tokens_in) * price.input_per_million_usd + Decimal(tokens_out) * price.output_per_million_usd) / million
+        cost = (
+            Decimal(tokens_in) * price.input_per_million_usd + Decimal(tokens_out) * price.output_per_million_usd
+        ) / million
         return to_usd(cost)
 
     def new_ledger(self) -> BudgetLedger:
@@ -281,7 +295,12 @@ def load_policy(path: Path, environ: Mapping[str, str]) -> PolicyConfig:
                 _set_path(raw, dotted, caster(environ[env_key]))
             except ValueError as exc:
                 raise PolicyConfigError(f"invalid {env_key}={environ[env_key]!r}: {exc}") from exc
-    if "models" in raw and "c2_specialists" in raw["models"] and not environ.get("OPENAI_SPECIALIST_MODEL") and environ.get("OPENAI_MODEL"):
+    if (
+        "models" in raw
+        and "c2_specialists" in raw["models"]
+        and not environ.get("OPENAI_SPECIALIST_MODEL")
+        and environ.get("OPENAI_MODEL")
+    ):
         raw["models"]["c2_specialists"]["model_id"] = environ["OPENAI_MODEL"]
     try:
         return PolicyConfig.model_validate(raw)
@@ -311,12 +330,20 @@ class BudgetLedger:
         self._critique_retries = 0
 
     # -- tool calls --------------------------------------------------------------------------------
-    def try_consume_tool_call(self) -> BudgetVerdict:
+    def try_consume_tool_call(self, *, reserve: int = 0, allow_over_cost: bool = False) -> BudgetVerdict:
         with self._lock:
-            if self._calls >= self._budgets.max_tool_calls:
-                return BudgetVerdict(False, "BUDGET_EXCEEDED", f"Tool call budget exhausted ({self._calls}/{self._budgets.max_tool_calls})")
-            if self._cost >= self._budgets.max_cost_usd_per_case:
-                return BudgetVerdict(False, "BUDGET_EXCEEDED", f"Cost budget exhausted (${self._cost}/${self._budgets.max_cost_usd_per_case})")
+            if self._calls + reserve >= self._budgets.max_tool_calls:
+                return BudgetVerdict(
+                    False,
+                    "BUDGET_EXCEEDED",
+                    f"Tool call budget exhausted ({self._calls}/{self._budgets.max_tool_calls})",
+                )
+            if not allow_over_cost and self._cost >= self._budgets.max_cost_usd_per_case:
+                return BudgetVerdict(
+                    False,
+                    "BUDGET_EXCEEDED",
+                    f"Cost budget exhausted (${self._cost}/${self._budgets.max_cost_usd_per_case})",
+                )
             self._calls += 1
             return BudgetVerdict(True)
 
@@ -324,7 +351,11 @@ class BudgetLedger:
     def check_llm_allowed(self) -> BudgetVerdict:
         with self._lock:
             if self._cost >= self._budgets.max_cost_usd_per_case:
-                return BudgetVerdict(False, "BUDGET_EXCEEDED", f"Cost budget exhausted (${self._cost}/${self._budgets.max_cost_usd_per_case})")
+                return BudgetVerdict(
+                    False,
+                    "BUDGET_EXCEEDED",
+                    f"Cost budget exhausted (${self._cost}/${self._budgets.max_cost_usd_per_case})",
+                )
             return BudgetVerdict(True)
 
     def record_llm_usage(self, tokens_in: int, tokens_out: int, cost_usd: Decimal) -> None:
@@ -337,18 +368,28 @@ class BudgetLedger:
     def try_replan(self) -> BudgetVerdict:
         with self._lock:
             if self._replans >= self._budgets.max_replans:
-                return BudgetVerdict(False, "REPLAN_BUDGET_EXCEEDED", f"Replan budget exhausted ({self._replans}/{self._budgets.max_replans})")
+                return BudgetVerdict(
+                    False,
+                    "REPLAN_BUDGET_EXCEEDED",
+                    f"Replan budget exhausted ({self._replans}/{self._budgets.max_replans})",
+                )
             self._replans += 1
             return BudgetVerdict(True)
 
     def try_critique_retry(self) -> BudgetVerdict:
         with self._lock:
             if self._critique_retries >= self._budgets.max_critique_retries:
-                return BudgetVerdict(False, "CRITIQUE_BUDGET_EXCEEDED", f"Critique retries exhausted ({self._critique_retries}/{self._budgets.max_critique_retries})")
+                return BudgetVerdict(
+                    False,
+                    "CRITIQUE_BUDGET_EXCEEDED",
+                    f"Critique retries exhausted ({self._critique_retries}/{self._budgets.max_critique_retries})",
+                )
             self._critique_retries += 1
             return BudgetVerdict(True)
 
-    def preload(self, calls: int = 0, cost_usd: Decimal = Decimal("0"), replans: int = 0, critique_retries: int = 0) -> None:
+    def preload(
+        self, calls: int = 0, cost_usd: Decimal = Decimal("0"), replans: int = 0, critique_retries: int = 0
+    ) -> None:
         """Restore counters (crash-resume) or simulate exhaustion in tests/red-team runs."""
         with self._lock:
             self._calls, self._cost = calls, to_usd(cost_usd)

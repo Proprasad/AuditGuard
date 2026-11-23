@@ -1,4 +1,5 @@
 """In-memory sliding-window rate limiting (per client IP, per limiter). Exceeding the limit returns HTTP 429."""
+
 from __future__ import annotations
 
 import threading
@@ -49,7 +50,9 @@ async def rate_limit_api(request: Request) -> None:
 
 def enforce_login_limit(request: Request) -> None:
     if not login_limiter.allow(_client(request)):
-        raise HTTPException(status_code=429, detail="RATE_LIMITED: too many login attempts", headers={"Retry-After": "60"})
+        raise HTTPException(
+            status_code=429, detail="RATE_LIMITED: too many login attempts", headers={"Retry-After": "60"}
+        )
 
 
 def reset_limiters() -> None:

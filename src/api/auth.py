@@ -1,7 +1,8 @@
-﻿"""
+"""
 JWT (HS256, stdlib only) with issuer/audience/expiry/role validation, plus the principal + role dependencies.
 `AUTH_REQUIRED=true` by default: every protected route needs a valid Bearer token and a sufficient role.
 """
+
 from __future__ import annotations
 
 import base64
@@ -40,7 +41,14 @@ def create_jwt_token(subject: str, role: str, expires_in_seconds: int = TOKEN_TT
         raise ValueError(f"unknown role {role!r}")
     now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
-    payload = {"sub": subject, "role": role, "iat": now, "exp": now + expires_in_seconds, "iss": ISSUER, "aud": AUDIENCE}
+    payload = {
+        "sub": subject,
+        "role": role,
+        "iat": now,
+        "exp": now + expires_in_seconds,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+    }
     signing_input = f"{_b64url_encode(json.dumps(header).encode())}.{_b64url_encode(json.dumps(payload).encode())}"
     return f"{signing_input}.{_sign(signing_input)}"
 

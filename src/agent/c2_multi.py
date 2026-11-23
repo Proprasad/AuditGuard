@@ -8,6 +8,7 @@ AuditGuard C2 multi-agent team: supervisor + 4 RBAC-scoped specialists running t
 
 All specialists share one per-run BudgetLedger; the supervisor model plans, scores competing hypotheses and critiques.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -15,16 +16,26 @@ from collections.abc import Callable
 from typing import Any, Optional
 
 from src.agent.graph import run_graph
-from src.models import Alert, InvestigationState
+from src.models import Alert, InvestigationState, SpecialistFinding, SpecialistHandOff
+
+__all__ = ["SpecialistFinding", "SpecialistHandOff", "run_multi_agent"]
 
 
 async def run_multi_agent(
-    alert: Alert, thread_id: Optional[str] = None, reflexion_enabled: bool = False, memory_enabled: bool = True,
+    alert: Alert,
+    thread_id: Optional[str] = None,
+    reflexion_enabled: bool = False,
+    memory_enabled: bool = True,
     resume: bool = False,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
 ) -> InvestigationState:
-    """C2 supervisor coordinating the specialists under one shared BudgetLedger with bounded, critique-driven replanning."""
+    """C2 supervisor coordinating specialists under a shared BudgetLedger with critique-driven replanning."""
     return await run_graph(
-        alert=alert, mode="c2_multi", thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}", resume=resume,
-        reflexion_enabled=reflexion_enabled, memory_enabled=memory_enabled, emit=on_event,
+        alert=alert,
+        mode="c2_multi",
+        thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
+        resume=resume,
+        reflexion_enabled=reflexion_enabled,
+        memory_enabled=memory_enabled,
+        emit=on_event,
     )

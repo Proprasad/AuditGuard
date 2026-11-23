@@ -1,9 +1,10 @@
-﻿"""
+"""
 AuditGuard - Core Data Models (Pydantic v2, strict, exact decimals).
 
 All currency / ratio fields use `Money` / `Ratio` / `Usd` (Decimal-only, JSON strings). There are no
 showcase defaults: alert IDs, accounts and amounts must always be supplied by a trusted source.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,7 +27,8 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Enums â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Enums
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class AlertStatus(str, Enum):
     OPEN = "open"
     UNDER_INVESTIGATION = "under_investigation"
@@ -56,7 +58,8 @@ class DispositionDecision(str, Enum):
     PENDING = "pending"
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Core Domain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Core Domain
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class Alert(StrictModel):
     alert_id: str
     rule_name: str
@@ -158,6 +161,22 @@ class DispositionWorksheet(StrictModel):
         return canonical_sha256(self.canonical_payload())
 
 
+class SpecialistHandOff(StrictModel):
+    task_id: str
+    target_agent: Literal["flow_tracer", "benign_investigator", "regulatory_analyst", "reporter_critic"]
+    objective: str
+    allowed_tool_budget: int = Field(ge=0)
+
+
+class SpecialistFinding(StrictModel):
+    task_id: str
+    agent_name: str
+    summary: str
+    tool_calls: int = Field(ge=0)
+    evidence_ids_added: list[str] = Field(default_factory=list)
+    recommended_replan: Optional[dict[str, Any]] = None
+
+
 class InvestigationState(StrictModel):
     """Typed investigation state (durably checkpointed per `thread_id`)."""
 
@@ -178,6 +197,9 @@ class InvestigationState(StrictModel):
     kyc_profiles: list[dict[str, Any]] = Field(default_factory=list)
     fund_flow_paths: list[FundFlowPath] = Field(default_factory=list)
     regulatory_snippets: list[str] = Field(default_factory=list)
+    regulatory_clauses: list[dict[str, Any]] = Field(default_factory=list)
+    specialist_handoffs: list[dict[str, Any]] = Field(default_factory=list)
+    specialist_findings: list[dict[str, Any]] = Field(default_factory=list)
     degraded_evidence: list[str] = Field(default_factory=list)
 
     active_hypotheses: list[Hypothesis] = Field(default_factory=list)
@@ -209,7 +231,8 @@ def _zero_usd() -> Any:
     return Decimal("0.000000")
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ API Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ API Schemas
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class InvestigateRequest(StrictModel):
     """The server resolves root account / network / amount from the trusted alert record."""
 

@@ -1,4 +1,5 @@
 """Spawn a real FastMCP server process (streamable HTTP) and call it through `call_mcp_tool`."""
+
 import os
 import socket
 import subprocess
@@ -23,8 +24,13 @@ def _free_port() -> int:
 async def test_bank_records_over_real_http(isolated_operational_db, monkeypatch):
     port = _free_port()
     env = {**os.environ, "MCP_BANK_RECORDS_PORT": str(port), "SQLITE_DB_PATH": str(isolated_operational_db)}
-    proc = subprocess.Popen([sys.executable, "-m", "src.mcp_servers.bank_records"], cwd=ROOT, env=env,  # noqa: S603
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "src.mcp_servers.bank_records"],
+        cwd=ROOT,
+        env=env,  # noqa: S603
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:

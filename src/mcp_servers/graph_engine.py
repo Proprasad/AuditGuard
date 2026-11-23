@@ -2,6 +2,7 @@
 MCP Server: graph-engine (COMPUTE). Thin FastMCP adapter over the pure `src.core.graph_math` engine.
 Tools: find_candidate_fund_flows, compute_flow_conservation, compare_graph_runs
 """
+
 from __future__ import annotations
 
 import os
@@ -19,8 +20,8 @@ from src.models import FundFlowPath
 mcp = FastMCP(
     name="graph-engine",
     instructions="Compute-only server for deterministic fund-flow graph analysis. "
-                 "Finds candidate layering paths, computes Decimal flow conservation, "
-                 "and compares graph runs for replanning.",
+    "Finds candidate layering paths, computes Decimal flow conservation, "
+    "and compares graph runs for replanning.",
 )
 
 
@@ -89,10 +90,16 @@ class CompareGraphRunsOutput(_Strict):
 def _resolved_params(params: FindCandidateFlowsInput) -> graph_math.GraphParams:
     defaults = get_policy().default_graph_params()
     return graph_math.GraphParams(
-        time_window_days=params.time_window_days if params.time_window_days is not None else defaults["time_window_days"],
+        time_window_days=params.time_window_days
+        if params.time_window_days is not None
+        else defaults["time_window_days"],
         max_hops=params.max_hops if params.max_hops is not None else defaults["max_hops"],
-        amount_tolerance=params.amount_tolerance if params.amount_tolerance is not None else defaults["amount_tolerance"],
-        min_intermediaries=params.min_intermediaries if params.min_intermediaries is not None else defaults["min_intermediaries"],
+        amount_tolerance=params.amount_tolerance
+        if params.amount_tolerance is not None
+        else defaults["amount_tolerance"],
+        min_intermediaries=params.min_intermediaries
+        if params.min_intermediaries is not None
+        else defaults["min_intermediaries"],
         anchor=parse_utc_timestamp(params.anchor_date) if params.anchor_date else None,
     )
 
@@ -116,11 +123,18 @@ def _path_to_model(metrics: graph_math.PathMetrics) -> FundFlowPath:
 
 def _metrics_from_model(path: FundFlowPath) -> graph_math.PathMetrics:
     return graph_math.PathMetrics(
-        path_id=path.path_id, nodes=tuple(path.nodes), edge_tx_ids=tuple(path.edge_tx_ids),
-        total_outflow_inr=path.total_outflow_inr, total_consolidated_inr=path.total_consolidated_inr,
-        net_difference_inr=path.net_difference_inr, retention_pct=path.retention_pct,
-        amount_leaked_ratio=path.amount_leaked_ratio, hop_count=path.hop_count,
-        time_span_days=path.time_span_days, is_suspicious=path.is_suspicious, suspicion_reason=path.suspicion_reason,
+        path_id=path.path_id,
+        nodes=tuple(path.nodes),
+        edge_tx_ids=tuple(path.edge_tx_ids),
+        total_outflow_inr=path.total_outflow_inr,
+        total_consolidated_inr=path.total_consolidated_inr,
+        net_difference_inr=path.net_difference_inr,
+        retention_pct=path.retention_pct,
+        amount_leaked_ratio=path.amount_leaked_ratio,
+        hop_count=path.hop_count,
+        time_span_days=path.time_span_days,
+        is_suspicious=path.is_suspicious,
+        suspicion_reason=path.suspicion_reason,
     )
 
 
@@ -135,7 +149,9 @@ async def find_candidate_fund_flows(params: FindCandidateFlowsInput) -> FindCand
     }
     violations = policy.validate_graph_params(supplied)
     if violations:
-        return FindCandidateFlowsOutput(status="error", error_code="POLICY_BOUNDS_EXCEEDED", message="; ".join(violations))
+        return FindCandidateFlowsOutput(
+            status="error", error_code="POLICY_BOUNDS_EXCEEDED", message="; ".join(violations)
+        )
     try:
         txns = [txn_from_record(t.model_dump()) for t in params.transactions]
         resolved = _resolved_params(params)
@@ -156,7 +172,9 @@ async def find_candidate_fund_flows(params: FindCandidateFlowsInput) -> FindCand
 async def compute_flow_conservation(params: FlowConservationInput) -> FlowConservationOutput:
     """Test whether fund amounts are conserved across candidate paths using Decimal math."""
     policy = get_policy()
-    tolerance = params.amount_tolerance if params.amount_tolerance is not None else policy.graph_bounds.amount_tolerance.default
+    tolerance = (
+        params.amount_tolerance if params.amount_tolerance is not None else policy.graph_bounds.amount_tolerance.default
+    )
     result = graph_math.flow_conservation([_metrics_from_model(p) for p in params.paths], tolerance, policy.structuring)
     return FlowConservationOutput(
         conservation_satisfied=result.conservation_satisfied,

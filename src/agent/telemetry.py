@@ -3,6 +3,7 @@ Deterministic network flow summary (exact `Decimal` math, no floats, no silent d
 
 Decomposed into small pure helpers; money/percent values are returned as fixed-point strings.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -67,8 +68,11 @@ def _sum_where(txns: Sequence[Mapping[str, Any]], predicate: Any) -> Decimal:
 
 
 def _flow_totals(
-    root: str, txns: Sequence[Mapping[str, Any]], paths: Sequence[FundFlowPath],
-    kyc_by_acc: Mapping[str, Mapping[str, Any]], roles: Roles,
+    root: str,
+    txns: Sequence[Mapping[str, Any]],
+    paths: Sequence[FundFlowPath],
+    kyc_by_acc: Mapping[str, Mapping[str, Any]],
+    roles: Roles,
 ) -> tuple[Decimal, Decimal, frozenset[str]]:
     out_from_root = _sum_where(txns, lambda t: t.get("sender_account") == root)
     in_to_root = _sum_where(txns, lambda t: t.get("receiver_account") == root)
@@ -79,7 +83,8 @@ def _flow_totals(
         consolidated = _sum_where(txns, lambda t: t.get("receiver_account") in multi_hop_dests)
     elif roles.destinations:
         consolidated = _sum_where(
-            txns, lambda t: t.get("receiver_account") in roles.destinations and t.get("sender_account") != root
+            txns,
+            lambda t: t.get("receiver_account") in roles.destinations and t.get("sender_account") != root,
         )
         if consolidated == 0 and is_registered(kyc_by_acc.get(root, {})):
             consolidated = out_from_root
@@ -91,7 +96,11 @@ def _flow_totals(
 
 
 def _timeline(
-    root: str, txns: Sequence[Mapping[str, Any]], roles: Roles, multi_hop_dests: frozenset[str], consolidated: Decimal,
+    root: str,
+    txns: Sequence[Mapping[str, Any]],
+    roles: Roles,
+    multi_hop_dests: frozenset[str],
+    consolidated: Decimal,
 ) -> tuple[int, list[dict[str, Any]]]:
     if not txns:
         return 0, []
@@ -126,22 +135,38 @@ def _timeline(
             cum_cons += daily_cons[day]
         last = tick
         shown_cons = min(cum_cons, cum_out) if cum_out > 0 else cum_cons
-        points.append({
-            "day": tick,
-            "label": f"Day {tick}",
-            "cumulative_outflow_inr": dec_str(cum_out),
-            "cumulative_consolidated_inr": dec_str(shown_cons),
-        })
+        points.append(
+            {
+                "day": tick,
+                "label": f"Day {tick}",
+                "cumulative_outflow_inr": dec_str(cum_out),
+                "cumulative_consolidated_inr": dec_str(shown_cons),
+            }
+        )
     return span_days, points
 
 
 def _finding(fid: str, icon: str, title: str, summary: str, severity: str) -> dict[str, Any]:
-    return {"id": fid, "type": "deterministic", "icon": icon, "title": title, "summary": summary, "severity": severity}
+    return {
+        "id": fid,
+        "type": "deterministic",
+        "icon": icon,
+        "title": title,
+        "summary": summary,
+        "severity": severity,
+    }
 
 
 def _findings(
-    roles: Roles, multi_hop_dests: frozenset[str], cons_pct: Decimal, ret_pct: Decimal, consolidated: Decimal,
-    retained: Decimal, span_days: int, tx_count: int, root_kyc: Mapping[str, Any],
+    roles: Roles,
+    multi_hop_dests: frozenset[str],
+    cons_pct: Decimal,
+    ret_pct: Decimal,
+    consolidated: Decimal,
+    retained: Decimal,
+    span_days: int,
+    tx_count: int,
+    root_kyc: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     root_reg = is_registered(root_kyc)
     if 5 <= ret_pct <= 20 and multi_hop_dests:
@@ -150,32 +175,54 @@ def _findings(
         conservation_severity = "success" if root_reg else "info"
     findings = [
         _finding(
-            "FND-TOPOLOGY", "network", "Network Topology",
-            f"{len(roles.sources)} source → {len(roles.intermediaries)} intermediary → {len(roles.destinations)} destination account(s)",
+            "FND-TOPOLOGY",
+            "network",
+            "Network Topology",
+            (
+                f"{len(roles.sources)} source → {len(roles.intermediaries)} "
+                f"intermediary → {len(roles.destinations)} destination account(s)"
+            ),
             "warning" if len(roles.intermediaries) >= 2 and multi_hop_dests else "info",
         ),
         _finding(
-            "FND-CONSERVATION", "coins", "Decimal Flow Conservation",
-            f"{cons_pct}% consolidated (INR {consolidated:,.2f}); {ret_pct}% retained/unconsolidated (INR {retained:,.2f})",
+            "FND-CONSERVATION",
+            "coins",
+            "Decimal Flow Conservation",
+            (
+                f"{cons_pct}% consolidated (INR {consolidated:,.2f}); "
+                f"{ret_pct}% retained/unconsolidated (INR {retained:,.2f})"
+            ),
             conservation_severity,
         ),
         _finding(
-            "FND-TEMPORAL", "clock", "Staggered Window Detected" if span_days > 7 else "Transfer Window",
+            "FND-TEMPORAL",
+            "clock",
+            "Staggered Window Detected" if span_days > 7 else "Transfer Window",
             f"Activity spans {span_days} day(s) across {tx_count} transfer(s)"
             + (" (exceeds static 7-day rule window)" if span_days > 7 else " (within 7-day window)"),
             "warning" if span_days > 7 else "info",
         ),
     ]
     if root_reg:
-        findings.append(_finding(
-            "FND-REGISTRY", "shield-check", "Verified Commercial Registry",
-            f"Seed account holds ACTIVE {root_kyc.get('registry_type') or 'COMMERCIAL'} registration", "success",
-        ))
+        findings.append(
+            _finding(
+                "FND-REGISTRY",
+                "shield-check",
+                "Verified Commercial Registry",
+                f"Seed account holds ACTIVE {root_kyc.get('registry_type') or 'COMMERCIAL'} registration",
+                "success",
+            )
+        )
     elif not multi_hop_dests and tx_count:
-        findings.append(_finding(
-            "FND-GAP", "alert", "Missing Consolidation / External Gap",
-            "Outbound legs show 0 downstream consolidation hops in internal bank records", "warning",
-        ))
+        findings.append(
+            _finding(
+                "FND-GAP",
+                "alert",
+                "Missing Consolidation / External Gap",
+                "Outbound legs show 0 downstream consolidation hops in internal bank records",
+                "warning",
+            )
+        )
     return findings
 
 
@@ -199,7 +246,14 @@ def compute_network_flow_summary(
     span_days, timeline = _timeline(root_account, transactions, roles, multi_hop_dests, consolidated)
     max_hops = max((p.hop_count for p in candidate_paths), default=(1 if transactions else 0))
     findings = _findings(
-        roles, multi_hop_dests, cons_pct, ret_pct, consolidated, retained, span_days, len(transactions),
+        roles,
+        multi_hop_dests,
+        cons_pct,
+        ret_pct,
+        consolidated,
+        retained,
+        span_days,
+        len(transactions),
         kyc_by_acc.get(root_account, {}),
     )
     return {

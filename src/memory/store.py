@@ -6,6 +6,7 @@ Short-Term & Long-Term Memory Layer (Durable SQL Persistence + Isolated Test Sto
   or isolated in-memory when instantiated directly in unit tests (`LongTermMemoryStore(persist=False)`).
 - Forget API: `forget_customer(customer_id)` wipes profiles & episodes on demand.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,23 +33,31 @@ def trim_messages_with_summary(
     window_size: int = 12,
 ) -> tuple[list[dict[str, Any]], str]:
     """
-    Keep only the most recent `window_size` messages and fold older messages
-    into a deterministic rolling summary so LLM context never bloats.
+    Pin leading `system` messages, keep the most recent `window_size` conversational messages without
+    splitting an `assistant` tool-call message from its paired `tool` response, and fold evicted messages
+    into `rolling_summary`.
     """
-    if len(messages) <= window_size:
+    sys_end = 0
+    while sys_end < len(messages) and messages[sys_end].get("role") == "system":
+        sys_end += 1
+    pinned = messages[:sys_end]
+    rest = messages[sys_end:]
+    budget = max(1, window_size - len(pinned))
+    if len(rest) <= budget:
         return messages, rolling_summary
 
-    overflow = messages[:-window_size]
-    recent = messages[-window_size:]
+    cut = len(rest) - budget
+    while cut > 0 and rest[cut].get("role") == "tool":
+        cut -= 1
+    overflow = rest[:cut]
+    recent = rest[cut:]
 
     summary_parts = [rolling_summary] if rolling_summary else []
     for msg in overflow:
         role = msg.get("role", "unknown")
         content = str(msg.get("content", ""))[:120]
         summary_parts.append(f"[{role}] {content}")
-
-    new_summary = " | ".join(summary_parts)[-2000:]
-    return recent, new_summary
+    return [*pinned, *recent], " | ".join(summary_parts)[-2000:]
 
 
 class LongTermMemoryStore:
@@ -141,7 +150,8 @@ class LongTermMemoryStore:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO reflexion_playbook
-                    (lesson_id, trigger_precondition, observed_failure, actionable_rule, status, reviewer_rationale, created_at)
+                    (lesson_id, trigger_precondition, observed_failure, actionable_rule, status, reviewer_rationale,
+                    created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (

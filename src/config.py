@@ -6,6 +6,7 @@ AuditGuard - validated startup configuration.
 * `validate_startup` : fail-fast checks executed in the FastAPI lifespan; outside APP_ENV=development|test
   insecure/missing secrets or `AUTH_REQUIRED=false` abort startup.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,7 +23,15 @@ from src.core.policy import PolicyConfig, PolicyConfigError, load_policy
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEV_ENVS = ("development", "test")
-INSECURE_MARKERS = ("change-in-prod", "changeme", "change_me", "auditguard-dev", "placeholder", "password", "auditguard_secret")
+INSECURE_MARKERS = (
+    "change-in-prod",
+    "changeme",
+    "change_me",
+    "auditguard-dev",
+    "placeholder",
+    "password",
+    "auditguard_secret",
+)
 
 
 class StartupConfigError(RuntimeError):
@@ -183,6 +192,15 @@ def reload_policy() -> PolicyConfig:
 
 
 __all__ = [
-    "PolicyConfig", "PolicyConfigError", "Settings", "StartupConfigError", "get_api_secret", "get_hmac_secret",
-    "get_policy", "get_settings", "reload_policy", "settings", "validate_startup",
+    "PolicyConfig",
+    "PolicyConfigError",
+    "Settings",
+    "StartupConfigError",
+    "get_api_secret",
+    "get_hmac_secret",
+    "get_policy",
+    "get_settings",
+    "reload_policy",
+    "settings",
+    "validate_startup",
 ]

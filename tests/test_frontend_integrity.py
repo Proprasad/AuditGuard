@@ -7,6 +7,7 @@ Verifies:
      `agent_updated`, `tool_called`, `verification_completed`, and `interrupt_required` with full
      `flow_summary`, `workflow_steps`, `agent_runs`, `transactions`, and `worksheet`.
 """
+
 import json
 import re
 from pathlib import Path

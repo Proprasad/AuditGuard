@@ -1,4 +1,5 @@
 """Memory Policy & Reflexion Loop Tests"""
+
 from src.memory.store import LongTermMemoryStore, ReflexionLesson, trim_messages_with_summary
 from src.reflexion.loop import run_dev_reflexion
 
@@ -28,8 +29,18 @@ def test_long_term_memory_approval_gate_and_forget_api():
 def test_reflexion_dev_only_and_human_review_freeze():
     store = LongTermMemoryStore()
     cases = {
-        "CASE-0001": {"case_id": "CASE-0001", "category": "staggered_timing", "expected_disposition": "escalate_str", "is_held_out": False},
-        "CASE-0002": {"case_id": "CASE-0002", "category": "staggered_timing", "expected_disposition": "escalate_str", "is_held_out": True},
+        "CASE-0001": {
+            "case_id": "CASE-0001",
+            "category": "staggered_timing",
+            "expected_disposition": "escalate_str",
+            "is_held_out": False,
+        },
+        "CASE-0002": {
+            "case_id": "CASE-0002",
+            "category": "staggered_timing",
+            "expected_disposition": "escalate_str",
+            "is_held_out": True,
+        },
     }
     eval_results = [
         {"case_id": "CASE-0001", "correct": False, "actual": "request_info"},
@@ -41,11 +52,14 @@ def test_reflexion_dev_only_and_human_review_freeze():
     assert store.review_lesson(lessons[0].lesson_id, approve=True, rationale="Valid heuristic") is True
 
     store.freeze_playbook()
-    assert store.add_lesson(
-        ReflexionLesson(
-            lesson_id="LES-FROZEN",
-            trigger_precondition="x",
-            observed_failure="y",
-            actionable_rule="z",
+    assert (
+        store.add_lesson(
+            ReflexionLesson(
+                lesson_id="LES-FROZEN",
+                trigger_precondition="x",
+                observed_failure="y",
+                actionable_rule="z",
+            )
         )
-    ) is False
+        is False
+    )

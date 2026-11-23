@@ -6,6 +6,7 @@ Commands:
   retrieval-bench  Evaluate Recall@5 & MRR on the 35-query regulatory benchmark
   serve            Initialize DB & launch FastAPI + Analyst Workbench locally
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +22,7 @@ app = typer.Typer(name="auditguard", help="AuditGuard AML Investigation CLI")
 def generate_data() -> None:
     """Generate the 60-case synthetic dataset (20 dev / 40 isolated held-out) and seed DB."""
     from data.synthetic_generator import generate_all_cases
+
     generate_all_cases()
 
 
@@ -49,11 +51,14 @@ def investigate(
     async def _run():
         if mode == "c0_fixed":
             from src.agent.c0_fixed import run_fixed_pipeline
+
             return await run_fixed_pipeline(alert)
         if mode == "c2_multi":
             from src.agent.c2_multi import run_multi_agent
+
             return await run_multi_agent(alert)
         from src.agent.c1_single import run_investigation
+
         return await run_investigation(alert)
 
     state = asyncio.run(_run())
@@ -75,7 +80,9 @@ def retrieval_bench() -> None:
         hits = 0
         rr_sum = 0.0
         for q in queries:
-            res = await call_mcp_tool("compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": mode})
+            res = await call_mcp_tool(
+                "compliance-kb", "search_regulations", {"query": q["query"], "top_k": 5, "mode": mode}
+            )
             returned = [c["clause_id"] for c in res.get("clauses", [])]
             expected = set(q["expected_ids"])
             if expected & set(returned):

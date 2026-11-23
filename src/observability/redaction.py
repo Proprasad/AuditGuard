@@ -3,6 +3,7 @@ Log / telemetry redaction. Everything shipped to Loki (or any external sink) pas
 PII (PAN/phone/Aadhaar/GSTIN/long numbers), account identifiers, JWTs, approval tokens, API keys and
 free-text analyst notes are masked or dropped. High-cardinality IDs are never used as metric labels.
 """
+
 from __future__ import annotations
 
 import re
@@ -12,9 +13,25 @@ from src.guardrails.guardrails import mask_pii
 
 REDACTED = "[REDACTED]"
 _SENSITIVE_KEYS = {
-    "notes", "reviewer_notes", "analyst_notes", "recommendation_rationale", "rationale", "memo", "memo_text",
-    "kyc_notes", "password", "token", "access_token", "approval_token", "hmac_token", "secret", "authorization",
-    "api_key", "kyc_summaries", "entity_name", "full_name",
+    "notes",
+    "reviewer_notes",
+    "analyst_notes",
+    "recommendation_rationale",
+    "rationale",
+    "memo",
+    "memo_text",
+    "kyc_notes",
+    "password",
+    "token",
+    "access_token",
+    "approval_token",
+    "hmac_token",
+    "secret",
+    "authorization",
+    "api_key",
+    "kyc_summaries",
+    "entity_name",
+    "full_name",
 }
 _ACCOUNT_ID = re.compile(r"\bACC-[A-Z0-9\-]+\b")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b")

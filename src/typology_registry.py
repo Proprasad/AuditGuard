@@ -1,21 +1,28 @@
 """
-Pluggable Typology Registry (Section 3.8)
-Decouples agent orchestration from typology-specific rules.
-Phase 1 registers `scatter_gather`. Future phases register fan_in, structuring, etc.
+Pluggable Typology Registry (Section 3.8).
+Decouples agent orchestration from typology-specific rules; bounds come from `PolicyConfig`.
 """
+
 from __future__ import annotations
 
 from typing import Any
-from pydantic import BaseModel
+
+from pydantic import BaseModel, ConfigDict
+
+from src.config import get_policy
 
 
 class TypologySpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     typology_id: str
     name: str
     description: str
-    default_graph_params: dict[str, Any]
     required_checks: list[str]
     applicable_regulations: list[str]
+
+    @property
+    def default_graph_params(self) -> dict[str, Any]:
+        return get_policy().default_graph_params()
 
 
 class TypologyRegistry:
@@ -38,12 +45,6 @@ typology_registry.register(
         typology_id="scatter_gather",
         name="Scatter-Gather Layering & Benign Look-Alikes",
         description="Fan-out distribution from a seed account into intermediaries followed by fan-in consolidation.",
-        default_graph_params={
-            "time_window_days": 7,
-            "max_hops": 3,
-            "amount_tolerance": 0.10,
-            "min_intermediaries": 2,
-        },
         required_checks=[
             "find_candidate_fund_flows",
             "get_kyc_profile",

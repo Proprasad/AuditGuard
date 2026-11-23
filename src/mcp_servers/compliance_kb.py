@@ -1,4 +1,4 @@
-﻿"""
+"""
 MCP Server: compliance-kb (READ)
 True Hybrid RAG Pipeline over the 32-clause Indian AML Regulatory Corpus:
   1. Sparse Lexical Index: Okapi BM25 (k1=1.5, b=0.75)
@@ -10,6 +10,7 @@ True Hybrid RAG Pipeline over the 32-clause Indian AML Regulatory Corpus:
 
 Tools: search_regulations, get_clause_by_id
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,8 @@ from pydantic import BaseModel, Field
 mcp = FastMCP(
     name="compliance-kb",
     instructions="Read-only access to AML regulatory knowledge base. "
-                 "Provides Hybrid RAG (BM25 + Vector + RRF + Reranking + Query Decomposition) "
-                 "over RBI circulars, PMLA rules, FIU-IND indicators, and internal SOPs.",
+    "Provides Hybrid RAG (BM25 + Vector + RRF + Reranking + Query Decomposition) "
+    "over RBI circulars, PMLA rules, FIU-IND indicators, and internal SOPs.",
 )
 
 
@@ -108,7 +109,7 @@ def _dense_features(text: str, expand_concepts: bool = True) -> Counter[str]:
         padded = f"<{w}>"
         for n in (3, 4):
             for i in range(max(0, len(padded) - n + 1)):
-                feats[f"g:{padded[i:i+n]}"] += 1
+                feats[f"g:{padded[i : i + n]}"] += 1
         if expand_concepts:
             for stem, syns in DOMAIN_CONCEPTS.items():
                 if w.startswith(stem):
@@ -145,9 +146,7 @@ class HybridRegulatoryIndex:
             for k in fv:
                 vec_df[k] += 1
 
-        self.vec_idf: dict[str, float] = {
-            k: math.log((self.n_docs + 1) / (df + 0.5)) + 1.0 for k, df in vec_df.items()
-        }
+        self.vec_idf: dict[str, float] = {k: math.log((self.n_docs + 1) / (df + 0.5)) + 1.0 for k, df in vec_df.items()}
         self.doc_unit_vecs: list[dict[str, float]] = [self._to_unit_vec(fv) for fv in raw_vecs]
 
     def _to_unit_vec(self, fv: Counter[str]) -> dict[str, float]:
@@ -188,7 +187,7 @@ class HybridRegulatoryIndex:
         """Cross-feature reranker: combines RRF base score with bigram overlap, exact ID, and category alignment."""
         q_lower = query.lower()
         q_toks = _word_tokens(query)
-        q_bigrams = {f"{q_toks[i]}_{q_toks[i+1]}" for i in range(len(q_toks) - 1)}
+        q_bigrams = {f"{q_toks[i]}_{q_toks[i + 1]}" for i in range(len(q_toks) - 1)}
 
         reranked: list[tuple[int, float]] = []
         max_rrf = max(rrf_map.values()) if rrf_map else 1.0
@@ -196,7 +195,7 @@ class HybridRegulatoryIndex:
         for idx in candidate_indices:
             c = self.clauses[idx]
             d_toks = self.doc_tokens[idx]
-            d_bigrams = {f"{d_toks[i]}_{d_toks[i+1]}" for i in range(len(d_toks) - 1)}
+            d_bigrams = {f"{d_toks[i]}_{d_toks[i + 1]}" for i in range(len(d_toks) - 1)}
 
             base = rrf_map.get(idx, 0.0) / max_rrf
             bigram_boost = 0.15 * (len(q_bigrams & d_bigrams) / max(len(q_bigrams), 1)) if q_bigrams else 0.0
@@ -213,17 +212,11 @@ class HybridRegulatoryIndex:
         if mode == "bm25_only":
             hits = self.bm25_search(query, top_k=top_k)
             max_s = max((s for _, s in hits), default=1.0) or 1.0
-            return [
-                self.clauses[i].model_copy(update={"relevance_score": round(s / max_s, 4)})
-                for i, s in hits
-            ]
+            return [self.clauses[i].model_copy(update={"relevance_score": round(s / max_s, 4)}) for i, s in hits]
 
         if mode == "vector_only":
             hits = self.vector_search(query, top_k=top_k)
-            return [
-                self.clauses[i].model_copy(update={"relevance_score": round(max(0.0, s), 4)})
-                for i, s in hits
-            ]
+            return [self.clauses[i].model_copy(update={"relevance_score": round(max(0.0, s), 4)}) for i, s in hits]
 
         # Full Hybrid: BM25 Top-20 + Vector Top-20 -> RRF (k=60) -> Reranker -> Top-K
         bm25_hits = self.bm25_search(query, top_k=20)
@@ -243,10 +236,7 @@ class HybridRegulatoryIndex:
 
         top_candidates = sorted(rrf_scores, key=lambda i: -rrf_scores[i])[:15]
         reranked = self.rerank(query, top_candidates, rrf_scores)[:top_k]
-        return [
-            self.clauses[idx].model_copy(update={"relevance_score": score})
-            for idx, score in reranked
-        ]
+        return [self.clauses[idx].model_copy(update={"relevance_score": score}) for idx, score in reranked]
 
 
 _index_singleton: HybridRegulatoryIndex | None = None
@@ -299,13 +289,14 @@ async def search_regulations(params: SearchRegulationsInput) -> SearchRegulation
         for sq in parts:
             sub_hits = idx.search(sq, top_k=max(params.top_k, 8), mode="hybrid_rrf_rerank")
             for rank, c in enumerate(sub_hits, start=1):
-                rrf_merged[c.clause_id] = rrf_merged.get(c.clause_id, 0.0) + (1.0 / (60 + rank)) + 0.1 * c.relevance_score
+                rrf_merged[c.clause_id] = (
+                    rrf_merged.get(c.clause_id, 0.0) + (1.0 / (60 + rank)) + 0.1 * c.relevance_score
+                )
                 clause_map[c.clause_id] = c
         top_ids = sorted(rrf_merged, key=lambda cid: -rrf_merged[cid])[: params.top_k]
         max_m = max(rrf_merged.values()) if rrf_merged else 1.0
         clauses = [
-            clause_map[cid].model_copy(update={"relevance_score": round(rrf_merged[cid] / max_m, 4)})
-            for cid in top_ids
+            clause_map[cid].model_copy(update={"relevance_score": round(rrf_merged[cid] / max_m, 4)}) for cid in top_ids
         ]
         method = "decomposed+hybrid_rrf_rerank"
     else:

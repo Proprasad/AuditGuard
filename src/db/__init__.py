@@ -1,4 +1,5 @@
 """AuditGuard Database Package"""
+
 from src.db.database import (
     append_audit_log,
     get_db,

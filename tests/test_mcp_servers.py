@@ -1,4 +1,5 @@
 """T2: MCP contract tests - every call goes through the real FastMCP protocol client (no raw `.fn`)."""
+
 import pytest
 
 from src.db.database import get_db
@@ -31,20 +32,38 @@ async def test_bank_records_happy_and_not_found():
 
 @pytest.mark.asyncio
 async def test_graph_engine_bounds_error():
-    res = await call_mcp_tool("graph-engine", "find_candidate_fund_flows", {
-        "root_account": "ACC-1", "transactions": [], "time_window_days": 365, "max_hops": 3})
+    res = await call_mcp_tool(
+        "graph-engine",
+        "find_candidate_fund_flows",
+        {"root_account": "ACC-1", "transactions": [], "time_window_days": 365, "max_hops": 3},
+    )
     assert res["status"] == "error" and res["error_code"] == "POLICY_BOUNDS_EXCEEDED"
 
 
 @pytest.mark.asyncio
 async def test_case_actions_draft_and_reject_invalid_token():
-    draft = await call_mcp_tool("case-actions", "draft_disposition_report", {
-        "alert_id": "ALT-TEST-1", "recommended_disposition": "escalate_str",
-        "recommendation_rationale": "Test rationale", "confidence_score": 0.85, "regulatory_citations": ["PMLA-2002-S13"]})
+    draft = await call_mcp_tool(
+        "case-actions",
+        "draft_disposition_report",
+        {
+            "alert_id": "ALT-TEST-1",
+            "recommended_disposition": "escalate_str",
+            "recommendation_rationale": "Test rationale",
+            "confidence_score": 0.85,
+            "regulatory_citations": ["PMLA-2002-S13"],
+        },
+    )
     assert draft["worksheet_id"].startswith("DWS-") and len(draft["payload_hash"]) == 64
-    bad = await call_mcp_tool("case-actions", "submit_case_disposition", {
-        "worksheet_id": draft["worksheet_id"], "approval_token": "APPROVE:badhash:badsig",
-        "reviewer_id": "analyst_01", "thread_id": "thr-test"})
+    bad = await call_mcp_tool(
+        "case-actions",
+        "submit_case_disposition",
+        {
+            "worksheet_id": draft["worksheet_id"],
+            "approval_token": "APPROVE:badhash:badsig",
+            "reviewer_id": "analyst_01",
+            "thread_id": "thr-test",
+        },
+    )
     assert bad["success"] is False and "Approval rejected" in bad["error"]
 
 

@@ -8,12 +8,14 @@ Unified MCP tool client built on the real FastMCP protocol client (`fastmcp.Clie
 There are no raw `.fn` calls and no silent fallbacks: any transport/tool failure is returned as an explicit, typed
 error envelope (`status="error"`, `error_code`, `error`) that callers must treat as missing evidence.
 """
+
 from __future__ import annotations
 
 import asyncio
 import importlib
 import json
 import logging
+import os
 from typing import Any
 
 from fastmcp import Client
@@ -39,14 +41,26 @@ def _port(server: str) -> int:
     }[server]
 
 
+def _host(server: str) -> str:
+    env_key = f"MCP_{server.upper().replace('-', '_')}_HOST"
+    return os.getenv(env_key) or settings.mcp_host
+
+
 def _target(server: str) -> Any:
     if settings.mcp_transport == "http":
-        return f"http://{settings.mcp_host}:{_port(server)}/mcp"
+        return f"http://{_host(server)}:{_port(server)}/mcp"
     return importlib.import_module(_SERVERS[server]).mcp
 
 
 def error_envelope(server: str, tool: str, code: str, message: str) -> dict[str, Any]:
-    return {"status": "error", "success": False, "error_code": code, "error": message, "server": server, "tool": tool}
+    return {
+        "status": "error",
+        "success": False,
+        "error_code": code,
+        "error": message,
+        "server": server,
+        "tool": tool,
+    }
 
 
 def _unwrap(server: str, tool: str, result: Any) -> dict[str, Any]:
@@ -67,14 +81,18 @@ def _unwrap(server: str, tool: str, result: Any) -> dict[str, Any]:
     return error_envelope(server, tool, "MCP_EMPTY_RESULT", "tool returned no structured content")
 
 
-async def call_mcp_tool(server: str, tool: str, params: dict[str, Any], timeout_s: float | None = None) -> dict[str, Any]:
+async def call_mcp_tool(
+    server: str, tool: str, params: dict[str, Any], timeout_s: float | None = None
+) -> dict[str, Any]:
     """Invoke `tool` on `server` through the MCP protocol. Never raises for transport/tool failures."""
     if server not in _SERVERS:
         return error_envelope(server, tool, "UNKNOWN_MCP_SERVER", f"unknown MCP server {server!r}")
     timeout = timeout_s if timeout_s is not None else settings.mcp_timeout_s
     try:
         async with Client(_target(server), timeout=timeout) as client:
-            result = await asyncio.wait_for(client.call_tool(tool, {"params": params}, raise_on_error=False), timeout=timeout)
+            result = await asyncio.wait_for(
+                client.call_tool(tool, {"params": params}, raise_on_error=False), timeout=timeout
+            )
         return _unwrap(server, tool, result)
     except asyncio.TimeoutError:
         logger.warning("MCP timeout server=%s tool=%s after %ss", server, tool, timeout)

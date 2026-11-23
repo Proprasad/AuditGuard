@@ -5,6 +5,7 @@ Every test gets its own throw-away SQLite file (`tmp_path/test_auditguard.db`) s
 dev fixtures. The real `data/auditguard.db` is never opened by the test-suite; a session-level guard
 fails the run if its modification time changes.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -22,9 +23,13 @@ TEST_ENV = {
     "REVIEWER_PASSWORD": "reviewer-test-pw-0002",
     "ADMIN_PASSWORD": "admin-test-pw-0003",
     "PASSWORD_HASH_ITERATIONS": "1000",
+    "LLM_ENABLED": "false",
 }
-USERS = {"analyst": ("analyst", "ANALYST_PASSWORD"), "senior_reviewer": ("reviewer", "REVIEWER_PASSWORD"),
-         "admin": ("admin", "ADMIN_PASSWORD")}
+USERS = {
+    "analyst": ("analyst", "ANALYST_PASSWORD"),
+    "senior_reviewer": ("reviewer", "REVIEWER_PASSWORD"),
+    "admin": ("admin", "ADMIN_PASSWORD"),
+}
 
 
 def _reset_process_singletons() -> None:

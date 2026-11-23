@@ -1,4 +1,5 @@
 """Milestone T3: durable checkpoint persistence and mid-run crash/resume (FR-6)."""
+
 import pytest
 
 from src.agent.c1_single import SimulatedCrashInterrupt, run_investigation
@@ -9,8 +10,13 @@ from src.models import Alert, RiskLevel
 @pytest.mark.asyncio
 async def test_mid_run_crash_and_exact_resume(client, auth):
     thread_id = "thr-crash-test-0412"
-    alert = Alert(alert_id="ALT-2026-0412", rule_name="SCATTER_GATHER_900K", root_account="ACC-IND-1042",
-                  total_amount_inr="900000.00", risk_level=RiskLevel.HIGH)
+    alert = Alert(
+        alert_id="ALT-2026-0412",
+        rule_name="SCATTER_GATHER_900K",
+        root_account="ACC-IND-1042",
+        total_amount_inr="900000.00",
+        risk_level=RiskLevel.HIGH,
+    )
 
     with pytest.raises(SimulatedCrashInterrupt):
         await run_investigation(alert=alert, thread_id=thread_id, stop_after_node="gather_evidence")
