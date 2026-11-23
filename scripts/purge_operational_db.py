@@ -10,6 +10,7 @@ Held-out identifiers (alert IDs, case IDs, transaction IDs, account IDs) are rea
 Reference data (alerts/transactions/accounts/customers/commercial_registry) is only deleted for
 identifiers that exist exclusively in the held-out split (never for IDs shared with the dev split).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,8 +82,10 @@ def main() -> int:
 
     ids = held_out_exclusive_ids()
     needles = ids["alert"] | ids["case"] | ids["tx"] | ids["account"]
-    print(f"held-out exclusive IDs: alerts={len(ids['alert'])} cases={len(ids['case'])} "
-          f"tx={len(ids['tx'])} accounts={len(ids['account'])}")
+    print(
+        f"held-out exclusive IDs: alerts={len(ids['alert'])} cases={len(ids['case'])} "
+        f"tx={len(ids['tx'])} accounts={len(ids['account'])}"
+    )
 
     uri = f"file:{Path(args.db).as_posix()}" + ("?mode=ro" if args.check and not args.purge else "")
     conn = sqlite3.connect(uri, uri=True)

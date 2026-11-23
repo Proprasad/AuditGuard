@@ -6,6 +6,7 @@ Bootstrap local secrets into `.env` (never overwrites existing values, never pri
 Generates strong random values for any missing/placeholder secret so the app, docker-compose and
 the startup validator (`src.config.validate_startup`) never rely on hardcoded defaults.
 """
+
 from __future__ import annotations
 
 import re

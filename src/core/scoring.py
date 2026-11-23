@@ -63,6 +63,9 @@ def rubric_scores(features: EvidenceFeatures, cfg: ScoringConfig) -> RubricResul
         weight = cfg.benign_weights.get(name, Decimal("0"))
         score -= weight
         trace.append(f"-{weight} {name}")
+    if not features.multi_hop_path and score >= cfg.disposition_threshold:
+        score = cfg.disposition_threshold - Decimal("0.05")
+        trace.append("cap<threshold (no_multi_hop_consolidation)")
     suspicious = _clamp(score, cfg)
     return RubricResult(suspicious=suspicious, benign=_clamp(Decimal("1") - suspicious, cfg), trace=trace)
 

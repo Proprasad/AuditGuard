@@ -192,6 +192,45 @@ class LongTermMemoryStore:
                 return [ReflexionLesson(**dict(r)) for r in rows]
         return list(self._reflexion_playbook.values())
 
+    def load_playbook(self, path: str = "config/reflexion_playbook.json") -> int:
+        """Hydrate reviewed Reflexion lessons + frozen flag from an exported playbook artifact."""
+        from pathlib import Path
+
+        p = Path(path)
+        if not p.exists():
+            return 0
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        # Temporarily unfreeze in target store to load exact exported rows, then restore exact frozen state
+        self._playbook_frozen = False
+        if self._persist:
+            with self._db() as conn:
+                conn.execute("DELETE FROM system_flags WHERE flag_key = 'playbook_frozen'")
+                conn.execute("DELETE FROM reflexion_playbook")
+        count = 0
+        for item in raw.get("lessons", []):
+            lesson = ReflexionLesson(**item)
+            self._reflexion_playbook[lesson.lesson_id] = lesson
+            if self._persist:
+                with self._db() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO reflexion_playbook "
+                        "(lesson_id, trigger_precondition, observed_failure, actionable_rule, "
+                        "status, reviewer_rationale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            lesson.lesson_id,
+                            lesson.trigger_precondition,
+                            lesson.observed_failure,
+                            lesson.actionable_rule,
+                            lesson.status,
+                            lesson.reviewer_rationale,
+                            lesson.created_at,
+                        ),
+                    )
+            count += 1
+        if raw.get("frozen"):
+            self.freeze_playbook()
+        return count
+
     def retrieve_top_lessons(self, query: str, top_k: int = 3) -> list[ReflexionLesson]:
         approved = [les for les in self.list_all_lessons() if les.status == "approved"]
         words = set(query.lower().split())

@@ -70,13 +70,11 @@ def investigate(
 
 @app.command("retrieval-bench")
 def retrieval_bench() -> None:
-    """Run the 35-query regulatory benchmark comparing BM25-only vs Hybrid RRF+Rerank."""
+    """Run regulatory retrieval benchmarks (35-query dev + 28-query independent NL held-out)."""
     from src.mcp_servers.client import call_mcp_tool
 
-    bench_path = Path("eval/retrieval_bench.jsonl")
-    queries = [json.loads(line) for line in bench_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-    async def _eval_mode(mode: str) -> tuple[float, float]:
+    async def _eval_suite(bench_path: Path, mode: str) -> tuple[float, float, int]:
+        queries = [json.loads(ln) for ln in bench_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
         hits = 0
         rr_sum = 0.0
         for q in queries:
@@ -92,25 +90,23 @@ def retrieval_bench() -> None:
                         rr_sum += 1.0 / rank
                         break
         n = max(len(queries), 1)
-        return hits / n, rr_sum / n
+        return hits / n, rr_sum / n, len(queries)
 
-    bm25_r5, bm25_mrr = asyncio.run(_eval_mode("bm25_only"))
-    hyb_r5, hyb_mrr = asyncio.run(_eval_mode("hybrid_rrf_rerank"))
-
-    typer.echo(f"Evaluated {len(queries)} regulatory queries:")
-    typer.echo(f"  BM25-Only          -> Recall@5: {bm25_r5:.1%} | MRR: {bm25_mrr:.3f}")
-    typer.echo(f"  Hybrid RRF+Rerank  -> Recall@5: {hyb_r5:.1%} | MRR: {hyb_mrr:.3f}")
-
-
-@app.command("serve")
-def serve(host: str = "127.0.0.1", port: int = 8000, reload: bool = False) -> None:
-    """Initialize SQLite DB, seed synthetic data if empty, and start FastAPI + Analyst Workbench."""
-    import uvicorn
-    from src.db.database import seed_operational_db
-
-    seed_operational_db()
-    typer.echo(f"AuditGuard Analyst Workbench starting at http://{host}:{port}/")
-    uvicorn.run("src.api.main:app", host=host, port=port, reload=reload)
+    for label, rel in (
+        ("Dev Benchmark", "eval/retrieval_bench.jsonl"),
+        ("Independent NL Held-Out", "eval/retrieval_held_out_nl.jsonl"),
+    ):
+        path = Path(rel)
+        if not path.exists():
+            continue
+        bm25_r5, bm25_mrr, n = asyncio.run(_eval_suite(path, "bm25_only"))
+        hyb_r5, hyb_mrr, _ = asyncio.run(_eval_suite(path, "hybrid_rrf_rerank"))
+        typer.echo(f"\n=== {label} ({n} queries) ===")
+        typer.echo(f"  BM25-Only         -> Recall@5: {bm25_r5:.1%}, MRR: {bm25_mrr:.3f}")
+        typer.echo(
+            f"  Hybrid RRF+Rerank -> Recall@5: {hyb_r5:.1%}, MRR: {hyb_mrr:.3f} "
+            f"(Delta: {(hyb_r5 - bm25_r5) * 100:+.1f} pp)"
+        )
 
 
 if __name__ == "__main__":

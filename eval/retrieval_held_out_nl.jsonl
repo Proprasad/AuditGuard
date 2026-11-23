@@ -1,0 +1,28 @@
+{"query_id": "NL01", "query": "What should an investigator do when funds leave an account to several strangers and reunite two weeks later?", "expected_ids": ["REG-FIU-RF-014", "SOP-SG-001"]}
+{"query_id": "NL02", "query": "How do launderers break large deposits into smaller chunks under ten lakhs to dodge cash reporting?", "expected_ids": ["REG-FIU-RF-019"]}
+{"query_id": "NL03", "query": "Why would pass-through accounts keep around eight percent of the money before sending the rest onward?", "expected_ids": ["REG-FIU-RF-023"]}
+{"query_id": "NL04", "query": "When money moves through four or five layers of intermediate accounts before reaching one recipient, what typology applies?", "expected_ids": ["REG-FIU-RF-027", "SOP-SG-001"]}
+{"query_id": "NL05", "query": "An inactive personal account suddenly wakes up and wires large sums out immediately by instant transfer.", "expected_ids": ["REG-FIU-RF-031"]}
+{"query_id": "NL06", "query": "A supposed wholesale business has no tax registration or corporate incorporation number and zero supplier history.", "expected_ids": ["REG-FIU-RF-036"]}
+{"query_id": "NL07", "query": "When a customer moves far more money than their stated yearly salary could explain, what extra review is required?", "expected_ids": ["REG-RBI-KYC-P35"]}
+{"query_id": "NL08", "query": "On what factors must banks classify account holders into risk buckets?", "expected_ids": ["REG-RBI-KYC-P38"]}
+{"query_id": "NL09", "query": "What approvals and wealth checks apply to accounts held by senior public officials or their family?", "expected_ids": ["REG-RBI-KYC-P41"]}
+{"query_id": "NL10", "query": "A basic-tier account with outdated identity paperwork starts sending large inter-bank wires.", "expected_ids": ["REG-RBI-KYC-P46"]}
+{"query_id": "NL11", "query": "What government registrations must an analyst check before treating high-volume fan-out payments as normal business?", "expected_ids": ["REG-RBI-KYC-P51", "SOP-SG-003"]}
+{"query_id": "NL12", "query": "How do we verify that a foundation collecting donations and paying disaster relief is genuine?", "expected_ids": ["REG-RBI-KYC-P56", "SOP-SG-003"]}
+{"query_id": "NL13", "query": "Must domestic electronic transfers carry both sender and receiver account details end to end?", "expected_ids": ["REG-RBI-KYC-P64", "REG-FATF-R16"]}
+{"query_id": "NL14", "query": "Are weekly payouts from an online shopping platform escrow account to registered merchants legitimate?", "expected_ids": ["REG-RBI-PA-2020", "SOP-SG-003"]}
+{"query_id": "NL15", "query": "How does Indian statute define the crime of disguising or layering dirty money as clean property?", "expected_ids": ["REG-PMLA-S3"]}
+{"query_id": "NL16", "query": "How many years must a bank keep transaction trails and identity documents on file?", "expected_ids": ["REG-PMLA-S12"]}
+{"query_id": "NL17", "query": "Can bank staff warn an account holder that their transfers are being reviewed for a suspicious report?", "expected_ids": ["REG-PMLA-S12A"]}
+{"query_id": "NL18", "query": "Does a suspicious transaction have a minimum rupee threshold or apply only to cash?", "expected_ids": ["REG-PMLA-R3"]}
+{"query_id": "NL19", "query": "Which officer inside the bank is legally responsible for filing suspicious reports with the intelligence unit?", "expected_ids": ["REG-PMLA-R7", "REG-PMLA-R8"]}
+{"query_id": "NL20", "query": "How many working days does the bank have to submit a suspicious report once suspicion is confirmed?", "expected_ids": ["REG-PMLA-R8"]}
+{"query_id": "NL21", "query": "When is a monthly Rotating savings auction pool lawful versus something we must escalate?", "expected_ids": ["REG-CHIT-1982-S4", "SOP-SG-003"]}
+{"query_id": "NL22", "query": "What happens if an intermediate bank hop is outside our visibility and we cannot see the downstream leg?", "expected_ids": ["SOP-SG-002", "REG-FATF-R16"]}
+{"query_id": "NL23", "query": "Should a compliance analyst ever state that a customer is a criminal or guilty in a report?", "expected_ids": ["REG-FATF-R20", "SOP-HUM-001"]}
+{"query_id": "NL24", "query": "How do we verify monthly company wage payouts sent to staff bank accounts?", "expected_ids": ["SOP-SG-004", "SOP-SG-003"]}
+{"query_id": "NL25", "query": "Family members pool money into one account and pay GST-verified hotel and catering vendors for a marriage ceremony.", "expected_ids": ["SOP-SG-005", "SOP-SG-003"]}
+{"query_id": "NL26", "query": "Is the language model allowed to add up rupee figures itself or must code calculate exact totals?", "expected_ids": ["SOP-NUM-001"]}
+{"query_id": "NL27", "query": "How should the agent handle hostile commands hidden inside payment remarks or customer notes?", "expected_ids": ["SOP-SEC-001"]}
+{"query_id": "NL28", "query": "When can past case history be saved to long-term memory and how is a customer erased on request?", "expected_ids": ["SOP-MEM-001"]}
