@@ -27,7 +27,7 @@ def emit(thread_id: str, alert_id: str, mode: str, event: str, data: dict[str, A
     )
 
 
-async def execute_mode(alert: Alert, mode: str, thread_id: str, resume: bool = False) -> InvestigationState:
+async def execute_mode(alert: Alert, mode: str, thread_id: str, resume: bool = False, on_event: Any = None) -> InvestigationState:
     if mode == "c0_fixed":
         from src.agent.c0_fixed import run_fixed_pipeline
 
@@ -35,10 +35,10 @@ async def execute_mode(alert: Alert, mode: str, thread_id: str, resume: bool = F
     if mode == "c2_multi":
         from src.agent.c2_multi import run_multi_agent
 
-        return await run_multi_agent(alert, thread_id=thread_id)
+        return await run_multi_agent(alert, thread_id=thread_id, resume=resume, on_event=on_event)
     from src.agent.c1_single import run_investigation
 
-    return await run_investigation(alert, mode=mode, thread_id=thread_id, resume=resume)
+    return await run_investigation(alert, mode=mode, thread_id=thread_id, resume=resume, on_event=on_event)
 
 
 def register_thread(alert: Alert, mode: str, owner: str) -> str:
@@ -50,6 +50,39 @@ def register_thread(alert: Alert, mode: str, owner: str) -> str:
         "message": f"Registered {mode.upper()} investigation for {alert.alert_id}",
     })
     return thread_id
+
+
+def live_callback(thread_id: str, alert: Alert, mode: str) -> Any:
+    """Translate LangGraph node completions into durable SSE events as they happen (not after the run)."""
+
+    def push(event: str, data: dict[str, Any]) -> None:
+        emit(thread_id, alert.alert_id, mode, event, data)
+
+    def on_node(node: str, inv: dict[str, Any]) -> None:
+        plan = inv.get("plan") or {}
+        if node == "plan":
+            push("plan_updated", {"category": "planning", "steps": plan.get("steps", []), "graph_params": plan.get("graph_params"),
+                                  "replan_count": inv.get("replan_count", 0), "message": f"Plan with {len(plan.get('steps', []))} steps"})
+        elif node == "gather_evidence":
+            push("tool_called", {"category": "mcp_tool", "tool_calls_used": inv.get("tool_calls_used", 0),
+                                 "paths_found": len(inv.get("fund_flow_paths", [])), "kyc_checked": len(inv.get("kyc_profiles", [])),
+                                 "citations_found": len(inv.get("regulatory_snippets", [])),
+                                 "message": f"Executed {inv.get('tool_calls_used', 0)} guarded MCP calls"})
+        elif node == "form_hypotheses":
+            push("hypotheses_scored", {"category": "reasoning", "reasoning_mode": inv.get("reasoning_mode"),
+                                       "hypotheses": [{"label": h["label"], "confidence": h["confidence"]} for h in inv.get("active_hypotheses", [])],
+                                       "message": f"Scored competing hypotheses ({inv.get('reasoning_mode')})"})
+        elif node == "replan":
+            push("replan_triggered", {"category": "replan", "replan_count": inv.get("replan_count", 0), "reason": plan.get("replan_reason"),
+                                      "new_params": plan.get("graph_params"), "message": f"Replan #{inv.get('replan_count', 0)}"})
+        elif node == "draft":
+            for agent in inv.get("agent_runs", []):
+                push("agent_updated", {"category": "agent", "agent": agent, "message": f"{agent['agent_name']}: {agent['summary']}"})
+            failed = inv.get("error") == "verification_failed"
+            push("verification_completed", {"category": "verifier", "status": "failed" if failed else "passed",
+                                            "message": "Deterministic verification " + ("FAILED (fail-closed)" if failed else "passed")})
+
+    return on_node
 
 
 def _replay_events(thread_id: str, alert: Alert, mode: str, state: InvestigationState, duration: float) -> None:
@@ -77,7 +110,8 @@ async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = Fal
     """Execute (or resume) a thread, persist its result + events and issue the single-use approval token."""
     started = time.perf_counter()
     try:
-        state = await execute_mode(alert, mode, thread_id, resume=resume)
+        state = await execute_mode(alert, mode, thread_id, resume=resume,
+                                   on_event=None if mode == "c0_fixed" else live_callback(thread_id, alert, mode))
         if state.worksheet is None:
             raise RuntimeError("investigation finished without a worksheet")
     except Exception:  # noqa: BLE001 - background boundary: log with a correlation id, never leak internals
@@ -104,7 +138,8 @@ async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = Fal
     CITATIONS_VERIFIED.labels(status="failed" if failed else "passed").inc(len(worksheet.regulatory_citations))
     INVESTIGATIONS_TOTAL.labels(mode=mode, disposition=worksheet.recommended_disposition.value).inc()
 
-    _replay_events(thread_id, alert, mode, state, duration)
+    if mode == "c0_fixed":
+        _replay_events(thread_id, alert, mode, state, duration)
     terminal = {
         "category": "human_gate", "thread_id": thread_id, "worksheet_id": worksheet.worksheet_id, "payload_hash": payload_hash,
         "recommended_disposition": worksheet.recommended_disposition.value, "confidence_score": worksheet.confidence_score,

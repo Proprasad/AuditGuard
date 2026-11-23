@@ -99,6 +99,25 @@ structuring:
   threshold_inr: "1000000.00"
   floor_inr: "800000.00"
 
+# Evidence-weighted rubric used when no live LLM scores the competing hypotheses (offline mode). Weights move the
+# suspicious-typology confidence away from `prior`; the benign confidence is its complement. Nothing here is per-case.
+scoring:
+  prior: "0.50"
+  min_confidence: "0.05"
+  max_confidence: "0.95"
+  disposition_threshold: "0.70"
+  request_info_floor: "0.45"
+  suspicious_weights:
+    multi_hop_path: "0.15"
+    flagged_path: "0.10"
+    income_mismatch: "0.10"
+    high_kyc_risk: "0.10"
+    unregistered_root: "0.10"
+  benign_weights:
+    registered_root: "0.30"
+    verified_merchants_low_risk: "0.25"
+    low_kyc_risk: "0.10"
+
 memory:
   short_term_window_messages: 12
 

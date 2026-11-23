@@ -416,7 +416,7 @@ async def submit_human_decision(thread_id: str, request: DecisionRequest, princi
             return approval_service.apply_edit(thread, request.edit, principal.sub)
         if request.action == "approve":
             return await approval_service.approve(thread, request, principal.sub)
-        return approval_service.reject(thread, request, principal.sub)
+        return await approval_service.reject(thread, request, principal.sub)
     except approval_service.DecisionError as exc:
         raise HTTPException(
             status_code=exc.status_code,

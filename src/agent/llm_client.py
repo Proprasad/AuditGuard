@@ -18,10 +18,11 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar
 
 import httpx
 from dotenv import dotenv_values
+from pydantic import BaseModel, ValidationError
 
 from src.config import get_policy, settings
 from src.core.policy import BudgetLedger
@@ -29,6 +30,7 @@ from src.db.database import get_db, init_db
 from src.guardrails.guardrails import apply_output_guardrails
 
 
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 FLAG_ENABLED, FLAG_MODEL, FLAG_STRONG_MODEL = "llm_enabled", "llm_model", "llm_strong_model"
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
@@ -333,3 +335,51 @@ async def synthesize_investigation_narrative(
             "tokens_used": 0,
             "cost_usd": 0.0,
         }
+
+
+class LlmCallMeta(BaseModel):
+    used_live_llm: bool
+    model: str
+    error: Optional[str] = None
+
+
+async def chat_json(
+    *, system: str, user: str, schema: type[SchemaT], ledger: BudgetLedger, role: str = "c1_investigator", strong: bool = False,
+) -> tuple[Optional[SchemaT], LlmCallMeta]:
+    """
+    One budget-checked structured LLM call: JSON in the reply is validated against `schema`.
+    Returns (None, meta) when offline, over budget, or when the reply is unusable (meta.error says why) - callers must
+    degrade explicitly rather than invent an answer.
+    """
+    if not is_live_llm_active() or not ledger.check_llm_allowed().allowed:
+        return None, LlmCallMeta(used_live_llm=False, model="offline")
+    key = _resolve_api_key()
+    fast_m, strong_m = get_active_models()
+    chosen = strong_m if strong else fast_m
+    spec = get_policy().model_for(role)
+    base_url = (os.getenv("OPENAI_BASE_URL") or settings.openai_base_url).rstrip("/")
+    payload: dict[str, Any] = {
+        "model": chosen,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "max_tokens": spec.max_tokens,
+    }
+    if "gpt-5" in chosen:
+        payload["reasoning"] = {"effort": "low"}
+    else:
+        payload["temperature"] = float(spec.temperature)
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+               "HTTP-Referer": "http://localhost:8000", "X-Title": "AuditGuard AML Workbench"}
+    try:
+        async with httpx.AsyncClient(timeout=float(get_policy().timeouts.llm_call_seconds)) as client:
+            resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        usage = data.get("usage") or {}
+        p_toks, c_toks = int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+        ledger.record_llm_usage(p_toks, c_toks, get_policy().estimate_cost_usd(chosen, p_toks, c_toks))
+        raw = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE | re.DOTALL).strip()
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        return schema.model_validate(json.loads(match.group(0) if match else cleaned)), LlmCallMeta(used_live_llm=True, model=chosen)
+    except (httpx.HTTPError, ValueError, ValidationError) as exc:
+        return None, LlmCallMeta(used_live_llm=True, model=chosen, error=f"{type(exc).__name__}: {exc}"[:240])

@@ -4,6 +4,9 @@ from __future__ import annotations
 from datetime import timezone
 from typing import Any
 
+import logging
+
+from src.agent.graph import resume_gate
 from src.core.canonical import utc_now
 from src.core.verifier import verify_worksheet
 from src.db import case_repo
@@ -13,6 +16,7 @@ from src.mcp_servers.client import call_mcp_tool
 from src.memory.store import memory_store
 from src.models import DecisionRequest, DispositionDecision, EditWorksheetRequest
 
+logger = logging.getLogger("auditguard.approval")
 ALLOWED_FINAL = {DispositionDecision.ESCALATE_STR, DispositionDecision.CLOSE_BENIGN, DispositionDecision.REQUEST_INFO}
 _STATUS_FOR_CODE = {
     "ALREADY_COMMITTED": 409, "ALREADY_CONSUMED": 409, "WORKSHEET_NOT_PENDING": 409,
@@ -24,6 +28,14 @@ class DecisionError(Exception):
     def __init__(self, status_code: int, code: str, message: str = "", extra: Any = None) -> None:
         super().__init__(message or code)
         self.status_code, self.code, self.message, self.extra = status_code, code, message or code, extra
+
+
+async def _release_gate(thread: dict[str, Any], decision: dict[str, Any]) -> None:
+    """Resume the paused LangGraph `human_gate` interrupt so the graph run terminates cleanly after the human decision."""
+    try:
+        await resume_gate(thread["thread_id"], thread["mode"], decision)
+    except Exception:  # noqa: BLE001 - the case DB is already the source of truth; surface loudly, never mask
+        logger.exception("failed to resume LangGraph human_gate for thread=%s", thread["thread_id"])
 
 
 def _checkpoint(thread: dict[str, Any], status: str) -> None:
@@ -118,6 +130,7 @@ async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -
         {**s, "status": "completed"} if s.get("step") in (6, 7) else s for s in thread["state"].get("workflow_steps", [])
     ]
     _checkpoint(thread, "committed")
+    await _release_gate(thread, {"action": "approve", "disposition": result["final_disposition"], "reviewer": reviewer})
     if (customer_id := _customer_for_alert(thread["alert_id"])):
         memory_store.save_case_episode(customer_id, {
             "alert_id": thread["alert_id"], "disposition": result["final_disposition"], "reviewer_id": reviewer,
@@ -127,7 +140,7 @@ async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -
             "receipt": {k: result[k] for k in ("case_id", "audit_entry_id", "submitted_at", "worksheet_id")}}
 
 
-def reject(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
+async def reject(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
     ws = _require_open(thread, ("interrupt_required", "verification_failed"))
     guard = apply_input_guardrails(req.notes)
     if not guard.allowed:
@@ -137,5 +150,6 @@ def reject(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[
         {**s, "status": "failed"} if s.get("step") == 6 else s for s in thread["state"].get("workflow_steps", [])
     ]
     _checkpoint(thread, "rejected")
+    await _release_gate(thread, {"action": "reject", "reviewer": reviewer})
     return {"thread_id": thread["thread_id"], "status": "rejected", "decision": "rejected", "decided_at": utc_now_iso(),
             "message": "Disposition rejected and logged to the manual review queue."}

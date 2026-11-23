@@ -1,4 +1,4 @@
-"""
+﻿"""
 AuditGuard - Core Data Models (Pydantic v2, strict, exact decimals).
 
 All currency / ratio fields use `Money` / `Ratio` / `Usd` (Decimal-only, JSON strings). There are no
@@ -26,7 +26,7 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ─────────────────────────── Enums ────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Enums â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class AlertStatus(str, Enum):
     OPEN = "open"
     UNDER_INVESTIGATION = "under_investigation"
@@ -56,7 +56,7 @@ class DispositionDecision(str, Enum):
     PENDING = "pending"
 
 
-# ─────────────────────────── Core Domain ──────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Core Domain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class Alert(StrictModel):
     alert_id: str
     rule_name: str
@@ -165,6 +165,8 @@ class InvestigationState(StrictModel):
     alert: Alert
 
     plan: Optional[InvestigationPlan] = None
+    proposed_params: Optional[GraphParams] = None
+    reasoning_mode: str = "rubric"
     current_node: str = "start"
     current_step: int = 0
     replan_count: int = 0
@@ -207,7 +209,7 @@ def _zero_usd() -> Any:
     return Decimal("0.000000")
 
 
-# ─────────────────────────── API Schemas ──────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ API Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class InvestigateRequest(StrictModel):
     """The server resolves root account / network / amount from the trusted alert record."""
 

@@ -151,6 +151,26 @@ class RetrievalPolicy(_Strict):
     top_k_final: int
 
 
+class ScoringConfig(_Strict):
+    prior: Decimal
+    min_confidence: Decimal
+    max_confidence: Decimal
+    disposition_threshold: Decimal
+    request_info_floor: Decimal
+    suspicious_weights: dict[str, Decimal]
+    benign_weights: dict[str, Decimal]
+
+    @field_validator("prior", "min_confidence", "max_confidence", "disposition_threshold", "request_info_floor", mode="before")
+    @classmethod
+    def _ratio(cls, v: Any) -> Decimal:
+        return to_ratio(_lenient_decimal(v))
+
+    @field_validator("suspicious_weights", "benign_weights", mode="before")
+    @classmethod
+    def _weights(cls, v: Any) -> dict[str, Decimal]:
+        return {k: to_ratio(_lenient_decimal(x)) for k, x in dict(v).items()}
+
+
 class PolicyConfig(_Strict):
     config_version: str
     allowed_models: tuple[str, ...]
@@ -162,6 +182,7 @@ class PolicyConfig(_Strict):
     graph_limits: GraphLimits
     suspicion: SuspicionRules
     structuring: Structuring
+    scoring: ScoringConfig
     memory: MemoryPolicy
     retrieval: RetrievalPolicy
 
