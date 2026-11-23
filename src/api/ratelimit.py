@@ -1,9 +1,10 @@
-"""In-memory sliding-window rate limiting (per client IP, per limiter). Exceeding the limit returns HTTP 429."""
+﻿"""In-memory sliding-window rate limiting (per client IP, per limiter). Exceeding the limit returns HTTP 429."""
 from __future__ import annotations
 
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 
 from fastapi import HTTPException, Request
 
@@ -11,7 +12,7 @@ from src.config import settings
 
 
 class SlidingWindowLimiter:
-    def __init__(self, limit_getter: "callable[[], int]", window_seconds: float = 60.0) -> None:  # type: ignore[valid-type]
+    def __init__(self, limit_getter: Callable[[], int], window_seconds: float = 60.0) -> None:
         self._limit_getter = limit_getter
         self._window = window_seconds
         self._hits: dict[str, deque[float]] = defaultdict(deque)

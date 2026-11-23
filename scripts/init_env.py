@@ -21,6 +21,9 @@ GENERATED = {
     "NEXTAUTH_SECRET": lambda: secrets.token_urlsafe(32),
     "LANGFUSE_SALT": lambda: secrets.token_urlsafe(24),
     "GRAFANA_ADMIN_PASSWORD": lambda: secrets.token_urlsafe(18),
+    "ANALYST_PASSWORD": lambda: secrets.token_urlsafe(18),
+    "REVIEWER_PASSWORD": lambda: secrets.token_urlsafe(18),
+    "ADMIN_PASSWORD": lambda: secrets.token_urlsafe(18),
 }
 DEFAULTS = {"APP_ENV": "development"}
 PLACEHOLDER = re.compile(r"(change[-_]?me|placeholder|^$)", re.IGNORECASE)

@@ -1,11 +1,10 @@
 """
-FastAPI Gateway — Enterprise REST + SSE API & Agentic AML Investigation Workbench
-
-Preserves all core endpoints and contracts while adding read-only workbench
-data endpoints for Cases, Customers, Regulatory KB, Analytics, Config, and PDF/HTML Report Export.
+AuditGuard FastAPI application: thin HTTP layer. Business logic lives in `src/api/services/*`; every `/api/v1/*`
+route is authenticated (JWT, role-gated), rate limited and returns masked errors with a correlation id.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging
@@ -16,80 +15,50 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, AsyncGenerator, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 from starlette.responses import Response
 
-from src.api.auth import create_jwt_token, get_analyst_principal
-from src.config import get_policy, reload_policy, settings, validate_startup
+from src.api.auth import Principal, create_jwt_token, require_role
+from src.api.ratelimit import enforce_login_limit, rate_limit_api
+from src.api.services import approval as approval_service
+from src.api.services import runner
+from src.api.services.erasure import erase_customer
+from src.api.services.threads import get_thread, thread_view
+from src.api.users import authenticate, ensure_seed_users
+from src.config import env_mapping, get_policy, reload_policy, settings, validate_startup
 from src.core.canonical import to_money
-from src.db.database import (
-    append_audit_log,
-    get_db,
-    init_db,
-    list_audit_logs,
-    list_checkpoints,
-    load_checkpoint,
-    save_checkpoint,
-    utc_now_iso,
-)
+from src.db.database import append_audit_log, get_ro_db, init_db, list_audit_logs, list_checkpoints, read_events, utc_now_iso
 from src.guardrails.guardrails import apply_input_guardrails
-from src.guardrails.verifier import verify_worksheet
-from src.mcp_servers import bank_records, case_actions, compliance_kb
-from src.memory.store import memory_store
-from src.observability.loki_shipper import emit_loki_log
+from src.mcp_servers import bank_records, compliance_kb
 from src.models import (
     Alert,
-    DispositionDecision,
-    HumanDecisionRequest,
+    DecisionRequest,
+    DispositionWorksheet,
     InvestigateRequest,
     InvestigateResponse,
     RiskLevel,
 )
+from src.observability.loki_shipper import emit_loki_log
 
-# ---------------------------------------------------------------------------
-# Prometheus Metrics
-# ---------------------------------------------------------------------------
-INVESTIGATIONS_TOTAL = Counter(
-    "auditguard_investigations_total",
-    "Total investigations completed to human gate",
-    ["mode", "disposition"],
-)
-INVESTIGATION_DURATION = Histogram(
-    "auditguard_investigation_duration_seconds",
-    "Investigation duration in seconds",
-    ["mode"],
-)
-TOOL_CALLS_TOTAL = Counter(
-    "auditguard_tool_calls_total",
-    "Total MCP tool calls executed",
-    ["mode"],
-)
-CITATIONS_VERIFIED = Counter(
-    "auditguard_citations_verified_total",
-    "Total regulatory citations verified",
-    ["status"],
-)
-
-# ---------------------------------------------------------------------------
-# FastAPI App & Static Assets Mount
-# ---------------------------------------------------------------------------
 logger = logging.getLogger("auditguard.api")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema."""
+    """Fail-fast startup: validated secrets/auth, validated PolicyConfig, initialised schema, seeded users."""
     for warning in validate_startup():
         logger.warning("startup warning (dev/test only): %s", warning)
     policy = reload_policy()
     init_db()
-    logger.info("PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s)", policy.config_version,
-                policy.budgets.max_tool_calls, policy.budgets.max_cost_usd_per_case)
+    seeded = ensure_seed_users(env_mapping())
+    logger.info("PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s); users=%s", policy.config_version,
+                policy.budgets.max_tool_calls, policy.budgets.max_cost_usd_per_case, seeded)
     yield
 
 
@@ -104,78 +73,61 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
 @app.middleware("http")
-async def loki_http_request_logger(request, call_next):
+async def loki_http_request_logger(request: Request, call_next):
     t0 = time.perf_counter()
     response = await call_next(request)
     path = request.url.path
     if path.startswith("/api/v1/"):
         ms = round((time.perf_counter() - t0) * 1000, 1)
         emit_loki_log(
-            stream_type="http_api",
-            event="api_request",
+            stream_type="http_api", event="api_request",
             message=f"{request.method} {path} -> {response.status_code} ({ms}ms)",
             level="WARN" if response.status_code >= 400 else "INFO",
             extra={"method": request.method, "path": path, "status_code": response.status_code, "duration_ms": ms},
         )
     return response
 
+
+@app.exception_handler(Exception)
+async def masked_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    correlation = uuid.uuid4().hex[:12]
+    logger.exception("unhandled error path=%s correlation_id=%s", request.url.path, correlation)
+    return JSONResponse(status_code=500, content={"detail": "INTERNAL_ERROR", "correlation_id": correlation})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = [{"loc": list(e.get("loc", [])), "msg": str(e.get("msg", ""))} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
 STATIC_DIR = Path(__file__).resolve().parents[1] / "ui" / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-_threads: dict[str, dict[str, Any]] = {}
+ANALYST = Depends(require_role("analyst"))
+ADMIN = Depends(require_role("admin"))
+SENIOR = Depends(require_role("senior_reviewer"))
+api_deps = [Depends(rate_limit_api)]
 
 
 class TokenRequest(BaseModel):
-    username: str = "analyst_04"
-    role: str = "tier2_analyst"
+    username: str
+    password: str
 
 
 class LlmConfigUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
     model: Optional[str] = None
     strong_model: Optional[str] = None
-
-
-def _get_thread_record(thread_id: str) -> Optional[dict[str, Any]]:
-    if thread_id in _threads:
-        return _threads[thread_id]
-    cp = load_checkpoint(thread_id)
-    if cp:
-        rec = {
-            "thread_id": cp["thread_id"],
-            "alert_id": cp["alert_id"],
-            "mode": cp["mode"],
-            "status": cp["status"],
-            "worksheet_id": cp["worksheet_id"],
-            "payload_hash": cp["payload_hash"],
-            "state": cp["state"],
-            "alert": cp["state"].get("alert", {}),
-        }
-        _threads[thread_id] = rec
-        return rec
-    return None
-
-
-async def _execute_mode(alert: Alert, mode: str, thread_id: str, resume: bool = False):
-    if mode == "c0_fixed":
-        from src.agent.c0_fixed import run_fixed_pipeline
-        state = await run_fixed_pipeline(alert)
-        state.thread_id = thread_id
-        return state
-    if mode == "c2_multi":
-        from src.agent.c2_multi import run_multi_agent
-        return await run_multi_agent(alert, thread_id=thread_id)
-    from src.agent.c1_single import run_investigation
-    return await run_investigation(alert, mode=mode, thread_id=thread_id, resume=resume)
 
 
 def _alert_from_db(alert_id: str) -> Alert:
@@ -189,138 +141,17 @@ def _alert_from_db(alert_id: str) -> Alert:
     )
 
 
-def _canonical_worksheet_hash(worksheet) -> str:
-    if worksheet is None:
-        return ""
-    rec = case_actions.get_worksheet_record(worksheet.worksheet_id)
-    return rec["payload_hash"] if rec else worksheet.payload_hash
+def _guard_alert_id(alert_id: str) -> None:
+    guard = apply_input_guardrails(alert_id)
+    if not guard.allowed:
+        raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
 
 
-async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> AsyncGenerator[str, None]:
-    def _sse(event: str, data: dict[str, Any]) -> str:
-        payload = {"event": event, "timestamp": utc_now_iso(), **data}
-        emit_loki_log(
-            stream_type="agent_flow",
-            event=event,
-            message=f"[{mode.upper()} | {alert.alert_id}] {event}: {data.get('message', '')}",
-            level="ERROR" if event == "error" else "INFO",
-            extra={
-                "thread_id": thread_id,
-                "alert_id": alert.alert_id,
-                "mode": mode,
-                "category": data.get("category", ""),
-            },
-        )
-        return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
-
-    yield _sse("started", {
-        "thread_id": thread_id,
-        "alert_id": alert.alert_id,
-        "mode": mode,
-        "category": "intake",
-        "message": f"Registered {mode.upper()} investigation for {alert.alert_id}",
-    })
-
-    try:
-        t0 = time.perf_counter()
-        final_state = await _execute_mode(alert, mode, thread_id=thread_id)
-        duration = time.perf_counter() - t0
-        INVESTIGATION_DURATION.labels(mode=mode).observe(duration)
-        TOOL_CALLS_TOTAL.labels(mode=mode).inc(final_state.tool_calls_used)
-
-        if final_state.plan:
-            yield _sse("plan_updated", {
-                "category": "planning",
-                "steps": final_state.plan.steps,
-                "graph_params": final_state.plan.graph_params,
-                "replan_count": final_state.replan_count,
-                "message": f"Supervisor created {len(final_state.plan.steps)}-step investigation plan",
-            })
-
-        for ag in final_state.agent_runs:
-            yield _sse("agent_updated", {
-                "category": "agent",
-                "agent": ag,
-                "message": f"{ag['agent_name']}: {ag['summary']}",
-            })
-
-        yield _sse("tool_called", {
-            "category": "mcp_tool",
-            "tool_calls_used": final_state.tool_calls_used,
-            "paths_found": len(final_state.fund_flow_paths),
-            "kyc_checked": len(final_state.kyc_profiles),
-            "citations_found": len(final_state.regulatory_snippets),
-            "message": (
-                f"Executed {final_state.tool_calls_used} guarded MCP calls "
-                f"({len(final_state.fund_flow_paths)} paths, {len(final_state.kyc_profiles)} KYC profiles)"
-            ),
-        })
-
-        if final_state.replan_count > 0 and final_state.plan:
-            yield _sse("replan_triggered", {
-                "category": "replan",
-                "replan_count": final_state.replan_count,
-                "reason": final_state.plan.replan_reason,
-                "new_params": final_state.plan.graph_params,
-                "message": f"Replan #{final_state.replan_count}: Reconfigured bounds to {final_state.plan.graph_params}",
-            })
-
-        worksheet = final_state.worksheet
-        payload_hash = _canonical_worksheet_hash(worksheet)
-
-        yield _sse("verification_completed", {
-            "category": "verifier",
-            "payload_hash": payload_hash,
-            "duration_ms": round(duration * 1000, 1),
-            "message": f"Deterministic Decimal & citation verification passed (SHA-256={payload_hash[:12]}...)",
-        })
-
-        state_dump = final_state.model_dump(mode="json")
-        rec = {
-            "thread_id": thread_id,
-            "alert_id": alert.alert_id,
-            "alert": alert.model_dump(mode="json"),
-            "mode": mode,
-            "status": "interrupt_required",
-            "worksheet_id": worksheet.worksheet_id if worksheet else None,
-            "payload_hash": payload_hash,
-            "state": state_dump,
-        }
-        _threads[thread_id] = rec
-        save_checkpoint(
-            thread_id=thread_id,
-            alert_id=alert.alert_id,
-            mode=mode,
-            current_node="interrupt_required",
-            status="interrupt_required",
-            state_dict=state_dump,
-            worksheet_id=rec["worksheet_id"],
-            payload_hash=payload_hash,
-        )
-
-        if worksheet:
-            CITATIONS_VERIFIED.labels(status="passed").inc(len(worksheet.regulatory_citations))
-            INVESTIGATIONS_TOTAL.labels(mode=mode, disposition=worksheet.recommended_disposition.value).inc()
-            yield _sse("interrupt_required", {
-                "category": "human_gate",
-                "thread_id": thread_id,
-                "worksheet_id": worksheet.worksheet_id,
-                "payload_hash": payload_hash,
-                "recommended_disposition": worksheet.recommended_disposition.value,
-                "confidence_score": worksheet.confidence_score,
-                "rationale": worksheet.recommendation_rationale,
-                "replan_count": final_state.replan_count,
-                "tool_calls_used": final_state.tool_calls_used,
-                "duration_seconds": round(duration, 3),
-                "worksheet": worksheet.model_dump(mode="json"),
-                "state": state_dump,
-                "message": "Human approval required — review evidence and Approve, Edit, or Reject.",
-            })
-        else:
-            yield _sse("completed", {"thread_id": thread_id, "duration_seconds": round(duration, 3)})
-
-    except Exception as exc:
-        yield _sse("error", {"category": "error", "thread_id": thread_id, "error": str(exc), "message": str(exc)})
+def _require_thread(thread_id: str) -> dict[str, Any]:
+    thread = thread_view(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return thread
 
 
 # ---------------------------------------------------------------------------
@@ -330,29 +161,25 @@ async def _stream_investigation(thread_id: str, alert: Alert, mode: str) -> Asyn
 async def analyst_workbench():
     ui_file = STATIC_DIR / "index.html"
     if ui_file.exists():
-        return HTMLResponse(
-            ui_file.read_text(encoding="utf-8"),
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-        )
+        return HTMLResponse(ui_file.read_text(encoding="utf-8"),
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return HTMLResponse("<h1>AuditGuard API Running</h1><p>Visit <a href='/api/docs'>/api/docs</a></p>")
 
 
 @app.post("/api/v1/auth/token")
-async def issue_token(req: TokenRequest):
-    token = create_jwt_token(subject=req.username, role=req.role)
-    return {"access_token": token, "token_type": "bearer", "role": req.role}
+async def issue_token(req: TokenRequest, request: Request):
+    enforce_login_limit(request)
+    role = await asyncio.to_thread(authenticate, req.username, req.password)
+    if role is None:
+        raise HTTPException(status_code=401, detail="UNAUTHORIZED: invalid credentials")
+    return {"access_token": create_jwt_token(subject=req.username, role=role), "token_type": "bearer", "role": role}
 
 
 @app.get("/health")
 async def health():
     db_path = init_db()
-    return {
-        "status": "healthy",
-        "service": "auditguard-api",
-        "version": "1.0.0",
-        "database": str(db_path.name),
-        "timestamp": utc_now_iso(),
-    }
+    return {"status": "healthy", "service": "auditguard-api", "version": "1.0.0",
+            "database": str(db_path.name), "timestamp": utc_now_iso()}
 
 
 @app.get("/metrics")
@@ -361,42 +188,32 @@ async def metrics():
 
 
 # ---------------------------------------------------------------------------
-# Workbench Navigation Data Endpoints (Alerts, Cases, Customers, KB, Analytics, Config)
+# Workbench Navigation Data Endpoints (read-only DB connections)
 # ---------------------------------------------------------------------------
-@app.get("/api/v1/alerts")
-async def get_queued_alerts(limit: int = 50, _principal: dict = Depends(get_analyst_principal)):
+@app.get("/api/v1/alerts", dependencies=api_deps)
+async def get_queued_alerts(limit: int = Query(50, ge=1, le=500), _p: Principal = ANALYST):
     alerts = bank_records.list_queued_alerts(limit=limit)
     open_count = sum(1 for a in alerts if str(a.get("status", "OPEN")).upper() == "OPEN")
     return {"alerts": alerts, "total": len(alerts), "open_count": open_count}
 
 
-@app.get("/api/v1/cases")
-async def get_cases(limit: int = 50, _principal: dict = Depends(get_analyst_principal)):
-    bank_records._ensure_operational_db()
-    with get_db() as conn:
-        committed = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT case_id, alert_id, worksheet_id, disposition, payload_hash, approver_id, committed_at "
-                "FROM cases ORDER BY committed_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        ]
-        worksheets = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT worksheet_id, alert_id, payload_hash, status, reviewer_id, reviewer_decision, created_at, updated_at "
-                "FROM worksheets ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        ]
+@app.get("/api/v1/cases", dependencies=api_deps)
+async def get_cases(limit: int = Query(50, ge=1, le=500), _p: Principal = ANALYST):
+    init_db()
+    with get_ro_db() as conn:
+        committed = [dict(r) for r in conn.execute(
+            "SELECT case_id, alert_id, worksheet_id, disposition, payload_hash, approver_id, committed_at "
+            "FROM cases ORDER BY committed_at DESC LIMIT ?", (limit,)).fetchall()]
+        worksheets = [dict(r) for r in conn.execute(
+            "SELECT worksheet_id, alert_id, payload_hash, status, reviewer_id, reviewer_decision, created_at, updated_at "
+            "FROM worksheets ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()]
     return {"cases": committed, "worksheets": worksheets, "total_committed": len(committed)}
 
 
-@app.get("/api/v1/customers")
-async def get_customers(limit: int = 100, _principal: dict = Depends(get_analyst_principal)):
-    bank_records._ensure_operational_db()
-    with get_db() as conn:
+@app.get("/api/v1/customers", dependencies=api_deps)
+async def get_customers(limit: int = Query(100, ge=1, le=500), _p: Principal = ANALYST):
+    init_db()
+    with get_ro_db() as conn:
         rows = conn.execute(
             """
             SELECT c.customer_id, c.full_name, c.kyc_tier, c.occupation,
@@ -408,9 +225,7 @@ async def get_customers(limit: int = 100, _principal: dict = Depends(get_analyst
             LEFT JOIN accounts a ON a.customer_id = c.customer_id
             LEFT JOIN banks b ON a.bank_id = b.bank_id
             LEFT JOIN commercial_registry cr ON cr.customer_id = c.customer_id
-            ORDER BY
-              CASE c.risk_rating WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,
-              c.customer_id ASC
+            ORDER BY CASE c.risk_rating WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, c.customer_id ASC
             LIMIT ?
             """,
             (limit,),
@@ -418,68 +233,50 @@ async def get_customers(limit: int = 100, _principal: dict = Depends(get_analyst
     return {"customers": [dict(r) for r in rows], "total": len(rows)}
 
 
-@app.get("/api/v1/regulations")
+@app.get("/api/v1/regulations", dependencies=api_deps)
 async def list_regulations(
     q: Optional[str] = Query(default=None, description="Optional Hybrid RAG search query"),
-    top_k: int = 10,
-    _principal: dict = Depends(get_analyst_principal),
+    top_k: int = Query(10, ge=1, le=50),
+    _p: Principal = ANALYST,
 ):
     if q and q.strip():
         fn = getattr(compliance_kb.search_regulations, "fn", compliance_kb.search_regulations)
         res = await fn(compliance_kb.SearchRegulationsInput(query=q.strip(), top_k=top_k, decompose=True))
-        return {
-            "clauses": [c.model_dump() for c in res.clauses],
-            "total": len(res.clauses),
-            "retrieval_method": res.retrieval_method,
-        }
+        return {"clauses": [c.model_dump() for c in res.clauses], "total": len(res.clauses),
+                "retrieval_method": res.retrieval_method}
     idx = compliance_kb.get_regulatory_index()
-    return {
-        "clauses": [c.model_dump() for c in idx.clauses],
-        "total": len(idx.clauses),
-        "retrieval_method": "full_corpus",
-    }
+    return {"clauses": [c.model_dump() for c in idx.clauses], "total": len(idx.clauses), "retrieval_method": "full_corpus"}
 
 
-@app.get("/api/v1/audit-logs")
-async def get_audit_logs(thread_id: Optional[str] = None, limit: int = 60, _principal: dict = Depends(get_analyst_principal)):
+@app.get("/api/v1/audit-logs", dependencies=api_deps)
+async def get_audit_logs(thread_id: Optional[str] = None, limit: int = Query(60, ge=1, le=500), _p: Principal = ANALYST):
     logs = list_audit_logs(thread_id=thread_id, limit=limit)
     return {"audit_logs": logs, "total": len(logs)}
 
 
-@app.get("/api/v1/analytics")
-async def get_analytics(_principal: dict = Depends(get_analyst_principal)):
-    bank_records._ensure_operational_db()
-    with get_db() as conn:
-        alert_counts = {
-            r["status"]: r["c"]
-            for r in conn.execute("SELECT status, COUNT(*) AS c FROM alerts GROUP BY status").fetchall()
-        }
-        disp_counts = {
-            r["disposition"]: r["c"]
-            for r in conn.execute("SELECT disposition, COUNT(*) AS c FROM cases GROUP BY disposition").fetchall()
-        }
+@app.get("/api/v1/analytics", dependencies=api_deps)
+async def get_analytics(_p: Principal = ANALYST):
+    init_db()
+    with get_ro_db() as conn:
+        alert_counts = {r["status"]: r["c"] for r in conn.execute("SELECT status, COUNT(*) AS c FROM alerts GROUP BY status").fetchall()}
+        disp_counts = {r["disposition"]: r["c"] for r in conn.execute("SELECT disposition, COUNT(*) AS c FROM cases GROUP BY disposition").fetchall()}
         totals = conn.execute(
             """
-            SELECT
-              (SELECT COUNT(*) FROM alerts) AS total_alerts,
-              (SELECT COUNT(*) FROM transactions) AS total_transactions,
-              (SELECT COUNT(*) FROM cases) AS total_committed_cases,
-              (SELECT COUNT(*) FROM audit_logs) AS total_audit_events,
-              (SELECT COUNT(*) FROM checkpoints) AS total_threads
+            SELECT (SELECT COUNT(*) FROM alerts) AS total_alerts,
+                   (SELECT COUNT(*) FROM transactions) AS total_transactions,
+                   (SELECT COUNT(*) FROM cases) AS total_committed_cases,
+                   (SELECT COUNT(*) FROM audit_logs) AS total_audit_events,
+                   (SELECT COUNT(*) FROM checkpoints) AS total_threads
             """
         ).fetchone()
         volume = sum((to_money(r[0]) for r in conn.execute("SELECT amount_inr FROM transactions").fetchall()), Decimal("0.00"))
     summary = dict(totals) if totals else {}
     summary["total_tx_volume_inr"] = format(volume, "f")
-    return {
-        "summary": summary,
-        "alerts_by_status": alert_counts,
-        "cases_by_disposition": disp_counts,
-    }
+    return {"summary": summary, "alerts_by_status": alert_counts, "cases_by_disposition": disp_counts}
 
 
-@app.get("/api/v1/config-info")
-async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
+@app.get("/api/v1/config-info", dependencies=api_deps)
+async def get_config_info(_p: Principal = ANALYST):
     from src.agent.llm_client import get_llm_status
 
     llm_info = get_llm_status()
@@ -505,378 +302,143 @@ async def get_config_info(_principal: dict = Depends(get_analyst_principal)):
     }
 
 
-@app.post("/api/v1/config/llm")
-async def update_llm_config(req: LlmConfigUpdateRequest, principal: dict = Depends(get_analyst_principal)):
+@app.post("/api/v1/config/llm", dependencies=api_deps)
+async def update_llm_config(req: LlmConfigUpdateRequest, principal: Principal = ADMIN):
     from src.agent.llm_client import set_runtime_llm_config
 
-    updated = set_runtime_llm_config(enabled=req.enabled, model=req.model, strong_model=req.strong_model)
+    try:
+        updated = set_runtime_llm_config(enabled=req.enabled, model=req.model, strong_model=req.strong_model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"INVALID_LLM_CONFIG: {exc}") from exc
     append_audit_log(
-        thread_id="system-config",
-        event_type="llm_config_updated",
-        actor=principal["sub"],
-        details={
-            "llm_enabled": updated["llm_enabled"],
-            "c1_and_specialist_model": updated["c1_and_specialist_model"],
-            "c2_supervisor_model": updated["c2_supervisor_model"],
-        },
+        thread_id="system-config", event_type="llm_config_updated", actor=principal.sub,
+        details={"llm_enabled": updated["llm_enabled"], "c1_and_specialist_model": updated["c1_and_specialist_model"],
+                 "c2_supervisor_model": updated["c2_supervisor_model"]},
     )
     return updated
 
 
-@app.post("/api/v1/config/llm/test")
-async def test_llm_connection(model: Optional[str] = None, _principal: dict = Depends(get_analyst_principal)):
+@app.post("/api/v1/config/llm/test", dependencies=api_deps)
+async def test_llm_connection(model: Optional[str] = None, _p: Principal = ADMIN):
     from src.agent.llm_client import ping_openrouter
 
     return await ping_openrouter(model=model)
 
 
 # ---------------------------------------------------------------------------
-# Investigation Lifecycle & Report Export Routes
+# Investigation Lifecycle
 # ---------------------------------------------------------------------------
-@app.post("/api/v1/investigations", response_model=InvestigateResponse)
-async def start_investigation(request: InvestigateRequest, principal: dict = Depends(get_analyst_principal)):
-    guard = apply_input_guardrails(request.alert_id)
-    if not guard.allowed:
-        raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
-
+@app.post("/api/v1/investigations", response_model=InvestigateResponse, dependencies=api_deps)
+async def start_investigation(request: InvestigateRequest, principal: Principal = ANALYST):
+    _guard_alert_id(request.alert_id)
     alert = _alert_from_db(request.alert_id)
-    thread_id = f"thr-{uuid.uuid4().hex[:12]}"
-    rec = {
-        "thread_id": thread_id,
-        "alert_id": request.alert_id,
-        "alert": alert.model_dump(mode="json"),
-        "status": "running",
-        "mode": request.agent_mode,
-        "analyst": principal["sub"],
-    }
-    _threads[thread_id] = rec
-    save_checkpoint(
-        thread_id=thread_id,
-        alert_id=request.alert_id,
-        mode=request.agent_mode,
-        current_node="registered",
-        status="running",
-        state_dict={"alert": alert.model_dump(mode="json"), "thread_id": thread_id},
-    )
+    thread_id = runner.register_thread(alert, request.agent_mode, principal.sub)
+    runner.start_background(thread_id, alert, request.agent_mode)
     return InvestigateResponse(thread_id=thread_id, alert_id=request.alert_id, status="investigation_started")
 
 
-@app.post("/api/v1/investigations/run", response_model=InvestigateResponse)
-async def run_investigation_sync(request: InvestigateRequest, principal: dict = Depends(get_analyst_principal)):
-    guard = apply_input_guardrails(request.alert_id)
-    if not guard.allowed:
-        raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
-
-    alert = _alert_from_db(request.alert_id)
-    thread_id = f"thr-{uuid.uuid4().hex[:12]}"
-    t0 = time.perf_counter()
-    final_state = await _execute_mode(alert, request.agent_mode, thread_id=thread_id)
-    dur = time.perf_counter() - t0
-    INVESTIGATION_DURATION.labels(mode=request.agent_mode).observe(dur)
-    TOOL_CALLS_TOTAL.labels(mode=request.agent_mode).inc(final_state.tool_calls_used)
-    emit_loki_log(
-        stream_type="agent_flow",
-        event="sync_investigation_completed",
-        message=(
-            f"[{request.agent_mode.upper()} | {request.alert_id}] Completed in {round(dur*1000,1)}ms "
-            f"(calls={final_state.tool_calls_used}, replans={final_state.replan_count}, "
-            f"disp={final_state.worksheet.recommended_disposition.value if final_state.worksheet else 'none'})"
+def _response_for(thread: dict[str, Any]) -> InvestigateResponse:
+    state = thread["state"]
+    worksheet = state.get("worksheet")
+    return InvestigateResponse(
+        thread_id=thread["thread_id"], alert_id=thread["alert_id"], status=thread["status"],
+        payload_hash=thread.get("payload_hash"),
+        worksheet=(
+            DispositionWorksheet.model_validate({k: v for k, v in worksheet.items() if k in DispositionWorksheet.model_fields})
+            if worksheet else None
         ),
-        extra={
-            "thread_id": thread_id,
-            "alert_id": request.alert_id,
-            "mode": request.agent_mode,
-            "tool_calls": final_state.tool_calls_used,
-            "replan_count": final_state.replan_count,
-        },
-    )
-
-    worksheet = final_state.worksheet
-    payload_hash = _canonical_worksheet_hash(worksheet)
-    state_dump = final_state.model_dump(mode="json")
-
-    rec = {
-        "thread_id": thread_id,
-        "alert_id": request.alert_id,
-        "alert": alert.model_dump(mode="json"),
-        "mode": request.agent_mode,
-        "status": "interrupt_required",
-        "worksheet_id": worksheet.worksheet_id if worksheet else None,
-        "payload_hash": payload_hash,
-        "state": state_dump,
-    }
-    _threads[thread_id] = rec
-    save_checkpoint(
-        thread_id=thread_id,
-        alert_id=request.alert_id,
-        mode=request.agent_mode,
-        current_node="interrupt_required",
-        status="interrupt_required",
-        state_dict=state_dump,
-        worksheet_id=rec["worksheet_id"],
-        payload_hash=payload_hash,
-    )
-    if worksheet:
-        CITATIONS_VERIFIED.labels(status="passed").inc(len(worksheet.regulatory_citations))
-        INVESTIGATIONS_TOTAL.labels(mode=request.agent_mode, disposition=worksheet.recommended_disposition.value).inc()
-
-    return InvestigateResponse(
-        thread_id=thread_id,
-        alert_id=request.alert_id,
-        status="interrupt_required",
-        payload_hash=payload_hash,
-        worksheet=worksheet,
-        replan_count=final_state.replan_count,
-        tool_calls_used=final_state.tool_calls_used,
-        cost_usd=final_state.estimated_cost_usd,
-        tokens_used=final_state.total_tokens_used,
+        replan_count=state.get("replan_count", 0), tool_calls_used=state.get("tool_calls_used", 0),
+        cost_usd=state.get("estimated_cost_usd", "0"), tokens_used=state.get("total_tokens_used", 0),
     )
 
 
-@app.post("/api/v1/investigations/{thread_id}/resume", response_model=InvestigateResponse)
-async def resume_investigation(thread_id: str, _principal: dict = Depends(get_analyst_principal)):
-    cp = load_checkpoint(thread_id)
-    if not cp:
-        raise HTTPException(status_code=404, detail="Checkpoint not found")
-
-    alert_data = cp["state"].get("alert", {"alert_id": cp["alert_id"]})
-    alert = Alert(**alert_data)
-    final_state = await _execute_mode(alert, cp["mode"], thread_id=thread_id, resume=True)
-    worksheet = final_state.worksheet
-    payload_hash = _canonical_worksheet_hash(worksheet)
-    state_dump = final_state.model_dump(mode="json")
-
-    _threads[thread_id] = {
-        "thread_id": thread_id,
-        "alert_id": alert.alert_id,
-        "alert": alert.model_dump(mode="json"),
-        "mode": cp["mode"],
-        "status": "interrupt_required",
-        "worksheet_id": worksheet.worksheet_id if worksheet else None,
-        "payload_hash": payload_hash,
-        "state": state_dump,
-    }
-    return InvestigateResponse(
-        thread_id=thread_id,
-        alert_id=alert.alert_id,
-        status="interrupt_required",
-        payload_hash=payload_hash,
-        worksheet=worksheet,
-        replan_count=final_state.replan_count,
-        tool_calls_used=final_state.tool_calls_used,
-    )
+@app.post("/api/v1/investigations/run", response_model=InvestigateResponse, dependencies=api_deps)
+async def run_investigation_sync(request: InvestigateRequest, principal: Principal = ANALYST):
+    _guard_alert_id(request.alert_id)
+    alert = _alert_from_db(request.alert_id)
+    thread_id = runner.register_thread(alert, request.agent_mode, principal.sub)
+    status = await runner.run_thread(thread_id, alert, request.agent_mode)
+    thread = _require_thread(thread_id)
+    if status == "error":
+        raise HTTPException(status_code=502, detail="INVESTIGATION_FAILED: see audit/event log for the correlation id")
+    return _response_for(thread)
 
 
-@app.get("/api/v1/investigations/{thread_id}/stream")
-async def stream_investigation(thread_id: str, alert_id: Optional[str] = None, mode: Optional[str] = None):
-    stored = _get_thread_record(thread_id) or {}
-    if stored.get("alert") and stored["alert"].get("alert_id"):
-        alert = Alert(**stored["alert"])
-        resolved_mode = mode or stored.get("mode", "c1_single")
-    else:
-        if not alert_id:
-            raise HTTPException(status_code=422, detail="alert_id is required for an unregistered thread")
-        alert = _alert_from_db(alert_id)
-        resolved_mode = mode or "c1_single"
-
-    return StreamingResponse(
-        _stream_investigation(thread_id, alert, resolved_mode),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@app.post("/api/v1/investigations/{thread_id}/decision")
-async def submit_human_decision(
-    thread_id: str,
-    request: HumanDecisionRequest,
-    principal: dict = Depends(get_analyst_principal),
-):
-    guard = apply_input_guardrails(request.notes or "")
-    if not guard.allowed:
-        raise HTTPException(status_code=422, detail=f"GUARDRAIL_BLOCKED: {guard.blocked_reason}")
-
-    thread = _get_thread_record(thread_id)
+@app.post("/api/v1/investigations/{thread_id}/resume", response_model=InvestigateResponse, dependencies=api_deps)
+async def resume_investigation(thread_id: str, _p: Principal = ANALYST):
+    thread = get_thread(thread_id)
     if thread is None:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+    if thread["status"] in ("committed", "rejected"):
+        raise HTTPException(status_code=409, detail=f"THREAD_CLOSED: thread is {thread['status']}")
+    alert = Alert(**thread["alert"])
+    status = await runner.run_thread(thread_id, alert, thread["mode"], resume=True)
+    if status == "error":
+        raise HTTPException(status_code=502, detail="INVESTIGATION_FAILED: see audit/event log for the correlation id")
+    return _response_for(_require_thread(thread_id))
+
+
+async def _event_stream(thread_id: str, after_id: int, request: Request) -> AsyncGenerator[str, None]:
+    """Read-only subscriber of the durable `investigation_events` log (never executes the investigation)."""
+    deadline = time.monotonic() + 900
+    last = after_id
+    while time.monotonic() < deadline:
+        if await request.is_disconnected():
+            return
+        events = await asyncio.to_thread(read_events, thread_id, last)
+        for ev in events:
+            last = ev["event_id"]
+            name = ev["event"]
+            payload = {k: v for k, v in ev.items() if k not in ("event", "created_at")}
+            payload.update({"event": name, "timestamp": ev["created_at"]})
+            yield f"id: {last}\nevent: {name}\ndata: {json.dumps(payload, default=str)}\n\n"
+            if name in runner.TERMINAL_EVENTS:
+                return
+        await asyncio.sleep(0.4)
+    yield f"event: error\ndata: {json.dumps({'event': 'error', 'message': 'stream timeout'})}\n\n"
+
+
+@app.get("/api/v1/investigations/{thread_id}/stream", dependencies=api_deps)
+async def stream_investigation(thread_id: str, request: Request, after_id: int = Query(0, ge=0), _p: Principal = ANALYST):
+    if get_thread(thread_id) is None:
         raise HTTPException(status_code=404, detail="Thread not found")
-
-    if thread.get("status") == "committed":
-        raise HTTPException(status_code=409, detail="ALREADY_COMMITTED")
-
-    reviewer = principal["sub"]
-    worksheet_id = request.worksheet_id or thread.get("worksheet_id")
-
-    # ── Branch 1: Edit Worksheet (Invalidates Old SHA-256 Hash!) ─────────────
-    if request.action == "edit" or request.edited_fields:
-        if not worksheet_id:
-            raise HTTPException(status_code=400, detail="No worksheet associated with thread")
-        edits = request.edited_fields or {}
-        ws_rec = case_actions.get_worksheet_record(worksheet_id)
-        if not ws_rec:
-            raise HTTPException(status_code=404, detail="Worksheet not found")
-
-        candidate_merged = {**ws_rec["content"], **edits}
-        vr = verify_worksheet(candidate_merged)
-        if not vr.passed:
-            raise HTTPException(status_code=422, detail=f"VERIFIER_REJECTED_EDIT: {vr.errors}")
-
-        updated = case_actions.update_worksheet_content(worksheet_id, edits, editor_id=reviewer, thread_id=thread_id)
-        new_hash = updated["payload_hash"]
-        old_hash = thread.get("payload_hash")
-
-        thread["payload_hash"] = new_hash
-        thread["status"] = "interrupt_required"
-        if "state" in thread and thread["state"].get("worksheet"):
-            thread["state"]["worksheet"].update(edits)
-        _threads[thread_id] = thread
-
-        save_checkpoint(
-            thread_id=thread_id,
-            alert_id=thread["alert_id"],
-            mode=thread.get("mode", "c1_single"),
-            current_node="interrupt_required",
-            status="interrupt_required",
-            state_dict=thread.get("state", {}),
-            worksheet_id=worksheet_id,
-            payload_hash=new_hash,
-        )
-        return {
-            "thread_id": thread_id,
-            "status": "interrupt_required",
-            "previous_hash_invalidated": old_hash,
-            "payload_hash": new_hash,
-            "updated_content": updated["content"],
-            "message": "Worksheet edited and re-verified. Old approval hash invalidated; fresh approval required.",
-        }
-
-    # ── Branch 2: Reject Disposition ─────────────────────────────────────────
-    if request.action == "reject" or request.decision == DispositionDecision.REJECTED:
-        append_audit_log(
-            thread_id=thread_id,
-            event_type="disposition_rejected_by_human",
-            actor=reviewer,
-            payload_hash=thread.get("payload_hash"),
-            details={"worksheet_id": worksheet_id, "notes": guard.scrubbed_text},
-        )
-        thread["status"] = "rejected"
-        thread["human_decision"] = "rejected"
-        thread["reviewer_id"] = reviewer
-        if "state" in thread and thread["state"].get("workflow_steps"):
-            for st in thread["state"]["workflow_steps"]:
-                if st["step"] == 6:
-                    st["status"] = "failed"
-        _threads[thread_id] = thread
-        save_checkpoint(
-            thread_id=thread_id,
-            alert_id=thread["alert_id"],
-            mode=thread.get("mode", "c1_single"),
-            current_node="rejected",
-            status="rejected",
-            state_dict=thread.get("state", {}),
-            worksheet_id=worksheet_id,
-            payload_hash=thread.get("payload_hash"),
-        )
-        return {
-            "thread_id": thread_id,
-            "status": "rejected",
-            "decision": "rejected",
-            "message": "Disposition rejected and logged to manual review queue.",
-        }
-
-    # ── Branch 3: Approve & Commit (Exact SHA-256 Match Required) ────────────
-    if request.decision is None:
-        raise HTTPException(status_code=422, detail="decision is required to approve")
-    expected_hash = thread.get("payload_hash")
-    if expected_hash and request.approved_hash and request.approved_hash != expected_hash:
-        raise HTTPException(status_code=403, detail="APPROVAL_HASH_MISMATCH")
-
-    receipt = None
-    if worksheet_id:
-        ws_rec = case_actions.get_worksheet_record(worksheet_id)
-        if ws_rec:
-            current_hash = ws_rec["payload_hash"]
-            if request.approved_hash and request.approved_hash != current_hash:
-                raise HTTPException(status_code=403, detail="APPROVAL_HASH_MISMATCH")
-            token = case_actions._generate_approval_token(request.approved_hash or current_hash)
-            submit_fn = getattr(case_actions.submit_case_disposition, "fn", case_actions.submit_case_disposition)
-            res = await submit_fn(
-                case_actions.SubmitCaseDispositionInput(
-                    worksheet_id=worksheet_id,
-                    approval_token=token,
-                    reviewer_id=reviewer,
-                    reviewer_decision=request.decision.value,
-                    reviewer_notes=guard.scrubbed_text,
-                    thread_id=thread_id,
-                )
-            )
-            if not res.success:
-                if "already_committed" in (res.error or ""):
-                    raise HTTPException(status_code=409, detail="ALREADY_COMMITTED")
-                raise HTTPException(status_code=403, detail=f"APPROVAL_HASH_MISMATCH: {res.error}")
-            receipt = res.model_dump()
-
-    root_acc = thread.get("alert", {}).get("root_account", "unknown")
-    memory_store.save_case_episode(
-        f"CUST-{root_acc}",
-        {
-            "alert_id": thread.get("alert_id"),
-            "disposition": request.decision.value,
-            "reviewer_id": reviewer,
-            "payload_hash": expected_hash,
-        },
-        human_approved=True,
-    )
-
-    if "state" in thread and thread["state"].get("workflow_steps"):
-        for st in thread["state"]["workflow_steps"]:
-            if st["step"] in (6, 7):
-                st["status"] = "completed"
-
-    thread["human_decision"] = request.decision.value
-    thread["reviewer_id"] = reviewer
-    thread["reviewer_notes"] = guard.scrubbed_text
-    thread["status"] = "committed"
-    thread["receipt"] = receipt
-    thread["decided_at"] = utc_now_iso()
-    _threads[thread_id] = thread
-
-    save_checkpoint(
-        thread_id=thread_id,
-        alert_id=thread["alert_id"],
-        mode=thread.get("mode", "c1_single"),
-        current_node="committed",
-        status="committed",
-        state_dict=thread.get("state", {}),
-        worksheet_id=worksheet_id,
-        payload_hash=expected_hash,
-    )
-
-    return {
-        "thread_id": thread_id,
-        "status": "committed",
-        "decision": request.decision.value,
-        "receipt": receipt,
-    }
+    return StreamingResponse(_event_stream(thread_id, after_id, request), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.get("/api/v1/investigations/{thread_id}/state")
-async def get_investigation_state(thread_id: str, _principal: dict = Depends(get_analyst_principal)):
-    rec = _get_thread_record(thread_id)
-    if rec is None:
-        raise HTTPException(status_code=404, detail="Thread not found")
-    return rec
+@app.post("/api/v1/investigations/{thread_id}/decision", dependencies=api_deps)
+async def submit_human_decision(thread_id: str, request: DecisionRequest, principal: Principal = ANALYST):
+    thread = _require_thread(thread_id)
+    try:
+        if request.action == "edit":
+            assert request.edit is not None
+            return approval_service.apply_edit(thread, request.edit, principal.sub)
+        if request.action == "approve":
+            return await approval_service.approve(thread, request, principal.sub)
+        return approval_service.reject(thread, request, principal.sub)
+    except approval_service.DecisionError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message, "discrepancies": exc.extra},
+        ) from exc
 
 
-@app.get("/api/v1/investigations/{thread_id}/export", response_class=HTMLResponse)
-async def export_investigation_report(thread_id: str):
+@app.get("/api/v1/investigations/{thread_id}/state", dependencies=api_deps)
+async def get_investigation_state(thread_id: str, _p: Principal = ANALYST):
+    return _require_thread(thread_id)
+
+
+@app.get("/api/v1/investigations/{thread_id}/export", response_class=HTMLResponse, dependencies=api_deps)
+async def export_investigation_report(thread_id: str, _principal: Principal = ANALYST):
     """Printable HTML/PDF-ready Compliance Investigation Audit Report."""
-    rec = _get_thread_record(thread_id)
+    rec = thread_view(thread_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Thread not found")
     st = rec.get("state", {})
     ws = st.get("worksheet") or {}
     fs = st.get("flow_summary") or {}
-    esc = lambda s: html.escape(str(s or ""))
+    def esc(s: Any) -> str:
+        return html.escape(str(s or ""))
 
     paths_rows = "".join(
         f"<tr><td>{esc(p.get('path_id'))}</td><td>{esc(' -> '.join(p.get('nodes', [])))}</td>"
@@ -888,7 +450,7 @@ async def export_investigation_report(thread_id: str):
 
     doc = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
-<title>AuditGuard Compliance Report — {esc(rec.get('alert_id'))}</title>
+<title>AuditGuard Compliance Report â€” {esc(rec.get('alert_id'))}</title>
 <style>
   body {{ font-family: Segoe UI, Arial, sans-serif; color: #111827; max-width: 920px; margin: 32px auto; padding: 0 24px; line-height: 1.5; }}
   h1 {{ margin-bottom: 4px; color: #0f172a; }}
@@ -900,7 +462,7 @@ async def export_investigation_report(thread_id: str):
   @media print {{ .no-print {{ display: none; }} }}
 </style></head><body>
 <div class="no-print" style="text-align:right;"><button onclick="window.print()" style="padding:8px 16px;cursor:pointer;">Print / Save as PDF</button></div>
-<h1>AuditGuard — AML Investigation Disposition Worksheet</h1>
+<h1>AuditGuard â€” AML Investigation Disposition Worksheet</h1>
 <div class="meta">
   <strong>Alert ID:</strong> {esc(rec.get('alert_id'))} &nbsp;|&nbsp;
   <strong>Thread ID:</strong> {esc(thread_id)} &nbsp;|&nbsp;
@@ -925,28 +487,14 @@ Retained: <strong>INR {esc(fs.get('total_retained_inr', '0.00'))} ({esc(fs.get('
     return HTMLResponse(doc)
 
 
-@app.delete("/api/v1/memory/{customer_id}")
-async def forget_customer(
-    customer_id: str,
-    reviewer_id: str = "supervisor",
-    _principal: dict = Depends(get_analyst_principal),
-):
-    result = memory_store.forget_customer(customer_id)
-    append_audit_log(
-        thread_id="memory-forget",
-        event_type="customer_memory_deleted",
-        actor=reviewer_id,
-        details=result,
-    )
-    return {
-        **result,
-        "status": "deleted",
-        "deleted_by": reviewer_id,
-        "message": "Customer memory deleted per retention policy",
-    }
+@app.delete("/api/v1/memory/{customer_id}", dependencies=api_deps)
+async def forget_customer(customer_id: str, principal: Principal = SENIOR):
+    result = erase_customer(customer_id, principal.sub)
+    return {**result, "status": "deleted", "deleted_by": principal.sub,
+            "message": "Customer memory deleted per retention policy"}
 
 
-@app.get("/api/v1/investigations")
-async def list_investigations(_principal: dict = Depends(get_analyst_principal)):
+@app.get("/api/v1/investigations", dependencies=api_deps)
+async def list_investigations(_p: Principal = ANALYST):
     cps = list_checkpoints(limit=50)
     return {"investigations": cps, "total": len(cps)}

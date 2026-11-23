@@ -229,10 +229,27 @@ class InvestigateResponse(StrictModel):
     tokens_used: int = 0
 
 
-class HumanDecisionRequest(StrictModel):
-    worksheet_id: Optional[str] = None
+class EditWorksheetRequest(StrictModel):
+    """Restricted analyst edit: only these fields may change; everything else is evidence-derived."""
+
+    recommended_disposition: Optional[DispositionDecision] = None
+    recommendation_rationale: Optional[str] = Field(default=None, max_length=8000)
+    analyst_notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+class DecisionRequest(StrictModel):
+    """Human decision. Reviewer identity comes from the JWT, never from the body."""
+
     action: Literal["approve", "edit", "reject"]
-    decision: Optional[DispositionDecision] = None
     approved_hash: Optional[str] = None
-    edited_fields: Optional[dict[str, Any]] = None
-    notes: str = ""
+    approval_token: Optional[str] = None
+    edit: Optional[EditWorksheetRequest] = None
+    notes: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="after")
+    def _check_action_fields(self) -> "DecisionRequest":
+        if self.action == "approve" and not (self.approved_hash and self.approval_token):
+            raise ValueError("approve requires approved_hash and approval_token")
+        if self.action == "edit" and self.edit is None:
+            raise ValueError("edit requires an 'edit' payload")
+        return self

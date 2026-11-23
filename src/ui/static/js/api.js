@@ -1,23 +1,55 @@
-/**
+﻿/**
  * AuditGuard Centralized API & SSE Stream Client
  * Ensures clean subscription lifecycle (zero EventSource leaks) and strict backend verification.
  */
 export class AuditGuardAPI {
   constructor() {
-    this.activeEventSource = null;
+    this.activeAbort = null;
+    this.token = window.sessionStorage.getItem("ag_token") || "";
+  }
+
+  isAuthenticated() {
+    return Boolean(this.token);
+  }
+
+  clearToken() {
+    this.token = "";
+    window.sessionStorage.removeItem("ag_token");
+  }
+
+  async login(username, password) {
+    const data = await this._json("/api/v1/auth/token", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    this.token = data.access_token;
+    window.sessionStorage.setItem("ag_token", this.token);
+    return data;
+  }
+
+  _authHeaders() {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
   }
 
   closeStream() {
-    if (this.activeEventSource) {
-      this.activeEventSource.close();
-      this.activeEventSource = null;
+    if (this.activeAbort) {
+      this.activeAbort.abort();
+      this.activeAbort = null;
     }
+  }
+
+  static _detailMessage(data, status) {
+    const d = data.detail;
+    if (typeof d === "string") return d;
+    if (d && typeof d === "object" && !Array.isArray(d)) return `${d.code || "ERROR"}: ${d.message || ""}`;
+    if (Array.isArray(d)) return d.map((e) => `${(e.loc || []).join(".")}: ${e.msg}`).join("; ");
+    return `HTTP ${status}`;
   }
 
   async _json(url, options = {}) {
     const res = await fetch(url, {
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
       ...options,
+      headers: { "Content-Type": "application/json", ...this._authHeaders(), ...(options.headers || {}) },
     });
     const text = await res.text();
     let data = {};
@@ -27,14 +59,14 @@ export class AuditGuardAPI {
       data = { raw: text };
     }
     if (!res.ok) {
-      const err = new Error(data.detail || `HTTP ${res.status}`);
+      if (res.status === 401 && url !== "/api/v1/auth/token") this.clearToken();
+      const err = new Error(AuditGuardAPI._detailMessage(data, res.status));
       err.status = res.status;
       err.payload = data;
       throw err;
     }
     return data;
   }
-
   getHealth() {
     return this._json("/health");
   }
@@ -80,13 +112,6 @@ export class AuditGuardAPI {
     return this._json(`/api/v1/config/llm/test${qs}`, { method: "POST" });
   }
 
-  issueToken(username = "analyst_04", role = "tier2_analyst") {
-    return this._json("/api/v1/auth/token", {
-      method: "POST",
-      body: JSON.stringify({ username, role }),
-    });
-  }
-
   registerInvestigation(alertObj, mode) {
     return this._json("/api/v1/investigations", {
       method: "POST",
@@ -115,50 +140,68 @@ export class AuditGuardAPI {
   }
 
   /**
-   * Stream live SSE events for an investigation, cleaning up any prior stream first.
+   * Subscribe (read-only) to the durable event log of an investigation via authenticated fetch streaming.
    */
-  streamInvestigation(threadId, alertId, mode, handlers = {}) {
+  streamInvestigation(threadId, _alertId, _mode, handlers = {}) {
     this.closeStream();
-    const url = `/api/v1/investigations/${encodeURIComponent(threadId)}/stream?alert_id=${encodeURIComponent(alertId)}&mode=${encodeURIComponent(mode)}`;
-    const es = new EventSource(url);
-    this.activeEventSource = es;
+    const ctrl = new AbortController();
+    this.activeAbort = ctrl;
+    const terminal = new Set(["interrupt_required", "verification_failed", "completed", "error"]);
 
-    const eventNames = [
-      "started",
-      "plan_updated",
-      "agent_updated",
-      "tool_called",
-      "replan_triggered",
-      "verification_completed",
-      "interrupt_required",
-      "completed",
-      "error",
-    ];
-
-    for (const evName of eventNames) {
-      es.addEventListener(evName, (evt) => {
-        if (!evt.data) return;
-        try {
-          const parsed = JSON.parse(evt.data);
-          if (handlers.onEvent) handlers.onEvent(evName, parsed);
-          if (handlers[evName]) handlers[evName](parsed);
-          if (evName === "interrupt_required" || evName === "completed" || evName === "error") {
-            this.closeStream();
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      });
-    }
-
-    es.onerror = () => {
-      this.closeStream();
+    const dispatch = (name, raw) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err) {
+        console.error("SSE parse error:", err);
+        return false;
+      }
+      if (handlers.onEvent) handlers.onEvent(name, parsed);
+      if (handlers[name]) handlers[name](parsed);
+      return terminal.has(name);
     };
 
-    return es;
+    (async () => {
+      try {
+        const res = await fetch(`/api/v1/investigations/${encodeURIComponent(threadId)}/stream`, {
+          headers: this._authHeaders(),
+          signal: ctrl.signal,
+        });
+        if (!res.ok) {
+          if (res.status === 401) this.clearToken();
+          if (handlers.error) handlers.error({ error: `Stream failed (HTTP ${res.status})` });
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            let name = "message";
+            let data = "";
+            for (const line of block.split("\n")) {
+              if (line.startsWith("event:")) name = line.slice(6).trim();
+              else if (line.startsWith("data:")) data += line.slice(5).trim();
+            }
+            if (data && dispatch(name, data)) {
+              this.closeStream();
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name !== "AbortError" && handlers.error) handlers.error({ error: err.message });
+      }
+    })();
+    return ctrl;
   }
 }
-
 export function formatINR(value) {
   const num = Number(value || 0);
   if (Number.isNaN(num)) return "₹0";

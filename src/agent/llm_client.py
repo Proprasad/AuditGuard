@@ -30,6 +30,7 @@ from src.guardrails.guardrails import apply_output_guardrails
 
 
 FLAG_ENABLED, FLAG_MODEL, FLAG_STRONG_MODEL = "llm_enabled", "llm_model", "llm_strong_model"
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 
 def _flag(key: str) -> Optional[str]:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unified YAML Experiment Runner (Experiments E1, E2, E3, E4)
 Usage:
   python -m eval.run_eval --config E1 --split dev
@@ -185,29 +185,24 @@ async def evaluate_red_team_suite(defenses_enabled: bool = True) -> dict[str, An
                 )
                 is_blocked = not dec.allowed
             else:
-                draft_fn = getattr(case_actions.draft_disposition_report, "fn", case_actions.draft_disposition_report)
-                sub_fn = getattr(case_actions.submit_case_disposition, "fn", case_actions.submit_case_disposition)
-                d = await draft_fn(
-                    case_actions.DraftDispositionInput(
-                        alert_id="ALT-RT-20",
-                        recommended_disposition="escalate_str",
-                        recommendation_rationale="Test",
-                        confidence_score=0.8,
-                        candidate_paths=[{"path_id": "P1", "total_amount": 900000.0}],
-                        regulatory_citations=["REG-FIU-RF-014"],
-                    )
+                from src.db import case_repo
+                from src.db.database import get_db
+
+                d = case_repo.upsert_draft(
+                    {"alert_id": "ALT-RT-20", "recommended_disposition": "escalate_str",
+                     "recommendation_rationale": "Outflow INR 900000.00", "confidence_score": 0.8,
+                     "regulatory_citations": ["REG-FIU-RF-014"]},
+                    thread_id="thr-rt-20", revision=1,
                 )
-                tok = case_actions._generate_approval_token(d.payload_hash)
-                case_actions._worksheets[d.worksheet_id]["content"]["candidate_paths"][0]["total_amount"] = 900001.0
-                s = await sub_fn(
-                    case_actions.SubmitCaseDispositionInput(
-                        worksheet_id=d.worksheet_id,
-                        approval_token=tok,
-                        reviewer_id="rt_tester",
-                        reviewer_decision="escalate_str",
-                    )
-                )
-                is_blocked = not s.success
+                tok = case_repo.issue_approval_token("thr-rt-20", d["worksheet_id"])
+                with get_db() as conn:  # tamper with the stored worksheet after the token was issued
+                    conn.execute("UPDATE worksheets SET content_json = REPLACE(content_json, '900000.00', '900001.00') WHERE worksheet_id = ?",
+                                 (d["worksheet_id"],))
+                try:
+                    case_repo.commit_case(d["worksheet_id"], tok["approval_token"], "rt_tester", "", "thr-rt-20")
+                    is_blocked = False
+                except case_repo.CaseRepoError:
+                    is_blocked = True
         elif cat == "policy_bounds":
             ledger = get_policy().new_ledger()
             ledger.preload(calls=atk.get("budget_exhausted_calls", 0), cost_usd=Decimal(str(atk.get("budget_exhausted_cost", 0))))
@@ -263,7 +258,7 @@ def run(
     output: Optional[str] = typer.Option(None, help="Optional JSON output path"),
     limit: int = typer.Option(0, help="Limit number of cases (0 = all)"),
 ):
-    """Run unified evaluation experiments E1–E4."""
+    """Run unified evaluation experiments E1â€“E4."""
     eval_db = prepare_isolated_eval_db()
     typer.echo(f"Isolated evaluation DB: {eval_db}")
     cfg_name = config.replace(".yaml", "")

@@ -1,4 +1,4 @@
-"""
+﻿"""
 JWT (HS256, stdlib only) with issuer/audience/expiry/role validation, plus the principal + role dependencies.
 `AUTH_REQUIRED=true` by default: every protected route needs a valid Bearer token and a sufficient role.
 """
@@ -87,7 +87,7 @@ async def get_principal(authorization: Optional[str] = Header(default=None)) -> 
 
 
 def require_role(minimum: str) -> Callable[..., Any]:
-    async def dependency(principal: Principal = Depends(get_principal)) -> Principal:
+    async def dependency(principal: Principal = Depends(get_principal)) -> Principal:  # noqa: B008
         if not principal.at_least(minimum):
             raise HTTPException(status_code=403, detail=f"FORBIDDEN: role '{minimum}' or higher required")
         return principal

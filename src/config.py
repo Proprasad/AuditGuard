@@ -69,7 +69,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     api_secret_key: Optional[SecretStr] = None
     hmac_secret: Optional[SecretStr] = None
-    auth_required: bool = False
+    auth_required: bool = True
+    cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:8001,http://localhost:8001"
+    api_rate_limit_per_min: int = 600
+    auth_rate_limit_per_min: int = 10
 
     # MCP
     mcp_transport: Literal["inprocess", "http"] = "inprocess"
@@ -78,6 +81,10 @@ class Settings(BaseSettings):
     mcp_graph_engine_port: int = 8011
     mcp_bank_records_port: int = 8012
     mcp_case_actions_port: int = 8013
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip() and o.strip() != "*"]
 
     @property
     def environment(self) -> str:
@@ -154,6 +161,10 @@ def _env_mapping() -> dict[str, str]:
     merged: dict[str, str] = {k: v for k, v in dotenv_values(PROJECT_ROOT / ".env").items() if v is not None}
     merged.update(os.environ)
     return merged
+
+
+def env_mapping() -> dict[str, str]:
+    return _env_mapping()
 
 
 def _policy_path() -> Path:

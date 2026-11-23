@@ -217,3 +217,32 @@ def commit_case(worksheet_id: str, approval_token: str, reviewer_id: str, review
 def log_rejection(thread_id: str, reviewer_id: str, worksheet_id: str, code: str) -> None:
     with get_scoped_db(CASE_WRITE_TABLES) as conn:
         _audit(conn, thread_id, "submission_rejected", reviewer_id, {"worksheet_id": worksheet_id, "reason": code})
+
+
+def current_approval(worksheet_id: str) -> Optional[dict[str, Any]]:
+    init_db()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT token_id, worksheet_sha256, hmac_token, issued_at FROM approval_tokens "
+            "WHERE worksheet_id = ? AND consumed_at IS NULL ORDER BY issued_at DESC LIMIT 1",
+            (worksheet_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"token_id": row["token_id"], "approved_hash": row["worksheet_sha256"],
+            "approval_token": row["hmac_token"], "issued_at": row["issued_at"]}
+
+
+def mark_rejected(worksheet_id: str, reviewer_id: str, thread_id: str, notes: str) -> None:
+    now = utc_now_iso()
+    with get_scoped_db(CASE_WRITE_TABLES) as conn:
+        conn.execute(
+            "UPDATE worksheets SET status = 'rejected', reviewer_id = ?, reviewer_decision = 'rejected', "
+            "reviewer_notes = ?, updated_at = ? WHERE worksheet_id = ?",
+            (reviewer_id, notes, now, worksheet_id),
+        )
+        conn.execute(
+            "UPDATE approval_tokens SET consumed_at = ?, consumed_by = 'rejected' WHERE worksheet_id = ? AND consumed_at IS NULL",
+            (now, worksheet_id),
+        )
+        _audit(conn, thread_id, "disposition_rejected_by_human", reviewer_id, {"worksheet_id": worksheet_id, "notes": notes})

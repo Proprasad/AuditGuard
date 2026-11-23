@@ -10,9 +10,6 @@ Verifies:
 import json
 import re
 from pathlib import Path
-from fastapi.testclient import TestClient
-
-from src.api.main import app
 
 STATIC_DIR = Path("src/ui/static")
 DYNAMIC_IDS = {
@@ -59,17 +56,18 @@ def test_all_9_sidebar_navs_and_5_center_tabs_present():
     assert tabs == {"graph", "flow", "hypotheses", "evidence", "agents"}
 
 
-def test_sse_stream_emits_complete_workbench_telemetry():
-    client = TestClient(app)
+def test_sse_stream_emits_complete_workbench_telemetry(client, auth):
+    headers = auth("analyst")
     reg = client.post(
         "/api/v1/investigations",
         json={"alert_id": "ALT-2026-0412", "mode": "c2_multi"},
+        headers=headers,
     ).json()
     tid = reg["thread_id"]
 
     events = []
     interrupt_payload = None
-    with client.stream("GET", f"/api/v1/investigations/{tid}/stream?alert_id=ALT-2026-0412&mode=c2_multi") as resp:
+    with client.stream("GET", f"/api/v1/investigations/{tid}/stream", headers=headers) as resp:
         assert resp.status_code == 200
         for line in resp.iter_lines():
             if line.startswith("event: "):
@@ -97,20 +95,17 @@ def test_sse_stream_emits_complete_workbench_telemetry():
     assert len(st["agent_runs"]) == 4
 
 
-def test_llm_config_toggle_and_secret_masking():
-    client = TestClient(app)
-    r1 = client.post("/api/v1/config/llm", json={"enabled": False, "model": "openai/gpt-5-mini"})
+def test_llm_config_toggle_and_secret_masking(client, auth):
+    admin = auth("admin")
+    assert client.post("/api/v1/config/llm", json={"enabled": False}, headers=auth("analyst")).status_code == 403
+    assert client.post("/api/v1/config/llm", json={"model": "gpt\ninjected"}, headers=admin).status_code == 422
+    r1 = client.post("/api/v1/config/llm", json={"enabled": False, "model": "openai/gpt-5-mini"}, headers=admin)
     assert r1.status_code == 200
     data1 = r1.json()
     assert data1["c1_and_specialist_model"] == "openai/gpt-5-mini"
     # Full API secret must never appear in API payload
     assert len(data1["key_preview"]) <= 20
 
-    r2 = client.post("/api/v1/config/llm", json={"enabled": True, "strong_model": "anthropic/claude-haiku-5.5"})
+    r2 = client.post("/api/v1/config/llm", json={"enabled": False, "strong_model": "openai/gpt-5-nano"}, headers=admin)
     assert r2.status_code == 200
-    assert r2.json()["c2_supervisor_model"] == "anthropic/claude-haiku-5.5"
-    # Reset runtime override back to None/env default
-    from src.agent import llm_client
-    llm_client._runtime_enabled_override = None
-    llm_client._runtime_model_override = None
-    llm_client._runtime_strong_model_override = None
+    assert r2.json()["c2_supervisor_model"] == "openai/gpt-5-nano"

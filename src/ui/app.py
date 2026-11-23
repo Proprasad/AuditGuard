@@ -1,4 +1,4 @@
-"""
+﻿"""
 Chainlit UI — AuditGuard Analyst Interface
 Real-time investigation traces, approval card, evidence display
 """
@@ -153,62 +153,9 @@ async def _run_investigation(alert_id: str, mode: str):
                         await msg.stream_token(f"\n\n❌ Error: {data.get('error', 'Unknown error')}")
                         return
 
-    except Exception as e:
-        # Fallback: show synthetic result
-        await _show_synthetic_result(alert_id, mode)
-
-
-async def _show_synthetic_result(alert_id: str, mode: str):
-    """Show a synthetic investigation result for demo purposes."""
-    import random
-
-    result_text = f"""
-## 🔍 Investigation Result for `{alert_id}`
-
-**Mode:** {mode} | **Replan Count:** 1 | **Tool Calls:** 7
-
-### 📊 Fund-Flow Paths Found
-| Path | Hops | Amount (INR) | Leakage | Verdict |
-|------|------|-------------|---------|---------|
-| PATH-A1B2 | 3 hops | 9,00,000 | 8.0% | 🔴 Suspicious |
-| PATH-C3D4 | 2 hops | 4,50,000 | 2.1% | 🔴 Suspicious |
-
-### 🧾 Competing Hypotheses
-**H1 — Scatter-Gather Layering** (Confidence: 72%)
-- ✅ 3 intermediaries detected, Day-11 consolidation
-- ✅ Fee skimming: INR 72,000 (8%) retained
-- ❌ KYC mismatch: declared income INR 4,50,000/yr
-
-**H2 — Legitimate Business** (Confidence: 28%)
-- ✅ Some entities appear registered
-- ❌ No GST/NGO registry found for root account
-- ❌ Unusual timing pattern
-
-### 📜 Regulatory Citations
-- `PMLA-2002-S13` — STR reporting obligation
-- `RBI-AML-2023-04` — Enhanced due diligence
-- `FATF-R16-2023` — Wire transfer requirements
-
-### 🎯 Recommendation
-**ESCALATE_STR_REVIEW** with **72% confidence**
-
-> *Deterministic math: INR 9,00,000 → 8,28,000 (conserved ±5%). Zero LLM arithmetic.*
-
----
-**How would you like to proceed?**
-Reply with: `approve` / `close as benign` / `request more info`
-"""
-
-    pending_ws = {
-        "worksheet_id": f"DWS-{alert_id[-8:].upper()}",
-        "alert_id": alert_id,
-        "recommended_disposition": "escalate_str",
-        "confidence_score": 0.72,
-        "payload_hash": f"sha256:{'0' * 64}",
-    }
-    cl.user_session.set("pending_worksheet", pending_ws)
-
-    await cl.Message(content=result_text, author="AuditGuard").send()
+    except Exception as exc:  # noqa: BLE001 - UI boundary: surface a real error, never fabricate a result
+        cl.user_session.set("pending_worksheet", None)
+        await cl.Message(content=f"Investigation failed: {type(exc).__name__}. No result was produced; check the API logs and retry.", author="AuditGuard").send()
 
 
 async def _show_approval_card(data: dict, alert_id: str, mode: str):

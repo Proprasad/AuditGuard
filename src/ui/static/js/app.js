@@ -56,6 +56,34 @@ function dispositionMeta(disp) {
   return { code: "PENDING", subtitle: "Awaiting Investigation", cls: "" };
 }
 
+/* ── Authentication (JWT; credentials come from the server .env seeded accounts) ─ */
+function ensureLogin() {
+  if (api.isAuthenticated()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(2,6,23,.92);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    overlay.innerHTML = `
+      <form id="loginForm" style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:28px;width:340px;color:#e2e8f0;font-family:inherit;">
+        <h3 style="margin:0 0 14px;">AuditGuard sign-in</h3>
+        <input id="loginUser" placeholder="username" autocomplete="username" style="width:100%;margin-bottom:10px;padding:8px;" />
+        <input id="loginPass" type="password" placeholder="password" autocomplete="current-password" style="width:100%;margin-bottom:10px;padding:8px;" />
+        <div id="loginErr" style="color:#fca5a5;font-size:.85rem;min-height:1.2em;margin-bottom:8px;"></div>
+        <button type="submit" style="width:100%;padding:9px;cursor:pointer;">Sign in</button>
+      </form>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api.login(overlay.querySelector("#loginUser").value.trim(), overlay.querySelector("#loginPass").value);
+        overlay.remove();
+        resolve();
+      } catch (err) {
+        overlay.querySelector("#loginErr").textContent = err.message;
+      }
+    });
+  });
+}
+
 /* ── Initialization ──────────────────────────────────────────────────────── */
 async function init() {
   graphView = new TransactionGraphView(
@@ -68,6 +96,7 @@ async function init() {
   );
 
   bindUIEvents();
+  await ensureLogin();
   await refreshHealthAndCatalog();
 
   // Auto-load showcase alert ALT-2026-0412 (or first alert) on boot so the workbench is alive immediately
@@ -276,9 +305,21 @@ async function runLiveInvestigation() {
       interrupt_required: (data) => {
         state.worksheetId = data.worksheet_id;
         state.payloadHash = data.payload_hash;
+        state.approvedHash = data.approved_hash;
+        state.approvalToken = data.approval_token;
         state.invState = data.state;
         state.invStatus = "interrupt_required";
         renderFullInvestigationState();
+      },
+      verification_failed: (data) => {
+        state.worksheetId = data.worksheet_id;
+        state.payloadHash = data.payload_hash;
+        state.approvedHash = null;
+        state.approvalToken = null;
+        state.invState = data.state;
+        state.invStatus = "verification_failed";
+        renderFullInvestigationState();
+        showGateFeedback(data.message || "Verification failed (fail-closed). Edit the rationale to continue.", "danger");
       },
       error: (errData) => {
         showGateFeedback(`Investigation error: ${errData.error || "Unknown"}`, "danger");
@@ -727,18 +768,15 @@ function toggleEditDrawer() {
 async function handleDecision(action) {
   if (!state.threadId) return;
   const notes = document.getElementById("analystNotesInput").value;
-  const currentDisp = state.invState?.worksheet?.recommended_disposition || "escalate_str";
+  const payload = { action, notes };
 
-  const payload = {
-    worksheet_id: state.worksheetId,
-    action,
-    decision: action === "edit" ? document.getElementById("editDispositionSelect").value : currentDisp,
-    approved_hash: state.payloadHash,
-    notes,
-  };
+  if (action === "approve") {
+    payload.approved_hash = state.approvedHash;
+    payload.approval_token = state.approvalToken;
+  }
 
   if (action === "edit") {
-    payload.edited_fields = {
+    payload.edit = {
       recommended_disposition: document.getElementById("editDispositionSelect").value,
       recommendation_rationale: document.getElementById("editRationaleInput").value,
     };
@@ -749,9 +787,12 @@ async function handleDecision(action) {
 
     if (action === "edit") {
       state.payloadHash = res.payload_hash;
+      state.approvedHash = res.approved_hash;
+      state.approvalToken = res.approval_token;
+      state.invStatus = "interrupt_required";
       if (state.invState?.worksheet) {
-        state.invState.worksheet.recommended_disposition = payload.edited_fields.recommended_disposition;
-        state.invState.worksheet.recommendation_rationale = payload.edited_fields.recommendation_rationale;
+        state.invState.worksheet.recommended_disposition = payload.edit.recommended_disposition;
+        state.invState.worksheet.recommendation_rationale = payload.edit.recommendation_rationale;
       }
       document.getElementById("editDrawer").style.display = "none";
       renderFullInvestigationState();

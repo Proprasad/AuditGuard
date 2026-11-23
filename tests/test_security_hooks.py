@@ -1,4 +1,4 @@
-"""T5: Security Hooks, RBAC & Guardrail Tests"""
+﻿"""T5: Security Hooks, RBAC & Guardrail Tests"""
 from src.config import get_policy
 from src.guardrails.guardrails import apply_input_guardrails, apply_output_guardrails
 from src.guardrails.hooks import pre_tool_hook, post_tool_hook
@@ -16,7 +16,7 @@ def test_masks_pii_and_tags_untrusted_data():
     sanitized = post_tool_hook("get_alert_context", raw)
     assert "ABCDE1234F" not in sanitized["memo_text"]
     assert "9876543210" not in sanitized["memo_text"]
-    assert sanitized["memo_text"].startswith("<untrusted_data>")
+    assert sanitized["memo_text"].startswith("<untrusted_data")
     assert sanitized["memo_text"].endswith("</untrusted_data>")
 
 

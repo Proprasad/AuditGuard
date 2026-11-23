@@ -120,7 +120,9 @@ def _known_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any]) -> set[De
             known.add(m)
 
     add(ws.get("alert_amount_inr"))
-    outs, cons, nets = [], [], []
+    outs: list[Any] = []
+    cons: list[Any] = []
+    nets: list[Any] = []
     for path in ws.get("candidate_paths", []):
         for key in ("total_outflow_inr", "total_consolidated_inr", "net_difference_inr"):
             add(path.get(key))

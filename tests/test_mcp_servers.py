@@ -29,10 +29,18 @@ async def test_bank_records_happy():
     assert ctx["alert_id"] == "ALT-2026-0412"
     assert len(ctx["transactions"]) >= 3
 
-    kyc = await _fn(bank_records.get_kyc_profile)(
-        bank_records.GetKYCProfileInput(account_id="ACC-ROOT-001")
-    )
-    assert kyc["account_id"] == "ACC-ROOT-001"
+    from src.db.database import get_db
+
+    with get_db() as conn:
+        account_id = conn.execute("SELECT account_id FROM accounts ORDER BY account_id LIMIT 1").fetchone()[0]
+    kyc = await _fn(bank_records.get_kyc_profile)(bank_records.GetKYCProfileInput(account_id=account_id))
+    assert kyc["account_id"] == account_id
+
+    missing = await _fn(bank_records.get_kyc_profile)(bank_records.GetKYCProfileInput(account_id="ACC-DOES-NOT-EXIST"))
+    assert missing.get("error_code") == "ACCOUNT_NOT_FOUND"
+
+    unknown = await _fn(bank_records.get_alert_context)(bank_records.GetAlertContextInput(alert_id="ALT-NOPE-1"))
+    assert unknown.get("error_code") == "INVALID_ALERT_ID"
 
 
 @pytest.mark.asyncio
@@ -68,7 +76,7 @@ async def test_case_actions_draft_and_reject_invalid_token():
             worksheet_id=draft.worksheet_id,
             approval_token="APPROVE:badhash:badsig",
             reviewer_id="analyst_01",
-            reviewer_decision="escalate_str",
+            thread_id="thr-test",
         )
     )
     assert bad_submit.success is False
