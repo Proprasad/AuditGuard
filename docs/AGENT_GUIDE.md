@@ -74,8 +74,10 @@ src/guardrails/     verifier.py (rewritten), injection.py, pii.py, structural.py
 data/generator_v2/  families.py, noise.py, labels.py, build.py
 data/golden_v2/dev/              (development split only; accessible for dev workflows)
 eval/golden_v2/{held_out,challenge}/  (held-out & challenge splits physically isolated outside runtime data/)
-eval/               run_eval.py (rewritten), metrics.py, stats.py, judge.py, judge_rubric.md,
-                    shortcuts.py, adjudication.py, human_labels/*.csv, calibration.py, red_team_v2/, report.py
+eval/               run_eval.py (rewritten), metrics.py, stats.py, judge.py, judge_prompts.py, judge_rubric.md,
+                    shortcuts.py, adjudication.py, packet_builder.py, calibration.py, calibration_stats.py,
+                    human_labels/{*.csv,worksheet_scoring_guidelines.md,worksheets_packet_blinded.jsonl},
+                    calibration_manifest/packet_manifest.json (coordinator-only), cassettes/, red_team_v2/, report.py
 runs/               generated, gitignored
 Makefile            verify, data, eval-e1..e4, report
 ```
@@ -182,9 +184,9 @@ Acceptance: unit tests with seeded wrong numbers (each caught), fake citation `P
 
 **4.2 Judge** (`eval/judge.py`): cross-family model from `models.yaml` (Gemini), temperature 0, JSON-only output validated by Pydantic, rubric and 2 fixed few-shot examples in the system prompt (examples from **dev** only), blind to which agent produced the worksheet, randomised order for pairwise comparisons. Record raw responses in the run directory.
 
-**4.3 Human labels [HUMAN].** Two annotators score 60 worksheets (stratified across modes, families, correct/incorrect; at least 20 from dev for tuning, 40 held-out for the final kappa) on the rubric in a CSV: `worksheet_id, annotator, G1..G7, comments`. Use a shared guideline page; do a 10-item pilot first and revise wording.
+**4.3 Human labels [HUMAN].** Two annotators independently score the same 60 blinded worksheets (`eval/human_labels/worksheets_packet_blinded.jsonl`, anonymized `WS-CAL-001`..`WS-CAL-060`, stratified across `c0_fixed`, `rule_engine`, `c1_single`, `c2_multi` × 5 families = 20 dev for tuning + 40 held-out for final kappa) in separate randomized-order templates (`eval/human_labels/worksheets_to_score_annotator_1.csv` and `eval/human_labels/worksheets_to_score_annotator_2.csv`: `worksheet_id,annotator,G1,G2,G3,G4,G5,G6,G7,comments`) using `eval/human_labels/worksheet_scoring_guidelines.md`; coordinator mapping is isolated in `eval/calibration_manifest/packet_manifest.json`. Do a 10-item pilot first and revise wording on dev only.
 
-**4.4 Calibration** (`eval/calibration.py`): compute (a) human–human kappa (linear-weighted for 1–5, plain for pass/fail), (b) judge–human kappa per criterion, (c) bias checks: verbosity (correlation of score with length), position bias (swap order, compare), self-preference (judge family ≠ agent family). Target judge–human weighted kappa ≥ 0.75 per criterion; for any criterion below target, revise rubric/prompt on dev only and re-measure on held-out once. Report criteria that miss the target honestly and exclude them from headline claims.
+**4.4 Calibration** (`eval/calibration.py`): report `status: awaiting_human_annotations` when CSVs are empty (never fabricating scores); once populated, compute (a) human–human kappa (linear-weighted for 1–5, plain for pass/fail) plus both unweighted sample agreement and population-weighted agreement, (b) judge–human kappa per criterion, (c) bias checks: verbosity (Pearson $r$ and Spearman $\rho$ with length), position bias (swap order, compare), self-preference (canonical model-lineage check verifying judge family ≠ C1/C2 family). Target judge–human weighted kappa ≥ 0.75 per criterion; for any criterion below target, revise rubric/prompt on dev only (`rubric_frozen=False`) and measure held-out once after freezing (`rubric_frozen=True`). Report criteria that miss the target honestly and exclude them from headline claims.
 
 **4.5 Deterministic companions**: report `numbers_match_calc` and `citations_exist` next to judge scores so the judge is never the only evidence.
 

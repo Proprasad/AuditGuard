@@ -51,6 +51,8 @@ DICT_MERGE_KEYS = frozenset({"evidence_registry"})
 LIST_UNION_KEYS = frozenset({"degraded_evidence", "regulatory_snippets", "retrieved_lessons"})
 C2_ROLES = ("flow_tracer", "benign_investigator", "regulatory_analyst", "reporter_critic")
 _THREAD_LOCKS: dict[str, asyncio.Lock] = {}
+_SAVER_INIT_LOCKS: dict[int, asyncio.Lock] = {}
+_INITIALIZED_SAVER_PATHS: set[str] = set()
 _MAX_THREAD_LOCKS = 2048
 
 
@@ -184,6 +186,18 @@ def checkpoint_db_path() -> Path:
     return Path(get_sqlite_path()).with_suffix(".langgraph.sqlite")
 
 
+def _saver_lock(db_str: str) -> asyncio.Lock:
+    loop_id = id(asyncio.get_running_loop())
+    key = hash((loop_id, db_str))
+    lock = _SAVER_INIT_LOCKS.get(key)
+    if lock is None:
+        if len(_SAVER_INIT_LOCKS) > 64:
+            _SAVER_INIT_LOCKS.clear()
+        lock = asyncio.Lock()
+        _SAVER_INIT_LOCKS[key] = lock
+    return lock
+
+
 @asynccontextmanager
 async def open_saver() -> AsyncIterator[Any]:
     if settings.use_postgres:
@@ -193,10 +207,25 @@ async def open_saver() -> AsyncIterator[Any]:
             await saver.setup()
             yield saver
     else:
+        import aiosqlite
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        async with AsyncSqliteSaver.from_conn_string(str(checkpoint_db_path())) as saver:
-            yield saver
+        db_file = checkpoint_db_path()
+        db_str = str(db_file.resolve())
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        shared_lock = _saver_lock(db_str)
+        async with shared_lock:
+            if db_str not in _INITIALIZED_SAVER_PATHS or not db_file.exists() or db_file.stat().st_size == 0:
+                async with aiosqlite.connect(db_str, timeout=30.0) as init_conn:
+                    await init_conn.execute("PRAGMA busy_timeout = 30000;")
+                    await AsyncSqliteSaver(init_conn).setup()
+                _INITIALIZED_SAVER_PATHS.add(db_str)
+        async with aiosqlite.connect(db_str, timeout=30.0) as conn:
+            await conn.execute("PRAGMA busy_timeout = 30000;")
+            sq_saver = AsyncSqliteSaver(conn)
+            sq_saver.lock = shared_lock
+            sq_saver.is_setup = True
+            yield sq_saver
 
 
 NodeFn = Callable[[InvestigationState, RunContext], Awaitable[dict[str, Any]]]

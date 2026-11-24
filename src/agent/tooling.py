@@ -62,7 +62,8 @@ class GuardedToolbox:
         *,
         has_human_approval_token: bool = False,
     ) -> dict[str, Any]:
-        if self.allowed_tool_budget is not None and self.calls >= self.allowed_tool_budget:
+        is_exit_tool = tool in ("draft_disposition_report", "submit_case_disposition", "finish")
+        if not is_exit_tool and self.allowed_tool_budget is not None and self.calls >= self.allowed_tool_budget:
             return await self._record_tool_error(
                 server,
                 tool,
