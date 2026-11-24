@@ -36,10 +36,21 @@ def _gold_label(case: dict[str, Any]) -> str:
     return str(case.get("gold_disposition") or case.get("expected_disposition"))
 
 
+def _get_root_kyc(redacted: dict[str, Any]) -> dict[str, Any]:
+    root = str(redacted["root_account"])
+    kp = redacted.get("kyc_profiles") or {}
+    if isinstance(kp, dict):
+        return dict(kp.get(root) or {})
+    if isinstance(kp, list):
+        for item in kp:
+            if isinstance(item, dict) and str(item.get("account_id")) == root:
+                return item
+    return {}
+
+
 # ── (a) Root KYC Lookup Tree ──────────────────────────────────────────────────
 def _kyc_key(redacted: dict[str, Any]) -> tuple[str, str, str, str]:
-    root = str(redacted["root_account"])
-    kyc = (redacted.get("kyc_profiles") or {}).get(root) or {}
+    kyc = _get_root_kyc(redacted)
     risk = str(kyc.get("risk_category", "missing")).lower()
     reg = "reg" if kyc.get("is_commercially_registered") else "unreg"
     etype = str(kyc.get("entity_type", "missing")).lower()
@@ -85,7 +96,7 @@ class RootKYCLookupTree:
 # ── (b) 10-Feature Multinomial Logistic Regression ────────────────────────────
 def extract_10_hand_features(redacted: dict[str, Any]) -> list[float]:
     root = str(redacted["root_account"])
-    kyc = (redacted.get("kyc_profiles") or {}).get(root) or {}
+    kyc = _get_root_kyc(redacted)
     txs = redacted.get("transactions") or []
     alert_amt = float(Decimal(str(redacted.get("total_amount_inr", "1"))))
     income = float(Decimal(str(kyc.get("declared_annual_income_inr", "500000"))))
@@ -181,8 +192,7 @@ def _tokenize_case_text(redacted: dict[str, Any]) -> list[str]:
     parts: list[str] = []
     for tx in redacted.get("transactions") or []:
         parts.append(str(tx.get("memo") or tx.get("memo_text") or ""))
-    root = str(redacted["root_account"])
-    root_kyc = (redacted.get("kyc_profiles") or {}).get(root) or {}
+    root_kyc = _get_root_kyc(redacted)
     parts.append(str(root_kyc.get("kyc_notes", "")))
     words = _WORD_RE.findall(" ".join(parts).lower())
     bigrams = [f"{a}_{b}" for a, b in zip(words, words[1:], strict=False)]

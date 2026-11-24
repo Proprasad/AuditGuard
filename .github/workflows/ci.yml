@@ -26,7 +26,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[ui,dev]" fastmcp prometheus-client uvicorn pytest-asyncio
-      - name: Generate synthetic dataset
-        run: python -m data.synthetic_generator
+      - name: Generate deterministic datasets (v1 + golden_v2 + red_team_v2)
+        run: |
+          python -m data.synthetic_generator
+          python -m data.generator_v2.build --seed 42
+          python -m eval.build_red_team_v2
       - name: Run full verification gate (make verify)
         run: make verify

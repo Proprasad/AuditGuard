@@ -36,11 +36,13 @@ class GuardedToolbox:
         ledger: BudgetLedger,
         thread_id: str = "unbound",
         allowed_tool_budget: Optional[int] = None,
+        defenses_enabled: bool = True,
     ) -> None:
         self.role = role
         self.ledger = ledger
         self.thread_id = thread_id
         self.allowed_tool_budget = allowed_tool_budget
+        self.defenses_enabled = defenses_enabled
         self.calls = 0
         self.security_events: list[dict[str, Any]] = []
         self.tool_errors: list[dict[str, Any]] = []
@@ -62,6 +64,12 @@ class GuardedToolbox:
         *,
         has_human_approval_token: bool = False,
     ) -> dict[str, Any]:
+        if not self.defenses_enabled:
+            self.calls += 1
+            if tool not in ("submit_case_disposition", "finish", "draft_disposition_report"):
+                self.ledger.try_consume_tool_call(reserve=0, allow_over_cost=True)
+            raw_ung = await call_mcp_tool(server, tool, params)
+            return raw_ung if isinstance(raw_ung, dict) else error_envelope("MCP_BAD_RESPONSE", "non-dict")
         is_exit_tool = tool in ("draft_disposition_report", "submit_case_disposition", "finish")
         if not is_exit_tool and self.allowed_tool_budget is not None and self.calls >= self.allowed_tool_budget:
             return await self._record_tool_error(

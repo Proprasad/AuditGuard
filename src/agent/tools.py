@@ -145,7 +145,11 @@ class AgentToolRuntime:
         role: str,
         box: GuardedToolbox,
         alert: Alert,
+        configurable_graph: bool = True,
         replanning_enabled: bool = True,
+        allow_calc: bool = True,
+        allow_registry: bool = True,
+        allow_rag: bool = True,
         initial_transactions: Optional[list[dict[str, Any]]] = None,
         initial_paths: Optional[list[FundFlowPath]] = None,
         initial_registry: Optional[dict[str, Any]] = None,
@@ -153,7 +157,11 @@ class AgentToolRuntime:
         self.role = role
         self.box = box
         self.alert = alert
+        self.configurable_graph = configurable_graph
         self.replanning_enabled = replanning_enabled
+        self.allow_calc = allow_calc
+        self.allow_registry = allow_registry
+        self.allow_rag = allow_rag
         self.root_account = alert.root_account
         self.network_accounts = list(alert.network_accounts)
         self.transactions: list[dict[str, Any]] = list(initial_transactions or [])
@@ -191,6 +199,8 @@ class AgentToolRuntime:
         return self.box.allowed_tool_budget is not None and self.box.calls >= self.box.allowed_tool_budget
 
     async def _run_calc_tool(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not self.allow_calc:
+            return await self._record_local_error("calc", "ABLATION_DISABLED", "calc tool disabled in llm_math mode")
         if self._sub_budget_exceeded():
             msg = f"Specialist '{self.role}' exhausted handoff tool budget ({self.box.calls})"
             return await self._record_local_error("calc", "SPECIALIST_BUDGET_EXCEEDED", msg)
@@ -273,6 +283,10 @@ class AgentToolRuntime:
                 if not self.transactions:
                     return None, "NO_TRANSACTIONS", "Call get_alert_context before find_candidate_fund_flows"
                 mcp_args["transactions"] = graph_tx_payload(self.transactions)
+            if not self.configurable_graph:
+                fixed_p = GraphParams.policy_default()
+                self.current_graph_params = fixed_p
+                return {**mcp_args, **fixed_p.model_dump(mode="json")}, "", ""
             self.current_graph_params = GraphParams(
                 time_window_days=int(mcp_args.get("time_window_days", self.current_graph_params.time_window_days)),
                 max_hops=int(mcp_args.get("max_hops", self.current_graph_params.max_hops)),
@@ -304,6 +318,13 @@ class AgentToolRuntime:
             return await self._run_finish_tool(arguments)
         return None
 
+    def _ablation_reason(self, tool_name: str) -> Optional[str]:
+        if tool_name == "check_commercial_registry" and not self.allow_registry:
+            return "registry check disabled"
+        if tool_name in ("search_regulations", "get_clause_by_id") and not self.allow_rag:
+            return "RAG retrieval disabled"
+        return None
+
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Dispatch a single tool call through RBAC, bounds, BudgetLedger, MCP, and `post_tool_hook`."""
         if "_invalid_json" in arguments:
@@ -319,7 +340,8 @@ class AgentToolRuntime:
             return local_res
         if tool_name not in TOOL_SPECS:
             return await self._record_local_error(tool_name, "UNKNOWN_TOOL", f"Tool {tool_name!r} is not callable")
-
+        if abl_msg := self._ablation_reason(tool_name):
+            return await self._record_local_error(tool_name, "ABLATION_DISABLED", abl_msg)
         server, model_cls, _ = TOOL_SPECS[tool_name]
         if tool_name == "find_candidate_fund_flows":
             pre_bounds = pre_tool_hook(self.role, tool_name, arguments, ledger=None)

@@ -1,10 +1,12 @@
 experiment_id: "E1"
 name: "Architecture Value"
-description: "Compare C0 (Fixed Workflow) vs. C1 (Single Agent) vs. C2 (Multi-Agent Team) under identical models, tools, and budgets."
+description: "Compare fair C0, strong deterministic rule_engine, single-agent LLM C1, and multi-agent LLM C2 under identical models, tools, and budgets across held_out and challenge slices."
 split: "held_out"
+include_challenge_slice: true
 repeats: 3
 modes:
   - "c0_fixed"
+  - "rule_engine"
   - "c1_single"
   - "c2_multi"
 budgets:
@@ -16,9 +18,17 @@ reflexion_enabled: false
 memory_enabled: true
 metrics:
   - "disposition_accuracy"
+  - "macro_f1"
+  - "weighted_error_cost"
+  - "false_close_rate"
   - "evidence_recall"
-  - "replanning_recovery_rate"
-  - "citation_validity_rate"
+  - "evidence_precision"
+  - "replan_recovery_rate"
+  - "needless_replan_rate"
   - "inr_arithmetic_error_rate"
+  - "citation_validity_rate"
   - "cost_usd"
-  - "latency_seconds"
+  - "tokens"
+  - "latency_s"
+  - "tool_calls"
+  - "tool_error_rate"

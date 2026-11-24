@@ -5,14 +5,15 @@
 PYTHON ?= python
 
 verify:
-	$(PYTHON) -m ruff check src/ eval/ tests/ scripts/ --select E,F,B,S,DTZ,BLE,T20,C901
+	$(PYTHON) -m ruff check src/ eval/ data/generator_v2/ tests/ scripts/ --select E,F,B,S,DTZ,BLE,T20,C901
 	$(PYTHON) -m mypy src/ --strict
 	$(PYTHON) -m pytest tests/ -q
-	$(PYTHON) -m eval.run_eval --config E1 --split dev --limit 4 --repeats 1 --min-accuracy 0.75
+	$(PYTHON) -m eval.verify_gates
 
 data:
 	$(PYTHON) -m data.synthetic_generator
 	$(PYTHON) -m data.generator_v2.build --seed 42
+	$(PYTHON) -m eval.build_red_team_v2
 
 eval-e1:
 	$(PYTHON) -m eval.run_eval --config E1

@@ -503,45 +503,15 @@ async def _drive_tool_loop(
     )
 
 
-async def run_c1_agent_loop(
+def _c1_state_update(
     state: InvestigationState,
     ctx: RunContext,
-    llm_client: LLMClientProtocol,
-    *,
-    max_turns: int = DEFAULT_MAX_TURNS,
+    runtime: AgentToolRuntime,
+    messages: list[dict[str, Any]],
+    lessons: list[str],
+    worksheet: DispositionWorksheet,
+    elapsed_ms: float,
 ) -> dict[str, Any]:
-    """Execute the genuine C1 LLM ReAct / tool-calling loop and return LangGraph state update."""
-    t0 = time.perf_counter()
-    lessons = await retrieve_frozen_lessons(state, ctx)
-    model_id = ctx.model_override or ctx.policy.model_for("c1_investigator").model_id
-    runtime = AgentToolRuntime(
-        role="c1_single",
-        box=ctx.box("primary"),
-        alert=state.alert,
-        replanning_enabled=ctx.replanning_enabled,
-        initial_registry=state.evidence_registry,
-    )
-    tools_schema = build_openai_tools("c1_single", include_finish=True, replanning_enabled=ctx.replanning_enabled)
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": render_c1_system_prompt(
-                ctx.policy, lessons=lessons, replanning_enabled=ctx.replanning_enabled
-            ),
-        },
-        {"role": "user", "content": render_alert_user_message(state.alert)},
-    ]
-    worksheet = await _drive_tool_loop(
-        messages=messages,
-        tools_schema=tools_schema,
-        runtime=runtime,
-        ctx=ctx,
-        state=state,
-        llm_client=llm_client,
-        model_id=model_id,
-        max_turns=max_turns,
-    )
-    elapsed_ms = (time.perf_counter() - t0) * 1000
     degraded = sorted({*worksheet.degraded_evidence, *runtime.degraded_evidence, *all_security_notes(ctx)})
     updated_alert = state.alert.model_copy(
         update={"root_account": runtime.root_account, "network_accounts": runtime.network_accounts}
@@ -582,3 +552,45 @@ async def run_c1_agent_loop(
         **sync_budget(ctx),
         **_c1_loop_telemetry(runtime, ctx, worksheet, elapsed_ms),
     }
+
+
+async def run_c1_agent_loop(
+    state: InvestigationState,
+    ctx: RunContext,
+    llm_client: LLMClientProtocol,
+    *,
+    max_turns: int = DEFAULT_MAX_TURNS,
+) -> dict[str, Any]:
+    """Execute the genuine C1 LLM ReAct / tool-calling loop and return LangGraph state update."""
+    t0 = time.perf_counter()
+    lessons = await retrieve_frozen_lessons(state, ctx)
+    model_id = ctx.model_override or ctx.policy.model_for("c1_investigator").model_id
+    runtime = AgentToolRuntime(
+        role="c1_single",
+        box=ctx.box("primary"),
+        alert=state.alert,
+        configurable_graph=ctx.configurable_graph,
+        replanning_enabled=ctx.replanning_enabled,
+        allow_calc=ctx.allow_calc,
+        allow_registry=ctx.allow_registry,
+        allow_rag=ctx.allow_rag,
+        initial_registry=state.evidence_registry,
+    )
+    tools_schema = build_openai_tools(
+        "c1_single",
+        include_finish=True,
+        replanning_enabled=ctx.replanning_enabled,
+        allow_calc=ctx.allow_calc,
+        allow_registry=ctx.allow_registry,
+        allow_rag=ctx.allow_rag,
+    )
+    sys_txt = render_c1_system_prompt(ctx.policy, lessons=lessons, replanning_enabled=ctx.replanning_enabled)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": sys_txt},
+        {"role": "user", "content": render_alert_user_message(state.alert)},
+    ]
+    ws = await _drive_tool_loop(
+        messages=messages, tools_schema=tools_schema, runtime=runtime, ctx=ctx,
+        state=state, llm_client=llm_client, model_id=model_id, max_turns=max_turns,
+    )
+    return _c1_state_update(state, ctx, runtime, messages, lessons, ws, (time.perf_counter() - t0) * 1000)

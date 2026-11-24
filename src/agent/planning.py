@@ -43,6 +43,10 @@ class RunContext:
     configurable_graph: bool = True
     replanning_enabled: bool = True
     deterministic_verifier: bool = True
+    allow_calc: bool = True
+    allow_registry: bool = True
+    allow_rag: bool = True
+    defenses_enabled: bool = True
     reflexion_enabled: bool = False
     memory_enabled: bool = True
     allow_llm: bool = True

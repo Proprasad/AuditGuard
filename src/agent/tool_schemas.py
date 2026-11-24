@@ -255,15 +255,25 @@ def _inline_defs(node: Any, defs: dict[str, Any]) -> Any:
 
 
 def build_openai_tools(
-    role: str, *, include_finish: bool = True, replanning_enabled: bool = True
+    role: str,
+    *,
+    include_finish: bool = True,
+    replanning_enabled: bool = True,
+    allow_calc: bool = True,
+    allow_registry: bool = True,
+    allow_rag: bool = True,
 ) -> list[dict[str, Any]]:
-    """Build OpenAI-compatible `tools` list strictly scoped to `AGENT_TOOL_ALLOWLIST[role]`."""
+    """Build OpenAI-compatible `tools` list strictly scoped to `AGENT_TOOL_ALLOWLIST[role]` & ablations."""
     allowed = AGENT_TOOL_ALLOWLIST.get(role, set())
     schemas: list[dict[str, Any]] = []
     for name, (_, model_cls, description) in TOOL_SPECS.items():
         if name not in allowed or name in _NON_ADVERTISED_TOOLS:
             continue
         if (name == "finish" and not include_finish) or (name == "replan_graph" and not replanning_enabled):
+            continue
+        if (name == "calc" and not allow_calc) or (name == "check_commercial_registry" and not allow_registry):
+            continue
+        if name in ("search_regulations", "get_clause_by_id") and not allow_rag:
             continue
         raw_schema = model_cls.model_json_schema()
         defs = dict(raw_schema.get("$defs") or {})

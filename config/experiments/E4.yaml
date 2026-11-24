@@ -1,25 +1,68 @@
 experiment_id: "E4"
 name: "Signature Ablation"
-description: "Ablate (a) Configurable Graph Tool + Replanning ON vs. Fixed Detector OFF, and (b) Deterministic Verifier ON vs. Direct LLM Math."
+description: "Ablate all 7 signature C1 components: full, no_replanning, fixed_detector, no_verifier_gate, llm_math, no_registry_check, and no_rag."
 split: "held_out"
 repeats: 3
 modes:
   - "c1_single"
 variants:
-  - name: "full_system"
+  - name: "full"
     configurable_graph: true
     replanning_enabled: true
     deterministic_verifier: true
+    allow_calc: true
+    allow_registry: true
+    allow_rag: true
   - name: "no_replanning"
+    configurable_graph: true
+    replanning_enabled: false
+    deterministic_verifier: true
+    allow_calc: true
+    allow_registry: true
+    allow_rag: true
+  - name: "fixed_detector"
     configurable_graph: false
     replanning_enabled: false
     deterministic_verifier: true
-  - name: "no_verifier"
+    allow_calc: true
+    allow_registry: true
+    allow_rag: true
+  - name: "no_verifier_gate"
     configurable_graph: true
     replanning_enabled: true
     deterministic_verifier: false
+    allow_calc: true
+    allow_registry: true
+    allow_rag: true
+  - name: "llm_math"
+    configurable_graph: true
+    replanning_enabled: true
+    deterministic_verifier: true
+    allow_calc: false
+    allow_registry: true
+    allow_rag: true
+  - name: "no_registry_check"
+    configurable_graph: true
+    replanning_enabled: true
+    deterministic_verifier: true
+    allow_calc: true
+    allow_registry: false
+    allow_rag: true
+  - name: "no_rag"
+    configurable_graph: true
+    replanning_enabled: true
+    deterministic_verifier: true
+    allow_calc: true
+    allow_registry: true
+    allow_rag: false
 metrics:
   - "disposition_accuracy"
-  - "replanning_recovery_rate"
+  - "weighted_error_cost"
+  - "false_close_rate"
+  - "replan_recovery_rate"
+  - "needless_replan_rate"
   - "inr_arithmetic_error_rate"
   - "citation_validity_rate"
+  - "evidence_recall"
+  - "evidence_precision"
+  - "cost_usd"

@@ -1,0 +1,71 @@
+{
+  "limit": 10,
+  "modes": {
+    "c0_fixed": {
+      "citation_validity_rate": 1.0,
+      "cost_usd": 0.0,
+      "disposition_accuracy": 0.3,
+      "evidence_precision": 0.435714,
+      "evidence_recall": 0.088747,
+      "false_close_rate": 0.6,
+      "inr_arithmetic_error_rate": 0.0,
+      "macro_f1": 0.261905,
+      "needless_replan_rate": 0.0,
+      "replan_recovery_rate": 0.0,
+      "tokens": 0.0,
+      "tool_calls": 12.0,
+      "tool_error_rate": 0.0,
+      "weighted_error_cost": 3.8
+    },
+    "c1_single": {
+      "citation_validity_rate": 0.7,
+      "cost_usd": 0.024345,
+      "disposition_accuracy": 0.3,
+      "evidence_precision": 0.51121,
+      "evidence_recall": 0.192391,
+      "false_close_rate": 0.0,
+      "inr_arithmetic_error_rate": 0.0,
+      "macro_f1": 0.228571,
+      "needless_replan_rate": 0.2,
+      "replan_recovery_rate": 0.0,
+      "tokens": 66445.3,
+      "tool_calls": 14.4,
+      "tool_error_rate": 0.111111,
+      "weighted_error_cost": 1.3
+    },
+    "c2_multi": {
+      "citation_validity_rate": 1.0,
+      "cost_usd": 0.025522,
+      "disposition_accuracy": 0.4,
+      "evidence_precision": 0.592057,
+      "evidence_recall": 0.405578,
+      "false_close_rate": 0.0,
+      "inr_arithmetic_error_rate": 0.0,
+      "macro_f1": 0.295238,
+      "needless_replan_rate": 1.0,
+      "replan_recovery_rate": 0.4,
+      "tokens": 45678.4,
+      "tool_calls": 13.0,
+      "tool_error_rate": 0.307692,
+      "weighted_error_cost": 1.1
+    },
+    "rule_engine": {
+      "citation_validity_rate": 1.0,
+      "cost_usd": 0.0,
+      "disposition_accuracy": 0.6,
+      "evidence_precision": 0.746856,
+      "evidence_recall": 0.17919,
+      "false_close_rate": 0.4,
+      "inr_arithmetic_error_rate": 0.0,
+      "macro_f1": 0.603175,
+      "needless_replan_rate": 0.8,
+      "replan_recovery_rate": 0.4,
+      "tokens": 0.0,
+      "tool_calls": 14.1,
+      "tool_error_rate": 0.0,
+      "weighted_error_cost": 2.4
+    }
+  },
+  "seed": 42,
+  "split": "v2_dev"
+}

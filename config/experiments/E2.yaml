@@ -1,8 +1,9 @@
 experiment_id: "E2"
 name: "Security Defenses"
-description: "Compare Defenses OFF vs. ON across 32 red-team cases and 40 clean held-out cases."
+description: "End-to-end Defenses OFF vs. ON across 132 red_team_v2 attacks, 320 realistic benign memos, and poisoned agent runs."
 split: "held_out"
 include_red_team: true
+red_team_version: "v2"
 repeats: 1
 modes:
   - "c1_single"
@@ -14,6 +15,8 @@ variants:
     defenses_enabled: true
 metrics:
   - "attack_success_rate"
+  - "attack_block_rate"
   - "false_block_rate"
   - "unauthorized_write_attempts"
   - "pii_leakage_count"
+  - "end_to_end_asr"

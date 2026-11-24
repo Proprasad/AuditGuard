@@ -164,14 +164,17 @@ def test_yaml_honoured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     summary = run_eval_cmd(config="E1", limit=2)
     assert summary["split"] == "held_out"
     assert summary["repeats"] == 3
-    assert set(summary["results"].keys()) == {"c0_fixed", "c1_single", "c2_multi"}
-    # 3 modes * 3 repeats * 2 held-out cases = 18 actual invocations
-    assert len(calls) == 18
+    assert set(summary["results"].keys()) == {"c0_fixed", "rule_engine", "c1_single", "c2_multi"}
+    # Phase 5: deterministic modes (c0_fixed, rule_engine) run once (2*1*2=4); LLM modes run 3 repeats (2*3*2=12) -> 16
+    assert len(calls) == 16
 
     e1_yaml = yaml.safe_load(Path("config/experiments/E1.yaml").read_text(encoding="utf-8"))
     for mode_label, mode_res in summary["results"].items():
         metrics = mode_res["metrics"]
-        assert metrics["repeats_executed"] == 3, mode_label
+        if mode_label in ("c0_fixed", "rule_engine"):
+            assert metrics["repeats_executed"] == 1 and metrics["execution_type"] == "deterministic"
+        else:
+            assert metrics["repeats_executed"] == 3, mode_label
         for required_metric in e1_yaml["metrics"]:
             assert required_metric in metrics, f"{required_metric} missing from {mode_label}"
 

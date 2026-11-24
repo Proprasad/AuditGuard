@@ -124,6 +124,7 @@ def recursion_limit(policy: PolicyConfig) -> int:
 
 def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
     budget_overrides = flags.pop("budget_overrides", None)
+    def_on = bool(flags.get("defenses_enabled", True))
     policy = get_policy()
     if isinstance(budget_overrides, dict) and budget_overrides:
         policy = policy.model_copy(
@@ -131,7 +132,7 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
         )
     ledger = policy.new_ledger()
     if mode == "c2_multi":
-        boxes = {role: GuardedToolbox(role, ledger, thread_id) for role in C2_ROLES}
+        boxes = {role: GuardedToolbox(role, ledger, thread_id, defenses_enabled=def_on) for role in C2_ROLES}
         boxes["primary"] = boxes["reporter_critic"]
         return RunContext(
             mode=mode,
@@ -145,7 +146,7 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
             **flags,
         )
     if mode == "c0_fixed":
-        box = GuardedToolbox("c0_fixed", ledger, thread_id)
+        box = GuardedToolbox("c0_fixed", ledger, thread_id, defenses_enabled=def_on)
         flags.setdefault("allow_llm", False)
         flags.setdefault("llm_mode", "offline")
         return RunContext(
@@ -158,7 +159,7 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
             **flags,
         )
     if mode == "rule_engine":
-        box = GuardedToolbox("rule_engine", ledger, thread_id)
+        box = GuardedToolbox("rule_engine", ledger, thread_id, defenses_enabled=def_on)
         flags["allow_llm"] = False
         flags["llm_mode"] = "offline"
         return RunContext(
@@ -170,7 +171,7 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
             role="c1_investigator",
             **flags,
         )
-    box = GuardedToolbox("c1_single", ledger, thread_id)
+    box = GuardedToolbox("c1_single", ledger, thread_id, defenses_enabled=def_on)
     return RunContext(
         mode=mode,
         policy=policy,

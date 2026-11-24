@@ -42,12 +42,16 @@ async def _profile_single_account(
     acc: str,
     registry: dict[str, Any],
     degraded: list[str],
+    *,
+    allow_registry: bool = True,
 ) -> dict[str, Any] | None:
     kyc = await box.call("bank-records", "get_kyc_profile", {"account_id": acc})
     if is_error(kyc):
         degraded.append(f"KYC unavailable for {acc}: {err_code(kyc)}")
         return None
     registry[kyc.get("evidence_id", f"KYC-{acc}")] = kyc
+    if not allow_registry:
+        return kyc
     reg = await box.call(
         "bank-records",
         "check_commercial_registry",
@@ -70,10 +74,11 @@ async def _profile_accounts_batch(
     registry: dict[str, Any],
     degraded: list[str],
 ) -> None:
+    per_acc_calls = 2 if ctx.allow_registry else 1
     for acc in targets:
-        if not _can_spend_calls(ctx, 2):
+        if not _can_spend_calls(ctx, per_acc_calls):
             break
-        rec = await _profile_single_account(box, acc, registry, degraded)
+        rec = await _profile_single_account(box, acc, registry, degraded, allow_registry=ctx.allow_registry)
         if rec is not None:
             existing.append(rec)
             profiled_ids.add(acc)
@@ -149,6 +154,8 @@ async def gather_regulatory(
     registry: dict[str, Any],
     degraded: list[str],
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    if not ctx.allow_rag:
+        return [], []
     clauses = list(state.regulatory_clauses)
     snippets = list(state.regulatory_snippets)
     reg_box = ctx.box("regulatory_analyst")
