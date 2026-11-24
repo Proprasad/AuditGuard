@@ -51,8 +51,10 @@ def _telemetry_signals(case: dict[str, Any]) -> tuple[float, int, Decimal, bool]
 
 def generate_candidate_lesson(case: dict[str, Any], actual_disposition: str) -> ReflexionLesson:
     """Generate a deterministic, precondition-tagged candidate lesson from observable dev-split telemetry."""
+    if case.get("is_held_out") or str(case.get("split", "")) in ("held_out", "challenge"):
+        raise PermissionError("Reflexion lesson generation is forbidden on held-out or challenge splits")
     gb = get_policy().graph_bounds
-    expected = str(case.get("expected_disposition", "unknown"))
+    expected = str(case.get("gold_disposition") or case.get("expected_disposition") or "unknown")
     span_days, depth, skim_ratio, registered = _telemetry_signals(case)
 
     if span_days > gb.time_window_days.default:
@@ -109,7 +111,7 @@ def run_dev_reflexion(
         if res.get("correct"):
             continue
         case = cases_by_id.get(res.get("case_id", ""))
-        if not case or case.get("is_held_out", True):
+        if not case or case.get("is_held_out", True) or str(case.get("split", "")) in ("held_out", "challenge"):
             continue
         lesson = generate_candidate_lesson(case, str(res.get("actual", "unknown")))
         if lesson.lesson_id not in seen_ids and store.add_lesson(lesson):

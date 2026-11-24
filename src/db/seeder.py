@@ -34,7 +34,14 @@ def _collect_accounts(case: dict[str, Any]) -> list[str]:
     return ordered
 
 
-def _upsert_account_and_kyc(conn: Any, idx: int, acc_id: str, kyc: dict[str, Any], category: str) -> None:
+def _assert_not_eval_case(case: dict[str, Any]) -> None:
+    if case.get("is_held_out") or str(case.get("split", "")) in ("held_out", "challenge"):
+        raise PermissionError(
+            f"Refusing to load evaluation split case {case.get('case_id') or case.get('alert_id')} into runtime DB"
+        )
+
+
+def _upsert_account_and_kyc(conn: Any, idx: int, acc_id: str, kyc: dict[str, Any]) -> None:
     cust_id = str(kyc.get("customer_id") or f"CUST-{acc_id}")
     pan_raw = str(kyc.get("pan") or f"SYNTH-{acc_id}")
     pan_hash = hashlib.sha256(pan_raw.encode("utf-8")).hexdigest()
@@ -72,7 +79,7 @@ def _upsert_account_and_kyc(conn: Any, idx: int, acc_id: str, kyc: dict[str, Any
     if kyc.get("is_commercially_registered"):
         reg_type = str(kyc.get("registry_type") or "MERCHANT").upper()
         if reg_type == "GST":
-            reg_type = "MARKETPLACE" if "marketplace" in category else "MERCHANT"
+            reg_type = "MERCHANT"
         if reg_type not in ("MARKETPLACE", "EMPLOYER", "NGO_80G", "CHIT_FUND", "MERCHANT"):
             reg_type = "MERCHANT"
         conn.execute(
@@ -84,11 +91,11 @@ def _upsert_account_and_kyc(conn: Any, idx: int, acc_id: str, kyc: dict[str, Any
 
 
 def upsert_case_into_db(conn: Any, case: dict[str, Any]) -> None:
-    """Insert a synthetic case's customers, accounts, registry rows, transactions, and alert."""
+    """Insert a dev synthetic case's customers, accounts, registry rows, transactions, and alert (never eval splits)."""
+    _assert_not_eval_case(case)
     kyc_map = case.get("kyc_profiles", {})
-    category = str(case.get("category", ""))
     for idx, acc_id in enumerate(_collect_accounts(case)):
-        _upsert_account_and_kyc(conn, idx, acc_id, dict(kyc_map.get(acc_id, {})), category)
+        _upsert_account_and_kyc(conn, idx, acc_id, dict(kyc_map.get(acc_id, {})))
 
     for tx in case.get("transactions", []):
         ch = str(tx.get("channel", "NEFT")).upper()
@@ -126,6 +133,9 @@ def upsert_case_into_db(conn: Any, case: dict[str, Any]) -> None:
 
 def seed_from_directories(conn: Any, dev_dir: Optional[Path] = None) -> int:
     root_dir = Path(__file__).resolve().parents[2]
+    eval_root = (root_dir / "eval").resolve()
+    if dev_dir is not None and (dev_dir.resolve() == eval_root or eval_root in dev_dir.resolve().parents):
+        raise PermissionError(f"Runtime seeder is forbidden from reading inside eval/: {dev_dir}")
     dirs = [dev_dir or (root_dir / "data" / "synthetic" / "dev"), root_dir / "data" / "synthetic" / "showcase"]
     count = 0
     for folder in dirs:
@@ -133,7 +143,7 @@ def seed_from_directories(conn: Any, dev_dir: Optional[Path] = None) -> int:
             continue
         for fp in sorted(folder.glob("*.json")):
             case = loads_json(fp.read_text(encoding="utf-8"))
-            if case.get("is_held_out"):
+            if case.get("is_held_out") or str(case.get("split", "")) in ("held_out", "challenge"):
                 continue
             upsert_case_into_db(conn, case)
             count += 1

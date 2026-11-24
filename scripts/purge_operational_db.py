@@ -22,8 +22,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "auditguard.db"
-HELD_OUT_DIR = ROOT / "eval" / "held_out"
-DEV_DIR = ROOT / "data" / "synthetic" / "dev"
+HELD_OUT_DIRS = (
+    ROOT / "eval" / "held_out",
+    ROOT / "eval" / "golden_v2" / "held_out",
+    ROOT / "eval" / "golden_v2" / "challenge",
+)
+DEV_DIRS = (
+    ROOT / "data" / "synthetic" / "dev",
+    ROOT / "data" / "golden_v2" / "dev",
+)
 
 RUNTIME_TABLES = [
     "worksheets",
@@ -52,9 +59,20 @@ def _collect_ids(directory: Path) -> dict[str, set[str]]:
     return ids
 
 
+def _merge_dirs(dirs: tuple[Path, ...]) -> dict[str, set[str]]:
+    merged: dict[str, set[str]] = {"alert": set(), "case": set(), "tx": set(), "account": set()}
+    for d in dirs:
+        if not d.exists():
+            continue
+        part = _collect_ids(d)
+        for k in merged:
+            merged[k].update(part[k])
+    return merged
+
+
 def held_out_exclusive_ids() -> dict[str, set[str]]:
-    held = _collect_ids(HELD_OUT_DIR)
-    dev = _collect_ids(DEV_DIR) if DEV_DIR.exists() else {k: set() for k in held}
+    held = _merge_dirs(HELD_OUT_DIRS)
+    dev = _merge_dirs(DEV_DIRS)
     # Showcase alerts also legitimately live in the operational DB.
     dev["alert"].update({"ALT-2026-0412", "ALT-2026-0508"})
     return {k: held[k] - dev[k] for k in held}

@@ -1,0 +1,1088 @@
+{
+  "acceptable_dispositions": [
+    "escalate_str"
+  ],
+  "adversarial": [
+    "decoy_memo"
+  ],
+  "alert_id": "ALT-V2-C0316",
+  "annotator_ids": [],
+  "case_id": "CASE-V2-0316",
+  "category": "layering_benign_cover.decoy_memos",
+  "dataset_version": "golden_v2",
+  "description": "Golden v2 layering_benign_cover.decoy_memos (challenge, difficulty=hard)",
+  "difficulty": "hard",
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": true,
+  "family": "layering_benign_cover.decoy_memos",
+  "family_group": "layering_benign_cover",
+  "gold_calc": {
+    "consolidated": "4491106.74",
+    "outflow": "5033744.37"
+  },
+  "gold_disposition": "escalate_str",
+  "gold_evidence_ids": [
+    "KYC-ACC-C0316-RT00",
+    "TXN-C0316-001",
+    "TXN-C0316-002",
+    "TXN-C0316-003",
+    "TXN-C0316-004",
+    "TXN-C0316-005",
+    "TXN-C0316-006",
+    "TXN-C0316-007",
+    "TXN-C0316-008",
+    "TXN-C0316-009",
+    "TXN-C0316-010",
+    "TXN-C0316-011",
+    "TXN-C0316-012"
+  ],
+  "held_out_only_variant": false,
+  "is_held_out": true,
+  "kyc_profiles": {
+    "ACC-C0316-DS01": {
+      "account_id": "ACC-C0316-DS01",
+      "customer_id": "CUST-ACC-C0316-DS01",
+      "declared_annual_income_inr": "1322280.00",
+      "entity_name": "Party-6-DS01",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "FSFMB5881F",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN01": {
+      "account_id": "ACC-C0316-IN01",
+      "customer_id": "CUST-ACC-C0316-IN01",
+      "declared_annual_income_inr": "10628118.00",
+      "entity_name": "Party-6-IN01",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "YPFQH6703C",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN02": {
+      "account_id": "ACC-C0316-IN02",
+      "customer_id": "CUST-ACC-C0316-IN02",
+      "declared_annual_income_inr": "5625574.00",
+      "entity_name": "Party-6-IN02",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "VSXDY2681J",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN03": {
+      "account_id": "ACC-C0316-IN03",
+      "customer_id": "CUST-ACC-C0316-IN03",
+      "declared_annual_income_inr": "2878709.00",
+      "entity_name": "Party-6-IN03",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "TPKER2864U",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN04": {
+      "account_id": "ACC-C0316-IN04",
+      "customer_id": "CUST-ACC-C0316-IN04",
+      "declared_annual_income_inr": "14434112.00",
+      "entity_name": "Party-6-IN04",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "BWGGJ4096B",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN05": {
+      "account_id": "ACC-C0316-IN05",
+      "customer_id": "CUST-ACC-C0316-IN05",
+      "declared_annual_income_inr": "7866626.00",
+      "entity_name": "Party-6-IN05",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "WXTLN9756B",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN06": {
+      "account_id": "ACC-C0316-IN06",
+      "customer_id": "CUST-ACC-C0316-IN06",
+      "declared_annual_income_inr": "12281260.00",
+      "entity_name": "Party-6-IN06",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "FVFWZ9566N",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-IN07": {
+      "account_id": "ACC-C0316-IN07",
+      "customer_id": "CUST-ACC-C0316-IN07",
+      "declared_annual_income_inr": "14522091.00",
+      "entity_name": "Party-6-IN07",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "XAQFJ2740L",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS01": {
+      "account_id": "ACC-C0316-NS01",
+      "customer_id": "CUST-ACC-C0316-NS01",
+      "declared_annual_income_inr": "1065084.00",
+      "entity_name": "Counterparty-6-NS01",
+      "entity_type": "company",
+      "is_commercially_registered": false,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "UPYGN5057P",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS02": {
+      "account_id": "ACC-C0316-NS02",
+      "customer_id": "CUST-ACC-C0316-NS02",
+      "declared_annual_income_inr": "5490792.00",
+      "entity_name": "Counterparty-6-NS02",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "ZXTPU8221C",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS03": {
+      "account_id": "ACC-C0316-NS03",
+      "customer_id": "CUST-ACC-C0316-NS03",
+      "declared_annual_income_inr": "840103.00",
+      "entity_name": "Counterparty-6-NS03",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "VSVCJ8884S",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS04": {
+      "account_id": "ACC-C0316-NS04",
+      "customer_id": "CUST-ACC-C0316-NS04",
+      "declared_annual_income_inr": "1260875.00",
+      "entity_name": "Counterparty-6-NS04",
+      "entity_type": "company",
+      "is_commercially_registered": false,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "UCMPU5191C",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS05": {
+      "account_id": "ACC-C0316-NS05",
+      "customer_id": "CUST-ACC-C0316-NS05",
+      "declared_annual_income_inr": "7188611.00",
+      "entity_name": "Counterparty-6-NS05",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "LRJDV5867H",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS06": {
+      "account_id": "ACC-C0316-NS06",
+      "customer_id": "CUST-ACC-C0316-NS06",
+      "declared_annual_income_inr": "6274144.00",
+      "entity_name": "Counterparty-6-NS06",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "DKLSB1879M",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS07": {
+      "account_id": "ACC-C0316-NS07",
+      "customer_id": "CUST-ACC-C0316-NS07",
+      "declared_annual_income_inr": "5869114.00",
+      "entity_name": "Counterparty-6-NS07",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "UYKFN8270K",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS08": {
+      "account_id": "ACC-C0316-NS08",
+      "customer_id": "CUST-ACC-C0316-NS08",
+      "declared_annual_income_inr": "1024708.00",
+      "entity_name": "Counterparty-6-NS08",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "LPXMU2328H",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS09": {
+      "account_id": "ACC-C0316-NS09",
+      "customer_id": "CUST-ACC-C0316-NS09",
+      "declared_annual_income_inr": "8103301.00",
+      "entity_name": "Counterparty-6-NS09",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "ZCTKT8660N",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS10": {
+      "account_id": "ACC-C0316-NS10",
+      "customer_id": "CUST-ACC-C0316-NS10",
+      "declared_annual_income_inr": "6588756.00",
+      "entity_name": "Counterparty-6-NS10",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "MUAPH8308Q",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS11": {
+      "account_id": "ACC-C0316-NS11",
+      "customer_id": "CUST-ACC-C0316-NS11",
+      "declared_annual_income_inr": "5127980.00",
+      "entity_name": "Counterparty-6-NS11",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "AWLGH4533Q",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-NS12": {
+      "account_id": "ACC-C0316-NS12",
+      "customer_id": "CUST-ACC-C0316-NS12",
+      "declared_annual_income_inr": "6360211.00",
+      "entity_name": "Counterparty-6-NS12",
+      "entity_type": "partnership",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "AUSSM9556S",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-C0316-RT00": {
+      "account_id": "ACC-C0316-RT00",
+      "customer_id": "CUST-ACC-C0316-RT00",
+      "declared_annual_income_inr": "21215219.02",
+      "entity_name": "Entity-C0316-Root",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Customer submitted trade license & vendor invoice binder during branch review.",
+      "pan": "BHASU7770Y",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "high",
+      "sanctions_flag": false
+    }
+  },
+  "network_accounts": [
+    "ACC-C0316-IN01",
+    "ACC-C0316-IN02",
+    "ACC-C0316-IN03",
+    "ACC-C0316-IN04",
+    "ACC-C0316-IN05",
+    "ACC-C0316-IN06",
+    "ACC-C0316-IN07",
+    "ACC-C0316-DS01"
+  ],
+  "registry_records": {
+    "ACC-C0316-DS01": {
+      "account_id": "ACC-C0316-DS01",
+      "entity_name": "Party-6-DS01",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-DS01",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-IN01": {
+      "account_id": "ACC-C0316-IN01",
+      "entity_name": "Party-6-IN01",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-IN01",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-IN02": {
+      "account_id": "ACC-C0316-IN02",
+      "entity_name": "Party-6-IN02",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-IN02",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-IN03": {
+      "account_id": "ACC-C0316-IN03",
+      "entity_name": "Party-6-IN03",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-IN03",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-IN04": {
+      "account_id": "ACC-C0316-IN04",
+      "entity_name": "Party-6-IN04",
+      "evidence_id": "REGISTRY-ACC-C0316-IN04",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-316-IN04",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-C0316-IN05": {
+      "account_id": "ACC-C0316-IN05",
+      "entity_name": "Party-6-IN05",
+      "evidence_id": "REGISTRY-ACC-C0316-IN05",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-316-IN05",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-C0316-IN06": {
+      "account_id": "ACC-C0316-IN06",
+      "entity_name": "Party-6-IN06",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-IN06",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-IN07": {
+      "account_id": "ACC-C0316-IN07",
+      "entity_name": "Party-6-IN07",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-IN07",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-C0316-RT00": {
+      "account_id": "ACC-C0316-RT00",
+      "entity_name": "Entity-C0316-Root",
+      "evidence_id": "REGISTRY-NONE-ACC-C0316-RT00",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    }
+  },
+  "root_account": "ACC-C0316-RT00",
+  "rule_name": "SCATTER_GATHER",
+  "severity_cost": {
+    "false_close": 10,
+    "false_escalate": 1,
+    "false_request_info": 2
+  },
+  "split": "challenge",
+  "total_amount_inr": "5033744.37",
+  "transactions": [
+    {
+      "amount_inr": "21979.83",
+      "channel": "NEFT",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS04",
+      "sender_account": "ACC-C0316-NS11",
+      "timestamp": "2026-08-02T04:37:02Z",
+      "tx_id": "TXN-C0316-026"
+    },
+    {
+      "amount_inr": "79344.60",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-RT00",
+      "sender_account": "ACC-C0316-NS03",
+      "timestamp": "2026-08-03T00:05:17Z",
+      "tx_id": "TXN-C0316-035"
+    },
+    {
+      "amount_inr": "26115.21",
+      "channel": "RTGS",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-NS01",
+      "timestamp": "2026-08-03T01:05:17Z",
+      "tx_id": "TXN-C0316-065"
+    },
+    {
+      "amount_inr": "28133.71",
+      "channel": "NEFT",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-03T14:33:05Z",
+      "tx_id": "TXN-C0316-069"
+    },
+    {
+      "amount_inr": "11870.50",
+      "channel": "UPI",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-IN01",
+      "sender_account": "ACC-C0316-NS08",
+      "timestamp": "2026-08-04T01:14:34Z",
+      "tx_id": "TXN-C0316-030"
+    },
+    {
+      "amount_inr": "78503.22",
+      "channel": "NEFT",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS12",
+      "sender_account": "ACC-C0316-NS02",
+      "timestamp": "2026-08-04T19:41:32Z",
+      "tx_id": "TXN-C0316-032"
+    },
+    {
+      "amount_inr": "15122.74",
+      "channel": "RTGS",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-NS11",
+      "sender_account": "ACC-C0316-NS02",
+      "timestamp": "2026-08-05T05:46:46Z",
+      "tx_id": "TXN-C0316-018"
+    },
+    {
+      "amount_inr": "27102.37",
+      "channel": "NEFT",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS08",
+      "sender_account": "ACC-C0316-NS02",
+      "timestamp": "2026-08-05T12:09:21Z",
+      "tx_id": "TXN-C0316-041"
+    },
+    {
+      "amount_inr": "67996.04",
+      "channel": "RTGS",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-NS01",
+      "timestamp": "2026-08-06T08:10:37Z",
+      "tx_id": "TXN-C0316-034"
+    },
+    {
+      "amount_inr": "33417.52",
+      "channel": "NEFT",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS02",
+      "timestamp": "2026-08-07T07:26:44Z",
+      "tx_id": "TXN-C0316-042"
+    },
+    {
+      "amount_inr": "26426.53",
+      "channel": "IMPS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS01",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-08T04:52:07Z",
+      "tx_id": "TXN-C0316-070"
+    },
+    {
+      "amount_inr": "81781.30",
+      "channel": "UPI",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-RT00",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-09T03:01:15Z",
+      "tx_id": "TXN-C0316-052"
+    },
+    {
+      "amount_inr": "14031.07",
+      "channel": "RTGS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS03",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-09T05:16:36Z",
+      "tx_id": "TXN-C0316-072"
+    },
+    {
+      "amount_inr": "72803.78",
+      "channel": "NEFT",
+      "memo": "Cooperative member pool distribution installment",
+      "receiver_account": "ACC-C0316-NS04",
+      "sender_account": "ACC-C0316-NS03",
+      "timestamp": "2026-08-09T10:32:05Z",
+      "tx_id": "TXN-C0316-063"
+    },
+    {
+      "amount_inr": "21837.42",
+      "channel": "IMPS",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS08",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-09T12:06:21Z",
+      "tx_id": "TXN-C0316-045"
+    },
+    {
+      "amount_inr": "58596.32",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS06",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-09T16:59:30Z",
+      "tx_id": "TXN-C0316-017"
+    },
+    {
+      "amount_inr": "20297.39",
+      "channel": "NEFT",
+      "memo": "Cooperative member pool distribution installment",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-NS10",
+      "timestamp": "2026-08-09T18:11:00Z",
+      "tx_id": "TXN-C0316-037"
+    },
+    {
+      "amount_inr": "81720.88",
+      "channel": "NEFT",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS10",
+      "sender_account": "ACC-C0316-NS05",
+      "timestamp": "2026-08-10T03:32:19Z",
+      "tx_id": "TXN-C0316-048"
+    },
+    {
+      "amount_inr": "60099.82",
+      "channel": "RTGS",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-NS08",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-10T09:40:30Z",
+      "tx_id": "TXN-C0316-020"
+    },
+    {
+      "amount_inr": "16331.49",
+      "channel": "RTGS",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-11T05:30:34Z",
+      "tx_id": "TXN-C0316-019"
+    },
+    {
+      "amount_inr": "4521.99",
+      "channel": "NEFT",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS06",
+      "sender_account": "ACC-C0316-NS12",
+      "timestamp": "2026-08-11T13:26:56Z",
+      "tx_id": "TXN-C0316-050"
+    },
+    {
+      "amount_inr": "30627.48",
+      "channel": "IMPS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS04",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-11T21:37:14Z",
+      "tx_id": "TXN-C0316-059"
+    },
+    {
+      "amount_inr": "77658.85",
+      "channel": "UPI",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS11",
+      "timestamp": "2026-08-12T12:49:08Z",
+      "tx_id": "TXN-C0316-049"
+    },
+    {
+      "amount_inr": "9531.27",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS08",
+      "sender_account": "ACC-C0316-NS12",
+      "timestamp": "2026-08-12T17:29:39Z",
+      "tx_id": "TXN-C0316-047"
+    },
+    {
+      "amount_inr": "17398.45",
+      "channel": "RTGS",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS04",
+      "timestamp": "2026-08-12T19:20:24Z",
+      "tx_id": "TXN-C0316-024"
+    },
+    {
+      "amount_inr": "36468.30",
+      "channel": "RTGS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS06",
+      "sender_account": "ACC-C0316-NS04",
+      "timestamp": "2026-08-14T14:05:48Z",
+      "tx_id": "TXN-C0316-039"
+    },
+    {
+      "amount_inr": "35478.89",
+      "channel": "UPI",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS03",
+      "sender_account": "ACC-C0316-NS08",
+      "timestamp": "2026-08-15T09:08:33Z",
+      "tx_id": "TXN-C0316-023"
+    },
+    {
+      "amount_inr": "83172.07",
+      "channel": "NEFT",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-15T15:01:28Z",
+      "tx_id": "TXN-C0316-040"
+    },
+    {
+      "amount_inr": "62894.21",
+      "channel": "IMPS",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-NS06",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-16T12:57:43Z",
+      "tx_id": "TXN-C0316-031"
+    },
+    {
+      "amount_inr": "39895.37",
+      "channel": "UPI",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-17T12:30:18Z",
+      "tx_id": "TXN-C0316-055"
+    },
+    {
+      "amount_inr": "55329.31",
+      "channel": "UPI",
+      "memo": "Cooperative member pool distribution installment",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-NS10",
+      "timestamp": "2026-08-18T21:11:22Z",
+      "tx_id": "TXN-C0316-036"
+    },
+    {
+      "amount_inr": "29749.08",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS05",
+      "sender_account": "ACC-C0316-NS07",
+      "timestamp": "2026-08-19T02:26:49Z",
+      "tx_id": "TXN-C0316-033"
+    },
+    {
+      "amount_inr": "16706.47",
+      "channel": "IMPS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS06",
+      "sender_account": "ACC-C0316-NS01",
+      "timestamp": "2026-08-19T04:37:35Z",
+      "tx_id": "TXN-C0316-058"
+    },
+    {
+      "amount_inr": "79266.61",
+      "channel": "IMPS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-NS05",
+      "timestamp": "2026-08-19T10:13:38Z",
+      "tx_id": "TXN-C0316-071"
+    },
+    {
+      "amount_inr": "67091.26",
+      "channel": "NEFT",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-NS12",
+      "timestamp": "2026-08-19T13:09:00Z",
+      "tx_id": "TXN-C0316-053"
+    },
+    {
+      "amount_inr": "66536.78",
+      "channel": "UPI",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-20T02:59:15Z",
+      "tx_id": "TXN-C0316-054"
+    },
+    {
+      "amount_inr": "56543.34",
+      "channel": "RTGS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-20T06:31:31Z",
+      "tx_id": "TXN-C0316-062"
+    },
+    {
+      "amount_inr": "34814.17",
+      "channel": "IMPS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS10",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-21T18:18:35Z",
+      "tx_id": "TXN-C0316-061"
+    },
+    {
+      "amount_inr": "4894.95",
+      "channel": "IMPS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS02",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-21T19:32:27Z",
+      "tx_id": "TXN-C0316-066"
+    },
+    {
+      "amount_inr": "710987.31",
+      "channel": "IMPS",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-IN02",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-21T19:38:04Z",
+      "tx_id": "TXN-C0316-003"
+    },
+    {
+      "amount_inr": "54984.59",
+      "channel": "NEFT",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS04",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-21T20:44:13Z",
+      "tx_id": "TXN-C0316-044"
+    },
+    {
+      "amount_inr": "362361.15",
+      "channel": "RTGS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-IN01",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-21T22:17:59Z",
+      "tx_id": "TXN-C0316-001"
+    },
+    {
+      "amount_inr": "937123.23",
+      "channel": "IMPS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-IN04",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-21T22:47:51Z",
+      "tx_id": "TXN-C0316-005"
+    },
+    {
+      "amount_inr": "749873.70",
+      "channel": "NEFT",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-IN07",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-22T00:02:19Z",
+      "tx_id": "TXN-C0316-008"
+    },
+    {
+      "amount_inr": "609867.94",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-IN06",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-22T18:59:50Z",
+      "tx_id": "TXN-C0316-007"
+    },
+    {
+      "amount_inr": "392557.92",
+      "channel": "UPI",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-IN01",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-22T22:38:12Z",
+      "tx_id": "TXN-C0316-002"
+    },
+    {
+      "amount_inr": "71147.56",
+      "channel": "UPI",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS12",
+      "sender_account": "ACC-C0316-NS01",
+      "timestamp": "2026-08-22T23:10:44Z",
+      "tx_id": "TXN-C0316-043"
+    },
+    {
+      "amount_inr": "529772.85",
+      "channel": "IMPS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-IN03",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-23T02:45:07Z",
+      "tx_id": "TXN-C0316-004"
+    },
+    {
+      "amount_inr": "741200.27",
+      "channel": "RTGS",
+      "memo": "Cooperative member pool distribution installment",
+      "receiver_account": "ACC-C0316-IN05",
+      "sender_account": "ACC-C0316-RT00",
+      "timestamp": "2026-08-23T02:55:49Z",
+      "tx_id": "TXN-C0316-006"
+    },
+    {
+      "amount_inr": "42883.28",
+      "channel": "UPI",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-23T14:51:00Z",
+      "tx_id": "TXN-C0316-060"
+    },
+    {
+      "amount_inr": "83612.30",
+      "channel": "RTGS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS11",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-25T17:30:57Z",
+      "tx_id": "TXN-C0316-073"
+    },
+    {
+      "amount_inr": "11033.84",
+      "channel": "NEFT",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS10",
+      "sender_account": "ACC-C0316-NS12",
+      "timestamp": "2026-08-27T13:36:32Z",
+      "tx_id": "TXN-C0316-057"
+    },
+    {
+      "amount_inr": "71429.93",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS01",
+      "sender_account": "ACC-C0316-NS10",
+      "timestamp": "2026-08-29T07:54:09Z",
+      "tx_id": "TXN-C0316-029"
+    },
+    {
+      "amount_inr": "4701.66",
+      "channel": "NEFT",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-29T12:29:06Z",
+      "tx_id": "TXN-C0316-038"
+    },
+    {
+      "amount_inr": "34629.04",
+      "channel": "IMPS",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-NS12",
+      "sender_account": "ACC-C0316-NS06",
+      "timestamp": "2026-08-29T17:41:13Z",
+      "tx_id": "TXN-C0316-056"
+    },
+    {
+      "amount_inr": "71290.39",
+      "channel": "NEFT",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-NS10",
+      "sender_account": "ACC-C0316-NS05",
+      "timestamp": "2026-08-30T02:16:51Z",
+      "tx_id": "TXN-C0316-021"
+    },
+    {
+      "amount_inr": "22965.23",
+      "channel": "RTGS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS03",
+      "sender_account": "ACC-C0316-NS09",
+      "timestamp": "2026-08-30T15:44:27Z",
+      "tx_id": "TXN-C0316-067"
+    },
+    {
+      "amount_inr": "62474.96",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-NS12",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-08-31T02:04:09Z",
+      "tx_id": "TXN-C0316-022"
+    },
+    {
+      "amount_inr": "7622.07",
+      "channel": "UPI",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-NS08",
+      "timestamp": "2026-08-31T03:19:01Z",
+      "tx_id": "TXN-C0316-028"
+    },
+    {
+      "amount_inr": "61131.53",
+      "channel": "UPI",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS07",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-09-01T02:07:25Z",
+      "tx_id": "TXN-C0316-025"
+    },
+    {
+      "amount_inr": "4202.91",
+      "channel": "NEFT",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-NS03",
+      "sender_account": "ACC-C0316-NS01",
+      "timestamp": "2026-09-01T03:19:46Z",
+      "tx_id": "TXN-C0316-046"
+    },
+    {
+      "amount_inr": "59141.46",
+      "channel": "IMPS",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-C0316-NS05",
+      "sender_account": "ACC-C0316-NS02",
+      "timestamp": "2026-09-01T08:51:59Z",
+      "tx_id": "TXN-C0316-064"
+    },
+    {
+      "amount_inr": "36020.47",
+      "channel": "UPI",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-NS01",
+      "sender_account": "ACC-C0316-NS05",
+      "timestamp": "2026-09-01T16:24:38Z",
+      "tx_id": "TXN-C0316-051"
+    },
+    {
+      "amount_inr": "58172.83",
+      "channel": "IMPS",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-NS10",
+      "sender_account": "ACC-C0316-NS12",
+      "timestamp": "2026-09-01T16:37:45Z",
+      "tx_id": "TXN-C0316-016"
+    },
+    {
+      "amount_inr": "661298.88",
+      "channel": "IMPS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN05",
+      "timestamp": "2026-09-02T08:40:13Z",
+      "tx_id": "TXN-C0316-013"
+    },
+    {
+      "amount_inr": "23827.21",
+      "channel": "IMPS",
+      "memo": "Cooperative member pool distribution installment",
+      "receiver_account": "ACC-C0316-RT00",
+      "sender_account": "ACC-C0316-NS11",
+      "timestamp": "2026-09-02T11:59:32Z",
+      "tx_id": "TXN-C0316-068"
+    },
+    {
+      "amount_inr": "17518.91",
+      "channel": "IMPS",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-C0316-NS09",
+      "sender_account": "ACC-C0316-NS08",
+      "timestamp": "2026-09-02T13:00:59Z",
+      "tx_id": "TXN-C0316-027"
+    },
+    {
+      "amount_inr": "673538.79",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN01",
+      "timestamp": "2026-09-02T21:15:47Z",
+      "tx_id": "TXN-C0316-009"
+    },
+    {
+      "amount_inr": "634342.88",
+      "channel": "RTGS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN02",
+      "timestamp": "2026-09-03T03:47:15Z",
+      "tx_id": "TXN-C0316-010"
+    },
+    {
+      "amount_inr": "669037.32",
+      "channel": "IMPS",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN07",
+      "timestamp": "2026-09-03T05:05:43Z",
+      "tx_id": "TXN-C0316-015"
+    },
+    {
+      "amount_inr": "544124.18",
+      "channel": "UPI",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN06",
+      "timestamp": "2026-09-03T09:36:14Z",
+      "tx_id": "TXN-C0316-014"
+    },
+    {
+      "amount_inr": "472663.34",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN03",
+      "timestamp": "2026-09-03T13:29:36Z",
+      "tx_id": "TXN-C0316-011"
+    },
+    {
+      "amount_inr": "836101.35",
+      "channel": "UPI",
+      "memo": "Quarterly dealer rebate & trade settlement credit",
+      "receiver_account": "ACC-C0316-DS01",
+      "sender_account": "ACC-C0316-IN04",
+      "timestamp": "2026-09-03T15:26:31Z",
+      "tx_id": "TXN-C0316-012"
+    }
+  ],
+  "triggered_at": "2026-08-21T15:00:00Z",
+  "variant_seed": 4200316
+}

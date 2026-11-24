@@ -1,0 +1,870 @@
+{
+  "acceptable_dispositions": [
+    "close_benign"
+  ],
+  "adversarial": [],
+  "alert_id": "ALT-V2-D0039",
+  "annotator_ids": [],
+  "case_id": "CASE-V2-0039",
+  "category": "benign_lookalike.chit",
+  "dataset_version": "golden_v2",
+  "description": "Golden v2 benign_lookalike.chit (dev, difficulty=medium)",
+  "difficulty": "medium",
+  "expected_disposition": "close_benign",
+  "expected_replan_required": false,
+  "family": "benign_lookalike.chit",
+  "family_group": "benign_lookalike",
+  "gold_calc": {
+    "consolidated": "0.00",
+    "outflow": "545553.59"
+  },
+  "gold_disposition": "close_benign",
+  "gold_evidence_ids": [
+    "KYC-ACC-D0039-RT00",
+    "TXN-D0039-001",
+    "TXN-D0039-002",
+    "TXN-D0039-003",
+    "TXN-D0039-004",
+    "TXN-D0039-005"
+  ],
+  "held_out_only_variant": false,
+  "is_held_out": false,
+  "kyc_profiles": {
+    "ACC-D0039-DS01": {
+      "account_id": "ACC-D0039-DS01",
+      "customer_id": "CUST-ACC-D0039-DS01",
+      "declared_annual_income_inr": "9480916.00",
+      "entity_name": "Party-9-DS01",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "RHJXM5685L",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-DS02": {
+      "account_id": "ACC-D0039-DS02",
+      "customer_id": "CUST-ACC-D0039-DS02",
+      "declared_annual_income_inr": "6673552.00",
+      "entity_name": "Party-9-DS02",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "EMHYZ6815E",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-DS03": {
+      "account_id": "ACC-D0039-DS03",
+      "customer_id": "CUST-ACC-D0039-DS03",
+      "declared_annual_income_inr": "8551639.00",
+      "entity_name": "Party-9-DS03",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "TSHCB5831A",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-DS04": {
+      "account_id": "ACC-D0039-DS04",
+      "customer_id": "CUST-ACC-D0039-DS04",
+      "declared_annual_income_inr": "5094225.00",
+      "entity_name": "Party-9-DS04",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "FHQDR8513J",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-IN01": {
+      "account_id": "ACC-D0039-IN01",
+      "customer_id": "CUST-ACC-D0039-IN01",
+      "declared_annual_income_inr": "11524413.00",
+      "entity_name": "Party-9-IN01",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "CPBPF4872Q",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-IN02": {
+      "account_id": "ACC-D0039-IN02",
+      "customer_id": "CUST-ACC-D0039-IN02",
+      "declared_annual_income_inr": "13034720.00",
+      "entity_name": "Party-9-IN02",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "MZWKW8393A",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-IN03": {
+      "account_id": "ACC-D0039-IN03",
+      "customer_id": "CUST-ACC-D0039-IN03",
+      "declared_annual_income_inr": "7968444.00",
+      "entity_name": "Party-9-IN03",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "CDMWM7643Q",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-IN04": {
+      "account_id": "ACC-D0039-IN04",
+      "customer_id": "CUST-ACC-D0039-IN04",
+      "declared_annual_income_inr": "10727454.00",
+      "entity_name": "Party-9-IN04",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "ZXDXY4822Z",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS01": {
+      "account_id": "ACC-D0039-NS01",
+      "customer_id": "CUST-ACC-D0039-NS01",
+      "declared_annual_income_inr": "4027153.00",
+      "entity_name": "Counterparty-9-NS01",
+      "entity_type": "partnership",
+      "is_commercially_registered": true,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "LTBKQ2177W",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS02": {
+      "account_id": "ACC-D0039-NS02",
+      "customer_id": "CUST-ACC-D0039-NS02",
+      "declared_annual_income_inr": "610163.00",
+      "entity_name": "Counterparty-9-NS02",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "ZGBMZ1654F",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS03": {
+      "account_id": "ACC-D0039-NS03",
+      "customer_id": "CUST-ACC-D0039-NS03",
+      "declared_annual_income_inr": "7591527.00",
+      "entity_name": "Counterparty-9-NS03",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "PGZJC1074K",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS04": {
+      "account_id": "ACC-D0039-NS04",
+      "customer_id": "CUST-ACC-D0039-NS04",
+      "declared_annual_income_inr": "7574810.00",
+      "entity_name": "Counterparty-9-NS04",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "SNLGU7955C",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS05": {
+      "account_id": "ACC-D0039-NS05",
+      "customer_id": "CUST-ACC-D0039-NS05",
+      "declared_annual_income_inr": "6903509.00",
+      "entity_name": "Counterparty-9-NS05",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "GTXSB1419K",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS06": {
+      "account_id": "ACC-D0039-NS06",
+      "customer_id": "CUST-ACC-D0039-NS06",
+      "declared_annual_income_inr": "1938214.00",
+      "entity_name": "Counterparty-9-NS06",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "CQZLD4037R",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS07": {
+      "account_id": "ACC-D0039-NS07",
+      "customer_id": "CUST-ACC-D0039-NS07",
+      "declared_annual_income_inr": "8187911.00",
+      "entity_name": "Counterparty-9-NS07",
+      "entity_type": "partnership",
+      "is_commercially_registered": false,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "FKSKM8233Q",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS08": {
+      "account_id": "ACC-D0039-NS08",
+      "customer_id": "CUST-ACC-D0039-NS08",
+      "declared_annual_income_inr": "4119580.00",
+      "entity_name": "Counterparty-9-NS08",
+      "entity_type": "company",
+      "is_commercially_registered": false,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "NPAHS1379J",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS09": {
+      "account_id": "ACC-D0039-NS09",
+      "customer_id": "CUST-ACC-D0039-NS09",
+      "declared_annual_income_inr": "4810681.00",
+      "entity_name": "Counterparty-9-NS09",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "JXBPP2518P",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS10": {
+      "account_id": "ACC-D0039-NS10",
+      "customer_id": "CUST-ACC-D0039-NS10",
+      "declared_annual_income_inr": "8492473.00",
+      "entity_name": "Counterparty-9-NS10",
+      "entity_type": "company",
+      "is_commercially_registered": false,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "XMSER4819R",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-NS11": {
+      "account_id": "ACC-D0039-NS11",
+      "customer_id": "CUST-ACC-D0039-NS11",
+      "declared_annual_income_inr": "3438916.00",
+      "entity_name": "Counterparty-9-NS11",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Current account opened with board resolution and utility bill verification.",
+      "pan": "NBYBE1837T",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-D0039-RT00": {
+      "account_id": "ACC-D0039-RT00",
+      "customer_id": "CUST-ACC-D0039-RT00",
+      "declared_annual_income_inr": "3681668.40",
+      "entity_name": "Entity-D0039-Root",
+      "entity_type": "company",
+      "is_commercially_registered": false,
+      "kyc_notes": "Unscheduled bulk disbursements across newly added beneficiaries; invoices requested.",
+      "pan": "TZHGB4593W",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    }
+  },
+  "network_accounts": [
+    "ACC-D0039-IN01",
+    "ACC-D0039-IN02",
+    "ACC-D0039-IN03",
+    "ACC-D0039-IN04",
+    "ACC-D0039-DS01",
+    "ACC-D0039-DS02",
+    "ACC-D0039-DS03",
+    "ACC-D0039-DS04"
+  ],
+  "registry_records": {
+    "ACC-D0039-DS01": {
+      "account_id": "ACC-D0039-DS01",
+      "entity_name": "Party-9-DS01",
+      "evidence_id": "REGISTRY-ACC-D0039-DS01",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-DS01",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-DS02": {
+      "account_id": "ACC-D0039-DS02",
+      "entity_name": "Party-9-DS02",
+      "evidence_id": "REGISTRY-ACC-D0039-DS02",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-DS02",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-DS03": {
+      "account_id": "ACC-D0039-DS03",
+      "entity_name": "Party-9-DS03",
+      "evidence_id": "REGISTRY-ACC-D0039-DS03",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-DS03",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-DS04": {
+      "account_id": "ACC-D0039-DS04",
+      "entity_name": "Party-9-DS04",
+      "evidence_id": "REGISTRY-NONE-ACC-D0039-DS04",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-D0039-IN01": {
+      "account_id": "ACC-D0039-IN01",
+      "entity_name": "Party-9-IN01",
+      "evidence_id": "REGISTRY-ACC-D0039-IN01",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-IN01",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-IN02": {
+      "account_id": "ACC-D0039-IN02",
+      "entity_name": "Party-9-IN02",
+      "evidence_id": "REGISTRY-NONE-ACC-D0039-IN02",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    },
+    "ACC-D0039-IN03": {
+      "account_id": "ACC-D0039-IN03",
+      "entity_name": "Party-9-IN03",
+      "evidence_id": "REGISTRY-ACC-D0039-IN03",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-IN03",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-IN04": {
+      "account_id": "ACC-D0039-IN04",
+      "entity_name": "Party-9-IN04",
+      "evidence_id": "REGISTRY-ACC-D0039-IN04",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-039-IN04",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-D0039-RT00": {
+      "account_id": "ACC-D0039-RT00",
+      "entity_name": "Entity-D0039-Root",
+      "evidence_id": "REGISTRY-NONE-ACC-D0039-RT00",
+      "is_registered": false,
+      "registry_status": "NOT_FOUND"
+    }
+  },
+  "root_account": "ACC-D0039-RT00",
+  "rule_name": "SCATTER_GATHER",
+  "severity_cost": {
+    "false_close": 10,
+    "false_escalate": 1,
+    "false_request_info": 2
+  },
+  "split": "dev",
+  "total_amount_inr": "545553.59",
+  "transactions": [
+    {
+      "amount_inr": "23700.19",
+      "channel": "UPI",
+      "memo": "dukaan kiraya aur maal bhugtan",
+      "receiver_account": "ACC-D0039-NS06",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-03T19:59:13Z",
+      "tx_id": "TXN-D0039-007"
+    },
+    {
+      "amount_inr": "20421.47",
+      "channel": "RTGS",
+      "memo": "mandi bikri jama parchi",
+      "receiver_account": "ACC-D0039-NS06",
+      "sender_account": "ACC-D0039-NS03",
+      "timestamp": "2026-02-05T01:55:49Z",
+      "tx_id": "TXN-D0039-040"
+    },
+    {
+      "amount_inr": "31955.27",
+      "channel": "RTGS",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS06",
+      "sender_account": "ACC-D0039-NS04",
+      "timestamp": "2026-02-07T12:40:18Z",
+      "tx_id": "TXN-D0039-033"
+    },
+    {
+      "amount_inr": "22556.50",
+      "channel": "RTGS",
+      "memo": "mandi bikri jama parchi",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-IN01",
+      "timestamp": "2026-02-07T13:33:30Z",
+      "tx_id": "TXN-D0039-031"
+    },
+    {
+      "amount_inr": "40246.34",
+      "channel": "RTGS",
+      "memo": "dukaan kiraya aur maal bhugtan",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-08T01:28:21Z",
+      "tx_id": "TXN-D0039-034"
+    },
+    {
+      "amount_inr": "20480.25",
+      "channel": "UPI",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS06",
+      "timestamp": "2026-02-09T18:05:53Z",
+      "tx_id": "TXN-D0039-028"
+    },
+    {
+      "amount_inr": "49516.23",
+      "channel": "IMPS",
+      "memo": "vyapari khata adjustment",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS07",
+      "timestamp": "2026-02-10T13:33:24Z",
+      "tx_id": "TXN-D0039-050"
+    },
+    {
+      "amount_inr": "25885.62",
+      "channel": "UPI",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-10T13:50:32Z",
+      "tx_id": "TXN-D0039-010"
+    },
+    {
+      "amount_inr": "80860.48",
+      "channel": "RTGS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-12T18:45:08Z",
+      "tx_id": "TXN-D0039-014"
+    },
+    {
+      "amount_inr": "77025.01",
+      "channel": "RTGS",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-NS06",
+      "sender_account": "ACC-D0039-IN01",
+      "timestamp": "2026-02-13T10:00:38Z",
+      "tx_id": "TXN-D0039-029"
+    },
+    {
+      "amount_inr": "37937.22",
+      "channel": "NEFT",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-NS03",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-02-14T22:37:26Z",
+      "tx_id": "TXN-D0039-039"
+    },
+    {
+      "amount_inr": "80796.99",
+      "channel": "RTGS",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS04",
+      "timestamp": "2026-02-14T23:23:00Z",
+      "tx_id": "TXN-D0039-045"
+    },
+    {
+      "amount_inr": "15863.13",
+      "channel": "NEFT",
+      "memo": "mandi bikri jama parchi",
+      "receiver_account": "ACC-D0039-NS10",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-02-16T09:15:54Z",
+      "tx_id": "TXN-D0039-022"
+    },
+    {
+      "amount_inr": "30218.26",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS11",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-16T15:04:49Z",
+      "tx_id": "TXN-D0039-017"
+    },
+    {
+      "amount_inr": "82082.46",
+      "channel": "NEFT",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS07",
+      "sender_account": "ACC-D0039-NS05",
+      "timestamp": "2026-02-18T20:17:41Z",
+      "tx_id": "TXN-D0039-027"
+    },
+    {
+      "amount_inr": "62443.69",
+      "channel": "RTGS",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS08",
+      "sender_account": "ACC-D0039-NS06",
+      "timestamp": "2026-02-18T20:50:42Z",
+      "tx_id": "TXN-D0039-047"
+    },
+    {
+      "amount_inr": "38027.58",
+      "channel": "IMPS",
+      "memo": "mandi bikri jama parchi",
+      "receiver_account": "ACC-D0039-NS03",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-02-19T03:16:39Z",
+      "tx_id": "TXN-D0039-009"
+    },
+    {
+      "amount_inr": "29722.44",
+      "channel": "RTGS",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS01",
+      "sender_account": "ACC-D0039-NS06",
+      "timestamp": "2026-02-19T06:30:46Z",
+      "tx_id": "TXN-D0039-016"
+    },
+    {
+      "amount_inr": "70947.19",
+      "channel": "IMPS",
+      "memo": "dukaan kiraya aur maal bhugtan",
+      "receiver_account": "ACC-D0039-NS11",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-20T17:59:25Z",
+      "tx_id": "TXN-D0039-023"
+    },
+    {
+      "amount_inr": "71093.87",
+      "channel": "RTGS",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS04",
+      "sender_account": "ACC-D0039-NS02",
+      "timestamp": "2026-02-21T03:03:28Z",
+      "tx_id": "TXN-D0039-049"
+    },
+    {
+      "amount_inr": "35408.15",
+      "channel": "RTGS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS04",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-21T09:50:38Z",
+      "tx_id": "TXN-D0039-041"
+    },
+    {
+      "amount_inr": "60792.74",
+      "channel": "UPI",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS07",
+      "sender_account": "ACC-D0039-NS05",
+      "timestamp": "2026-02-21T15:57:06Z",
+      "tx_id": "TXN-D0039-025"
+    },
+    {
+      "amount_inr": "14164.29",
+      "channel": "RTGS",
+      "memo": "vyapari khata adjustment",
+      "receiver_account": "ACC-D0039-NS03",
+      "sender_account": "ACC-D0039-IN01",
+      "timestamp": "2026-02-22T06:28:20Z",
+      "tx_id": "TXN-D0039-032"
+    },
+    {
+      "amount_inr": "22931.04",
+      "channel": "IMPS",
+      "memo": "shaadi caterer advance token",
+      "receiver_account": "ACC-D0039-NS01",
+      "sender_account": "ACC-D0039-NS04",
+      "timestamp": "2026-02-22T08:46:51Z",
+      "tx_id": "TXN-D0039-044"
+    },
+    {
+      "amount_inr": "55977.25",
+      "channel": "IMPS",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-NS01",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-22T11:53:47Z",
+      "tx_id": "TXN-D0039-042"
+    },
+    {
+      "amount_inr": "205991.26",
+      "channel": "NEFT",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-IN03",
+      "timestamp": "2026-02-22T17:50:46Z",
+      "tx_id": "TXN-D0039-003"
+    },
+    {
+      "amount_inr": "15277.82",
+      "channel": "IMPS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS03",
+      "timestamp": "2026-02-23T05:14:14Z",
+      "tx_id": "TXN-D0039-030"
+    },
+    {
+      "amount_inr": "82899.08",
+      "channel": "RTGS",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS08",
+      "sender_account": "ACC-D0039-NS03",
+      "timestamp": "2026-02-23T10:26:18Z",
+      "tx_id": "TXN-D0039-012"
+    },
+    {
+      "amount_inr": "93046.18",
+      "channel": "IMPS",
+      "memo": "shaadi caterer advance token",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-IN02",
+      "timestamp": "2026-02-24T04:46:14Z",
+      "tx_id": "TXN-D0039-002"
+    },
+    {
+      "amount_inr": "46104.08",
+      "channel": "RTGS",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS01",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-24T06:33:47Z",
+      "tx_id": "TXN-D0039-015"
+    },
+    {
+      "amount_inr": "134606.02",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-IN01",
+      "timestamp": "2026-02-25T01:18:46Z",
+      "tx_id": "TXN-D0039-001"
+    },
+    {
+      "amount_inr": "43967.11",
+      "channel": "IMPS",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-25T03:03:49Z",
+      "tx_id": "TXN-D0039-008"
+    },
+    {
+      "amount_inr": "111910.13",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-IN04",
+      "timestamp": "2026-02-25T07:14:16Z",
+      "tx_id": "TXN-D0039-004"
+    },
+    {
+      "amount_inr": "26449.79",
+      "channel": "UPI",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-RT00",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-02-25T17:27:08Z",
+      "tx_id": "TXN-D0039-037"
+    },
+    {
+      "amount_inr": "25593.77",
+      "channel": "RTGS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS01",
+      "timestamp": "2026-02-26T13:13:02Z",
+      "tx_id": "TXN-D0039-048"
+    },
+    {
+      "amount_inr": "8036.67",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-IN01",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-02-26T19:50:46Z",
+      "tx_id": "TXN-D0039-035"
+    },
+    {
+      "amount_inr": "34026.76",
+      "channel": "RTGS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS05",
+      "sender_account": "ACC-D0039-NS03",
+      "timestamp": "2026-02-27T00:36:48Z",
+      "tx_id": "TXN-D0039-024"
+    },
+    {
+      "amount_inr": "509274.28",
+      "channel": "UPI",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-DS01",
+      "sender_account": "ACC-D0039-RT00",
+      "timestamp": "2026-02-27T15:28:44Z",
+      "tx_id": "TXN-D0039-005"
+    },
+    {
+      "amount_inr": "71931.41",
+      "channel": "UPI",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-IN01",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-02-27T19:33:24Z",
+      "tx_id": "TXN-D0039-026"
+    },
+    {
+      "amount_inr": "29539.61",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-02-28T00:26:08Z",
+      "tx_id": "TXN-D0039-011"
+    },
+    {
+      "amount_inr": "73741.58",
+      "channel": "UPI",
+      "memo": "godown bhaada aur transport kharcha",
+      "receiver_account": "ACC-D0039-NS11",
+      "sender_account": "ACC-D0039-NS01",
+      "timestamp": "2026-02-28T21:25:20Z",
+      "tx_id": "TXN-D0039-018"
+    },
+    {
+      "amount_inr": "50239.33",
+      "channel": "NEFT",
+      "memo": "shaadi caterer advance token",
+      "receiver_account": "ACC-D0039-NS02",
+      "sender_account": "ACC-D0039-NS11",
+      "timestamp": "2026-03-01T11:14:46Z",
+      "tx_id": "TXN-D0039-021"
+    },
+    {
+      "amount_inr": "57372.06",
+      "channel": "NEFT",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-03-03T13:25:56Z",
+      "tx_id": "TXN-D0039-020"
+    },
+    {
+      "amount_inr": "81643.75",
+      "channel": "IMPS",
+      "memo": "mandi bikri jama parchi",
+      "receiver_account": "ACC-D0039-IN01",
+      "sender_account": "ACC-D0039-NS09",
+      "timestamp": "2026-03-04T01:50:00Z",
+      "tx_id": "TXN-D0039-006"
+    },
+    {
+      "amount_inr": "60915.10",
+      "channel": "IMPS",
+      "memo": "shaadi caterer advance token",
+      "receiver_account": "ACC-D0039-NS05",
+      "sender_account": "ACC-D0039-NS01",
+      "timestamp": "2026-03-04T07:14:16Z",
+      "tx_id": "TXN-D0039-019"
+    },
+    {
+      "amount_inr": "44567.08",
+      "channel": "NEFT",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS05",
+      "sender_account": "ACC-D0039-NS07",
+      "timestamp": "2026-03-04T18:08:46Z",
+      "tx_id": "TXN-D0039-043"
+    },
+    {
+      "amount_inr": "41082.66",
+      "channel": "UPI",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS09",
+      "sender_account": "ACC-D0039-NS08",
+      "timestamp": "2026-03-05T16:06:21Z",
+      "tx_id": "TXN-D0039-038"
+    },
+    {
+      "amount_inr": "26214.49",
+      "channel": "RTGS",
+      "memo": "karigar mazdoori mahina trf",
+      "receiver_account": "ACC-D0039-NS04",
+      "sender_account": "ACC-D0039-NS05",
+      "timestamp": "2026-03-05T16:59:54Z",
+      "tx_id": "TXN-D0039-036"
+    },
+    {
+      "amount_inr": "11517.17",
+      "channel": "UPI",
+      "memo": "kist jama samiti khata",
+      "receiver_account": "ACC-D0039-NS11",
+      "sender_account": "ACC-D0039-NS06",
+      "timestamp": "2026-03-06T00:17:31Z",
+      "tx_id": "TXN-D0039-046"
+    },
+    {
+      "amount_inr": "9580.74",
+      "channel": "IMPS",
+      "memo": "party hisaab octmaal advance",
+      "receiver_account": "ACC-D0039-NS11",
+      "sender_account": "ACC-D0039-NS10",
+      "timestamp": "2026-03-06T08:52:49Z",
+      "tx_id": "TXN-D0039-013"
+    }
+  ],
+  "triggered_at": "2026-02-22T11:00:00Z",
+  "variant_seed": 4200039
+}

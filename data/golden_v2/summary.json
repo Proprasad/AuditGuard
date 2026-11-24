@@ -1,0 +1,38 @@
+{
+  "counts": {
+    "challenge": 30,
+    "dev": 60,
+    "held_out": 120,
+    "total": 210
+  },
+  "dataset_version": "golden_v2",
+  "directories": {
+    "challenge": "eval/golden_v2/challenge",
+    "dev": "data/golden_v2/dev",
+    "held_out": "eval/golden_v2/held_out"
+  },
+  "human_adjudication_status": "pending_human_annotations",
+  "human_annotation_dev_cases": 40,
+  "output_sha256": "a394d0bbc7266ace97d696915e1d445aed6eaea9669e42698e8ce88e7826d7af",
+  "seed": 42,
+  "single_kyc_purities": {
+    "dev": {
+      "entity_type": 0.5167,
+      "income_band": 0.5,
+      "is_commercially_registered": 0.45,
+      "risk_category": 0.4833
+    },
+    "held_out": {
+      "entity_type": 0.4917,
+      "income_band": 0.4333,
+      "is_commercially_registered": 0.4333,
+      "risk_category": 0.45
+    },
+    "overall": {
+      "entity_type": 0.5,
+      "income_band": 0.4381,
+      "is_commercially_registered": 0.4381,
+      "risk_category": 0.4381
+    }
+  }
+}

@@ -23,7 +23,9 @@ import yaml
 
 from eval.phase0_metrics import (
     aggregate_repeat_metrics,
+    cited_evidence_ids,
     compute_case_quality,
+    gold_evidence_ids,
     validate_requested_metrics,
 )
 from eval.red_team_runner import (
@@ -83,19 +85,61 @@ def assert_playbook_frozen_for_eval() -> None:
         )
 
 
+SPLIT_DIRS: dict[str, tuple[Path, ...]] = {
+    "dev": (Path("data/synthetic/dev"),),
+    "held_out": (Path("eval/held_out"),),
+    "golden_v1_regression": (Path("data/synthetic/dev"), Path("eval/held_out")),
+    "v2_dev": (Path("data/golden_v2/dev"),),
+    "v2_held_out": (Path("eval/golden_v2/held_out"),),
+    "v2_challenge": (Path("eval/golden_v2/challenge"),),
+}
+
+
 def load_cases(split: str = "dev") -> list[dict[str, Any]]:
-    """Load cases from `data/synthetic/dev` or isolated `eval/held_out`."""
-    case_dir = Path("eval/held_out") if split == "held_out" else Path("data/synthetic/dev")
-    return [loads_json(f.read_text(encoding="utf-8")) for f in sorted(case_dir.glob("*.json"))]
+    """Load cases for v1 (`dev`, `held_out`, `golden_v1_regression`) or v2 (`v2_dev`, `v2_held_out`, `v2_challenge`)."""
+    if split not in SPLIT_DIRS:
+        raise ValueError(f"Unknown split {split!r}; expected one of {sorted(SPLIT_DIRS)}")
+    loaded: list[dict[str, Any]] = []
+    for folder in SPLIT_DIRS[split]:
+        loaded.extend(loads_json(f.read_text(encoding="utf-8")) for f in sorted(folder.glob("*.json")))
+    return loaded
 
 
-def score_case(result: dict[str, Any], expected: str, replan_expected: bool = False) -> dict[str, Any]:
+def extract_gold_record(raw_case: dict[str, Any]) -> dict[str, Any]:
+    """Extract evaluation-only gold labels separately before redacting agent-visible inputs."""
+    gold_disp = str(raw_case.get("gold_disposition") or raw_case["expected_disposition"])
+    acceptable = list(raw_case.get("acceptable_dispositions") or [gold_disp])
+    return {
+        "case_id": str(raw_case["case_id"]),
+        "expected_disposition": gold_disp,
+        "gold_disposition": gold_disp,
+        "acceptable_dispositions": acceptable,
+        "expected_replan_required": bool(raw_case.get("expected_replan_required", False)),
+        "gold_evidence_ids": list(raw_case.get("gold_evidence_ids") or []),
+        "severity_cost": dict(
+            raw_case.get("severity_cost") or {"false_close": 10, "false_escalate": 1, "false_request_info": 2}
+        ),
+        "family": str(raw_case.get("family") or raw_case.get("category", "")),
+        "difficulty": str(raw_case.get("difficulty", "medium")),
+        "root_account": str(raw_case["root_account"]),
+        "transactions": list(raw_case.get("transactions") or []),
+    }
+
+
+def score_case(
+    result: dict[str, Any],
+    expected: str,
+    replan_expected: bool = False,
+    acceptable_dispositions: Optional[list[str]] = None,
+) -> dict[str, Any]:
     actual = result.get("disposition", "unknown")
-    correct = actual == expected
+    allowed = set(acceptable_dispositions) if acceptable_dispositions else {expected}
+    correct = actual in allowed
     replan_recovered = (not replan_expected) or (correct and result.get("replan_count", 0) >= 1)
     return {
         "correct": correct,
         "expected": expected,
+        "acceptable_dispositions": sorted(allowed),
         "actual": actual,
         "replan_recovered": replan_recovered,
         "confidence": result.get("confidence", 0.0),
@@ -134,6 +178,7 @@ async def run_case(
     reflexion_enabled: bool = False,
     memory_enabled: bool = True,
     budget_overrides: Optional[dict[str, Any]] = None,
+    persist_to_eval_db: bool = True,
 ) -> dict[str, Any]:
     """Run a single case using scoped evaluation overlay (preserving strict held-out DB isolation)."""
     assert_isolated_eval_db()
@@ -143,18 +188,30 @@ async def run_case(
     from src.db.seeder import upsert_case_into_db
     from src.models import Alert, RiskLevel
 
+    is_eval_split = bool(case.get("is_held_out")) or str(case.get("split", "")) in ("held_out", "challenge")
+    gold_snapshot = (
+        extract_gold_record(case)
+        if ("expected_disposition" in case or "gold_disposition" in case)
+        else {
+            "case_id": str(case["case_id"]),
+            "root_account": str(case["root_account"]),
+            "transactions": list(case.get("transactions") or []),
+        }
+    )
+    redacted = bank_records.redact_case_for_agent(case)
+
     alert = Alert(
-        alert_id=case["alert_id"],
-        rule_name="SCATTER_GATHER",
-        root_account=case["root_account"],
-        network_accounts=case["network_accounts"],
-        total_amount_inr=case["total_amount_inr"],
+        alert_id=redacted["alert_id"],
+        rule_name=str(redacted.get("rule_name", "SCATTER_GATHER")),
+        root_account=redacted["root_account"],
+        network_accounts=redacted["network_accounts"],
+        total_amount_inr=redacted["total_amount_inr"],
         risk_level=RiskLevel.HIGH,
     )
-    if not case.get("is_held_out"):
+    if persist_to_eval_db and not is_eval_split:
         with get_db() as conn:
-            upsert_case_into_db(conn, case)
-    token = bank_records.set_eval_case_overlay(case)
+            upsert_case_into_db(conn, redacted)
+    token = bank_records.set_eval_case_overlay(redacted)
     start = time.perf_counter()
     try:
         if mode == "c0_fixed":
@@ -197,12 +254,13 @@ async def run_case(
             vr_ok = vr.passed
             discrepancies = [d.model_dump() for d in vr.discrepancies]
 
-        quality = compute_case_quality(case, ws_dict, discrepancies)
+        quality = compute_case_quality(gold_snapshot, ws_dict, discrepancies)
         return {
-            "case_id": case["case_id"],
+            "case_id": str(case["case_id"]),
             "disposition": ws.recommended_disposition.value if ws else "unknown",
             "confidence": float(ws.confidence_score) if ws else 0.0,
             "citations": ws.regulatory_citations if ws else [],
+            "cited_evidence_ids": sorted(cited_evidence_ids(ws_dict)),
             "replan_count": final_state.replan_count,
             "tool_calls": final_state.tool_calls_used,
             "tool_errors": final_state.tool_error_count,
@@ -367,28 +425,41 @@ def run(
     requested_metrics = list(exp_config.get("metrics", []))
     validate_requested_metrics(requested_metrics, is_red_team=False)
 
-    if eff_split == "held_out":
+    if eff_split in ("held_out", "v2_held_out", "v2_challenge"):
         assert_playbook_frozen_for_eval()
 
-    cases = load_cases(eff_split)
+    raw_cases = load_cases(eff_split)
     if limit_val > 0:
-        cases = cases[:limit_val]
+        raw_cases = raw_cases[:limit_val]
+    gold_records = [extract_gold_record(c) for c in raw_cases]
+    redacted_cases = [
+        {"case_id": c["case_id"], **bank_records.redact_case_for_agent(c)} for c in raw_cases
+    ]
 
-    typer.echo(f"Running {cfg_name} on {len(cases)} {eff_split} cases (repeats={eff_repeats})...")
+    typer.echo(f"Running {cfg_name} on {len(redacted_cases)} {eff_split} cases (repeats={eff_repeats})...")
     all_results: dict[str, Any] = {}
 
+    persist_eval = eff_split in ("dev", "v2_dev")
     for label, kwargs in _build_specs(cfg_name, exp_config):
         typer.echo(f"\n--- Configuration: {label} ---")
         repeat_runs: list[list[dict[str, Any]]] = []
         for _rep in range(max(1, eff_repeats)):
             mode_results = []
-            for case in cases:
-                res = asyncio.run(run_case(case, **kwargs))
-                sc = score_case(res, case["expected_disposition"], case.get("expected_replan_required", False))
+            for redacted_c, gold in zip(redacted_cases, gold_records, strict=True):
+                res = asyncio.run(run_case(redacted_c, persist_to_eval_db=persist_eval, **kwargs))
+                g_ids = gold_evidence_ids(gold)
+                c_ids = set(res.get("cited_evidence_ids", []))
+                res["evidence_recall"] = len(c_ids & g_ids) / len(g_ids) if g_ids else 1.0
+                sc = score_case(
+                    res,
+                    gold["gold_disposition"],
+                    gold["expected_replan_required"],
+                    gold["acceptable_dispositions"],
+                )
                 mode_results.append({**res, **sc})
             repeat_runs.append(mode_results)
 
-        agg = aggregate_repeat_metrics(repeat_runs, cases)
+        agg = aggregate_repeat_metrics(repeat_runs, gold_records)
         for m_name in requested_metrics:
             if m_name not in agg:
                 raise NotImplementedError(f"Metric {m_name!r} missing from aggregated output")

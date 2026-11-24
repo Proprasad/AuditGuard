@@ -12,6 +12,7 @@ verify:
 
 data:
 	$(PYTHON) -m data.synthetic_generator
+	$(PYTHON) -m data.generator_v2.build --seed 42
 
 eval-e1:
 	$(PYTHON) -m eval.run_eval --config E1

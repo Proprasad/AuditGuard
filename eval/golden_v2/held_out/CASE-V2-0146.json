@@ -1,0 +1,694 @@
+{
+  "acceptable_dispositions": [
+    "escalate_str"
+  ],
+  "adversarial": [
+    "forged_registry",
+    "all_registered_intermediaries",
+    "decoy_memo"
+  ],
+  "alert_id": "ALT-V2-H0146",
+  "annotator_ids": [],
+  "case_id": "CASE-V2-0146",
+  "category": "layering_benign_cover.all_registered_merchants",
+  "dataset_version": "golden_v2",
+  "description": "Golden v2 layering_benign_cover.all_registered_merchants (held_out, difficulty=hard)",
+  "difficulty": "hard",
+  "expected_disposition": "escalate_str",
+  "expected_replan_required": true,
+  "family": "layering_benign_cover.all_registered_merchants",
+  "family_group": "layering_benign_cover",
+  "gold_calc": {
+    "consolidated": "12001533.94",
+    "outflow": "13466712.24"
+  },
+  "gold_disposition": "escalate_str",
+  "gold_evidence_ids": [
+    "KYC-ACC-H0146-RT00",
+    "TXN-H0146-001",
+    "TXN-H0146-002",
+    "TXN-H0146-003",
+    "TXN-H0146-004",
+    "TXN-H0146-005",
+    "TXN-H0146-006",
+    "TXN-H0146-007",
+    "TXN-H0146-008",
+    "TXN-H0146-009",
+    "TXN-H0146-010",
+    "REGISTRY-ACC-H0146-RT00"
+  ],
+  "held_out_only_variant": true,
+  "is_held_out": true,
+  "kyc_profiles": {
+    "ACC-H0146-DS01": {
+      "account_id": "ACC-H0146-DS01",
+      "customer_id": "CUST-ACC-H0146-DS01",
+      "declared_annual_income_inr": "4380125.00",
+      "entity_name": "Party-6-DS01",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "DFWZX7916G",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-DS02": {
+      "account_id": "ACC-H0146-DS02",
+      "customer_id": "CUST-ACC-H0146-DS02",
+      "declared_annual_income_inr": "8777550.00",
+      "entity_name": "Party-6-DS02",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "EUZXR2003S",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-IN01": {
+      "account_id": "ACC-H0146-IN01",
+      "customer_id": "CUST-ACC-H0146-IN01",
+      "declared_annual_income_inr": "16170560.00",
+      "entity_name": "Party-6-IN01",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "LKEDN1875X",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-IN02": {
+      "account_id": "ACC-H0146-IN02",
+      "customer_id": "CUST-ACC-H0146-IN02",
+      "declared_annual_income_inr": "3955421.00",
+      "entity_name": "Party-6-IN02",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "XHUVS5767B",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-IN03": {
+      "account_id": "ACC-H0146-IN03",
+      "customer_id": "CUST-ACC-H0146-IN03",
+      "declared_annual_income_inr": "8611080.00",
+      "entity_name": "Party-6-IN03",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "PCAJM2276D",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-IN04": {
+      "account_id": "ACC-H0146-IN04",
+      "customer_id": "CUST-ACC-H0146-IN04",
+      "declared_annual_income_inr": "14813885.00",
+      "entity_name": "Party-6-IN04",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "XHBTQ4289K",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "high",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-IN05": {
+      "account_id": "ACC-H0146-IN05",
+      "customer_id": "CUST-ACC-H0146-IN05",
+      "declared_annual_income_inr": "10522183.00",
+      "entity_name": "Party-6-IN05",
+      "entity_type": "company",
+      "is_commercially_registered": true,
+      "kyc_notes": "Standard video-KYC completed; PAN & address proof verified against CKYCR.",
+      "pan": "LYVRK6457K",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-NS01": {
+      "account_id": "ACC-H0146-NS01",
+      "customer_id": "CUST-ACC-H0146-NS01",
+      "declared_annual_income_inr": "5208637.00",
+      "entity_name": "Counterparty-6-NS01",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "CSTFM4420S",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-NS02": {
+      "account_id": "ACC-H0146-NS02",
+      "customer_id": "CUST-ACC-H0146-NS02",
+      "declared_annual_income_inr": "5204856.00",
+      "entity_name": "Counterparty-6-NS02",
+      "entity_type": "partnership",
+      "is_commercially_registered": true,
+      "kyc_notes": "Savings/business account; customer declared regional wholesale & service receipts.",
+      "pan": "VGREL8057F",
+      "pep_flag": false,
+      "registry_type": "MERCHANT",
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-NS03": {
+      "account_id": "ACC-H0146-NS03",
+      "customer_id": "CUST-ACC-H0146-NS03",
+      "declared_annual_income_inr": "5319824.00",
+      "entity_name": "Counterparty-6-NS03",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Periodic KYC refresh logged at home branch; turnover declaration on file.",
+      "pan": "RRDZH4499R",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "low",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-NS04": {
+      "account_id": "ACC-H0146-NS04",
+      "customer_id": "CUST-ACC-H0146-NS04",
+      "declared_annual_income_inr": "960453.00",
+      "entity_name": "Counterparty-6-NS04",
+      "entity_type": "individual",
+      "is_commercially_registered": false,
+      "kyc_notes": "Operating account with multi-city NEFT/IMPS activity; GST certificate uploaded at onboarding.",
+      "pan": "LBZMN7852Z",
+      "pep_flag": false,
+      "registry_type": null,
+      "risk_category": "medium",
+      "sanctions_flag": false
+    },
+    "ACC-H0146-RT00": {
+      "account_id": "ACC-H0146-RT00",
+      "customer_id": "CUST-ACC-H0146-RT00",
+      "declared_annual_income_inr": "9243551.28",
+      "entity_name": "Entity-H0146-Root",
+      "entity_type": "individual",
+      "is_commercially_registered": true,
+      "kyc_notes": "Declared regional distribution & staffing disbursement operations across partner accounts.",
+      "pan": "GCUJT5022B",
+      "pep_flag": false,
+      "registry_type": "CHIT_FUND",
+      "risk_category": "low",
+      "sanctions_flag": false
+    }
+  },
+  "network_accounts": [
+    "ACC-H0146-IN01",
+    "ACC-H0146-IN02",
+    "ACC-H0146-IN03",
+    "ACC-H0146-IN04",
+    "ACC-H0146-IN05",
+    "ACC-H0146-DS01",
+    "ACC-H0146-DS02"
+  ],
+  "registry_records": {
+    "ACC-H0146-DS01": {
+      "account_id": "ACC-H0146-DS01",
+      "entity_name": "Party-6-DS01",
+      "evidence_id": "REGISTRY-ACC-H0146-DS01",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-DS01",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-DS02": {
+      "account_id": "ACC-H0146-DS02",
+      "entity_name": "Party-6-DS02",
+      "evidence_id": "REGISTRY-ACC-H0146-DS02",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-DS02",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-IN01": {
+      "account_id": "ACC-H0146-IN01",
+      "entity_name": "Party-6-IN01",
+      "evidence_id": "REGISTRY-ACC-H0146-IN01",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-IN01",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-IN02": {
+      "account_id": "ACC-H0146-IN02",
+      "entity_name": "Party-6-IN02",
+      "evidence_id": "REGISTRY-ACC-H0146-IN02",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-IN02",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-IN03": {
+      "account_id": "ACC-H0146-IN03",
+      "entity_name": "Party-6-IN03",
+      "evidence_id": "REGISTRY-ACC-H0146-IN03",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-IN03",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-IN04": {
+      "account_id": "ACC-H0146-IN04",
+      "entity_name": "Party-6-IN04",
+      "evidence_id": "REGISTRY-ACC-H0146-IN04",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-IN04",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-IN05": {
+      "account_id": "ACC-H0146-IN05",
+      "entity_name": "Party-6-IN05",
+      "evidence_id": "REGISTRY-ACC-H0146-IN05",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-IN05",
+      "registry_status": "ACTIVE",
+      "registry_type": "MERCHANT"
+    },
+    "ACC-H0146-RT00": {
+      "account_id": "ACC-H0146-RT00",
+      "entity_name": "Entity-H0146-Root",
+      "evidence_id": "REGISTRY-ACC-H0146-RT00",
+      "is_registered": true,
+      "registered_since": "2021-04-01",
+      "registration_number": "REGN-146-RT00",
+      "registry_status": "ACTIVE",
+      "registry_type": "CHIT_FUND"
+    }
+  },
+  "root_account": "ACC-H0146-RT00",
+  "rule_name": "SCATTER_GATHER",
+  "severity_cost": {
+    "false_close": 10,
+    "false_escalate": 1,
+    "false_request_info": 2
+  },
+  "split": "held_out",
+  "total_amount_inr": "13466712.24",
+  "transactions": [
+    {
+      "amount_inr": "15464.19",
+      "channel": "IMPS",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-NS04",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-02T06:18:45Z",
+      "tx_id": "TXN-H0146-026"
+    },
+    {
+      "amount_inr": "72369.20",
+      "channel": "UPI",
+      "memo": "bill adj",
+      "receiver_account": "ACC-H0146-NS02",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-03T10:07:47Z",
+      "tx_id": "TXN-H0146-028"
+    },
+    {
+      "amount_inr": "9808.16",
+      "channel": "UPI",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-RT00",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-04T19:46:32Z",
+      "tx_id": "TXN-H0146-029"
+    },
+    {
+      "amount_inr": "80220.86",
+      "channel": "RTGS",
+      "memo": "RTGS settlement",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-05T08:35:31Z",
+      "tx_id": "TXN-H0146-035"
+    },
+    {
+      "amount_inr": "48248.44",
+      "channel": "IMPS",
+      "memo": "party payment",
+      "receiver_account": "ACC-H0146-RT00",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-08T08:19:17Z",
+      "tx_id": "TXN-H0146-038"
+    },
+    {
+      "amount_inr": "49854.52",
+      "channel": "NEFT",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-10T15:02:20Z",
+      "tx_id": "TXN-H0146-023"
+    },
+    {
+      "amount_inr": "52794.98",
+      "channel": "RTGS",
+      "memo": "a/c transfer",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-11T07:41:48Z",
+      "tx_id": "TXN-H0146-018"
+    },
+    {
+      "amount_inr": "12169.19",
+      "channel": "UPI",
+      "memo": "bill adj",
+      "receiver_account": "ACC-H0146-NS02",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-11T15:27:41Z",
+      "tx_id": "TXN-H0146-027"
+    },
+    {
+      "amount_inr": "83538.09",
+      "channel": "NEFT",
+      "memo": "RTGS settlement",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-11T17:20:23Z",
+      "tx_id": "TXN-H0146-036"
+    },
+    {
+      "amount_inr": "67264.20",
+      "channel": "NEFT",
+      "memo": "NEFT trf",
+      "receiver_account": "ACC-H0146-NS04",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-12T15:24:54Z",
+      "tx_id": "TXN-H0146-039"
+    },
+    {
+      "amount_inr": "14507.33",
+      "channel": "IMPS",
+      "memo": "NEFT trf",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-12T22:04:53Z",
+      "tx_id": "TXN-H0146-017"
+    },
+    {
+      "amount_inr": "83260.64",
+      "channel": "IMPS",
+      "memo": "RTGS settlement",
+      "receiver_account": "ACC-H0146-NS04",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-13T13:11:00Z",
+      "tx_id": "TXN-H0146-024"
+    },
+    {
+      "amount_inr": "54768.65",
+      "channel": "RTGS",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-14T15:06:53Z",
+      "tx_id": "TXN-H0146-031"
+    },
+    {
+      "amount_inr": "76547.67",
+      "channel": "IMPS",
+      "memo": "IMPS ref 8841",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-15T10:36:42Z",
+      "tx_id": "TXN-H0146-033"
+    },
+    {
+      "amount_inr": "23438.28",
+      "channel": "RTGS",
+      "memo": "NEFT trf",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-15T17:11:02Z",
+      "tx_id": "TXN-H0146-020"
+    },
+    {
+      "amount_inr": "15226.68",
+      "channel": "IMPS",
+      "memo": "bill adj",
+      "receiver_account": "ACC-H0146-RT00",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-15T17:26:12Z",
+      "tx_id": "TXN-H0146-034"
+    },
+    {
+      "amount_inr": "6649.26",
+      "channel": "IMPS",
+      "memo": "bill adj",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-15T23:47:54Z",
+      "tx_id": "TXN-H0146-022"
+    },
+    {
+      "amount_inr": "78040.21",
+      "channel": "RTGS",
+      "memo": "a/c transfer",
+      "receiver_account": "ACC-H0146-NS02",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-17T16:45:54Z",
+      "tx_id": "TXN-H0146-011"
+    },
+    {
+      "amount_inr": "67251.76",
+      "channel": "UPI",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-RT00",
+      "sender_account": "ACC-H0146-IN01",
+      "timestamp": "2026-03-19T09:06:27Z",
+      "tx_id": "TXN-H0146-041"
+    },
+    {
+      "amount_inr": "4950.99",
+      "channel": "RTGS",
+      "memo": "party payment",
+      "receiver_account": "ACC-H0146-NS04",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-19T19:04:36Z",
+      "tx_id": "TXN-H0146-032"
+    },
+    {
+      "amount_inr": "6247.68",
+      "channel": "UPI",
+      "memo": "RTGS settlement",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-20T21:04:32Z",
+      "tx_id": "TXN-H0146-019"
+    },
+    {
+      "amount_inr": "1705614.64",
+      "channel": "NEFT",
+      "memo": "Staff stipend & contractor payout cycle",
+      "receiver_account": "ACC-H0146-IN02",
+      "sender_account": "ACC-H0146-RT00",
+      "timestamp": "2026-03-21T00:02:31Z",
+      "tx_id": "TXN-H0146-002"
+    },
+    {
+      "amount_inr": "3177106.33",
+      "channel": "RTGS",
+      "memo": "GST input trade advance against dispatch challan",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-RT00",
+      "timestamp": "2026-03-21T00:46:12Z",
+      "tx_id": "TXN-H0146-001"
+    },
+    {
+      "amount_inr": "42370.28",
+      "channel": "IMPS",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-21T00:47:13Z",
+      "tx_id": "TXN-H0146-040"
+    },
+    {
+      "amount_inr": "4202913.60",
+      "channel": "RTGS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-H0146-IN05",
+      "sender_account": "ACC-H0146-RT00",
+      "timestamp": "2026-03-21T10:23:21Z",
+      "tx_id": "TXN-H0146-005"
+    },
+    {
+      "amount_inr": "73762.76",
+      "channel": "RTGS",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-21T12:48:59Z",
+      "tx_id": "TXN-H0146-015"
+    },
+    {
+      "amount_inr": "68659.31",
+      "channel": "UPI",
+      "memo": "a/c transfer",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-22T01:43:15Z",
+      "tx_id": "TXN-H0146-030"
+    },
+    {
+      "amount_inr": "1971643.43",
+      "channel": "IMPS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-H0146-IN04",
+      "sender_account": "ACC-H0146-RT00",
+      "timestamp": "2026-03-22T09:59:45Z",
+      "tx_id": "TXN-H0146-004"
+    },
+    {
+      "amount_inr": "2409434.24",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-H0146-IN03",
+      "sender_account": "ACC-H0146-RT00",
+      "timestamp": "2026-03-22T10:45:39Z",
+      "tx_id": "TXN-H0146-003"
+    },
+    {
+      "amount_inr": "39261.69",
+      "channel": "IMPS",
+      "memo": "a/c transfer",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS01",
+      "timestamp": "2026-03-22T13:08:30Z",
+      "tx_id": "TXN-H0146-013"
+    },
+    {
+      "amount_inr": "54561.52",
+      "channel": "NEFT",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-24T02:54:19Z",
+      "tx_id": "TXN-H0146-012"
+    },
+    {
+      "amount_inr": "78502.96",
+      "channel": "IMPS",
+      "memo": "bill adj",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-24T04:25:16Z",
+      "tx_id": "TXN-H0146-042"
+    },
+    {
+      "amount_inr": "23250.54",
+      "channel": "UPI",
+      "memo": "UPI/pay/ref",
+      "receiver_account": "ACC-H0146-NS04",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-03-24T17:18:03Z",
+      "tx_id": "TXN-H0146-025"
+    },
+    {
+      "amount_inr": "67212.83",
+      "channel": "UPI",
+      "memo": "party payment",
+      "receiver_account": "ACC-H0146-NS01",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-26T09:13:43Z",
+      "tx_id": "TXN-H0146-037"
+    },
+    {
+      "amount_inr": "18989.97",
+      "channel": "IMPS",
+      "memo": "IMPS ref 8841",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS04",
+      "timestamp": "2026-03-28T09:01:50Z",
+      "tx_id": "TXN-H0146-016"
+    },
+    {
+      "amount_inr": "62172.53",
+      "channel": "RTGS",
+      "memo": "IMPS ref 8841",
+      "receiver_account": "ACC-H0146-NS03",
+      "sender_account": "ACC-H0146-NS03",
+      "timestamp": "2026-03-28T23:54:26Z",
+      "tx_id": "TXN-H0146-021"
+    },
+    {
+      "amount_inr": "79627.14",
+      "channel": "UPI",
+      "memo": "trf agst inv",
+      "receiver_account": "ACC-H0146-IN01",
+      "sender_account": "ACC-H0146-NS02",
+      "timestamp": "2026-04-01T01:24:42Z",
+      "tx_id": "TXN-H0146-014"
+    },
+    {
+      "amount_inr": "2147287.79",
+      "channel": "IMPS",
+      "memo": "Escrow disbursement against verified delivery receipt",
+      "receiver_account": "ACC-H0146-DS01",
+      "sender_account": "ACC-H0146-IN03",
+      "timestamp": "2026-04-03T18:35:21Z",
+      "tx_id": "TXN-H0146-008"
+    },
+    {
+      "amount_inr": "3745636.60",
+      "channel": "UPI",
+      "memo": "Monthly retainer & logistics reimbursement batch",
+      "receiver_account": "ACC-H0146-DS01",
+      "sender_account": "ACC-H0146-IN05",
+      "timestamp": "2026-04-03T19:24:15Z",
+      "tx_id": "TXN-H0146-010"
+    },
+    {
+      "amount_inr": "1520043.77",
+      "channel": "RTGS",
+      "memo": "Vendor invoice #INV-2026-441 settlement as per PO terms",
+      "receiver_account": "ACC-H0146-DS02",
+      "sender_account": "ACC-H0146-IN02",
+      "timestamp": "2026-04-04T01:44:59Z",
+      "tx_id": "TXN-H0146-007"
+    },
+    {
+      "amount_inr": "1757128.62",
+      "channel": "RTGS",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-H0146-DS02",
+      "sender_account": "ACC-H0146-IN04",
+      "timestamp": "2026-04-04T03:25:18Z",
+      "tx_id": "TXN-H0146-009"
+    },
+    {
+      "amount_inr": "2831437.16",
+      "channel": "NEFT",
+      "memo": "Procurement advance for raw material lot #77B",
+      "receiver_account": "ACC-H0146-DS01",
+      "sender_account": "ACC-H0146-IN01",
+      "timestamp": "2026-04-04T03:28:57Z",
+      "tx_id": "TXN-H0146-006"
+    }
+  ],
+  "triggered_at": "2026-03-20T17:00:00Z",
+  "variant_seed": 4200146
+}

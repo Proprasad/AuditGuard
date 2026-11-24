@@ -15,7 +15,9 @@ Tools: get_alert_context, get_account_transactions, get_kyc_profile, get_counter
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import contextvars
+import copy
 from datetime import timedelta
 from decimal import Decimal
 import json
@@ -41,9 +43,51 @@ _eval_case_ctx: contextvars.ContextVar[Optional[dict[str, Any]]] = contextvars.C
     "_eval_case_ctx", default=None
 )
 
+REDACTED_CASE_KEYS: frozenset[str] = frozenset(
+    {
+        "category",
+        "category_id",
+        "description",
+        "family",
+        "family_group",
+        "held_out_only_variant",
+        "variant_seed",
+        "split",
+        "is_held_out",
+        "expected_disposition",
+        "expected_replan_required",
+        "gold_disposition",
+        "acceptable_dispositions",
+        "severity_cost",
+        "gold_evidence_ids",
+        "gold_calc",
+        "difficulty",
+        "adversarial",
+        "annotator_ids",
+        "dataset_version",
+    }
+)
 
-def set_eval_case_overlay(case: Optional[dict[str, Any]]) -> contextvars.Token[Optional[dict[str, Any]]]:
-    return _eval_case_ctx.set(case)
+
+def redact_case_for_agent(case: Mapping[str, Any]) -> dict[str, Any]:
+    """Strip all ground-truth labels, family names, split flags, and annotation metadata before agent access."""
+    clean: dict[str, Any] = {}
+    for key, value in case.items():
+        if key in REDACTED_CASE_KEYS or key.startswith(("expected_", "gold_")):
+            continue
+        clean[key] = copy.deepcopy(value)
+    return clean
+
+
+def set_eval_case_overlay(case: Optional[Mapping[str, Any]]) -> contextvars.Token[Optional[dict[str, Any]]]:
+    sanitized = redact_case_for_agent(case) if case is not None else None
+    return _eval_case_ctx.set(sanitized)
+
+
+def get_active_eval_overlay() -> Optional[dict[str, Any]]:
+    """Read-only inspection accessor for verifying that active overlays contain zero label keys."""
+    cur = _eval_case_ctx.get()
+    return copy.deepcopy(cur) if cur is not None else None
 
 
 def reset_eval_case_overlay(token: contextvars.Token[Optional[dict[str, Any]]]) -> None:
@@ -368,6 +412,16 @@ async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dic
         "registry_status": "NOT_FOUND",
     }
     if overlay:
+        reg_records = overlay.get("registry_records")
+        if isinstance(reg_records, dict):
+            rec = (
+                reg_records.get(params.account_id)
+                if params.account_id in reg_records
+                else next((r for r in reg_records.values() if r.get("entity_name") == params.entity_name), None)
+            )
+            if rec is not None:
+                return {"status": "ok", **rec}
+            return not_found
         profiles = overlay.get("kyc_profiles", {})
         kyc = (
             profiles.get(params.account_id)

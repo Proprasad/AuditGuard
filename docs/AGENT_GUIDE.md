@@ -72,9 +72,10 @@ src/llm/            client.py (OpenRouter/OpenAI-compatible via httpx), cost.py,
 src/agent/          c0_fixed.py (fair), rule_engine.py (old c1), c1_single.py (LLM), c2_multi.py (LLM), tools.py, loop.py
 src/guardrails/     verifier.py (rewritten), injection.py, pii.py, structural.py
 data/generator_v2/  families.py, noise.py, labels.py, build.py
-data/golden_v2/{dev,held_out}/   (held_out kept outside runtime packages)
+data/golden_v2/dev/              (development split only; accessible for dev workflows)
+eval/golden_v2/{held_out,challenge}/  (held-out & challenge splits physically isolated outside runtime data/)
 eval/               run_eval.py (rewritten), metrics.py, stats.py, judge.py, judge_rubric.md,
-                    human_labels/*.csv, calibration.py, red_team_v2/, report.py
+                    shortcuts.py, adjudication.py, human_labels/*.csv, calibration.py, red_team_v2/, report.py
 runs/               generated, gitignored
 Makefile            verify, data, eval-e1..e4, report
 ```
