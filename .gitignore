@@ -24,6 +24,7 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 *.log
+runs/
 
 # OS / IDE files
 .DS_Store

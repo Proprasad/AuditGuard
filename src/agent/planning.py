@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from src.agent import reasoning
 from src.agent.drafting import security_notes
+from src.agent.llm_client import LlmCallMeta
 from src.agent.tooling import GuardedToolbox
 from src.core.canonical import to_ratio
 from src.core.policy import BudgetLedger, PolicyConfig
@@ -44,6 +45,14 @@ class RunContext:
     deterministic_verifier: bool = True
     reflexion_enabled: bool = False
     memory_enabled: bool = True
+    allow_llm: bool = True
+    llm_client: Optional[Any] = None
+    llm_mode: Optional[str] = None
+    run_id: Optional[str] = None
+    cassette_path: Optional[str] = None
+    model_override: Optional[str] = None
+    strong_model_override: Optional[str] = None
+    seed: Optional[int] = None
     emit: Optional[Callable[[str, dict[str, Any]], None]] = None
     timings: dict[str, float] = field(default_factory=dict)
     last_graph_output: Optional[dict[str, Any]] = None
@@ -203,14 +212,17 @@ async def plan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
     degraded: list[str] = []
     mode = "default"
 
-    proposal, meta = await reasoning.propose_plan(
-        seeded,
-        ctx.policy,
-        ctx.ledger,
-        role="c2_supervisor" if ctx.strong else "c1_investigator",
-        strong=ctx.strong,
-        tools=TOOL_CAPABILITIES,
-    )
+    proposal = None
+    meta = LlmCallMeta(used_live_llm=False, model="offline")
+    if ctx.allow_llm:
+        proposal, meta = await reasoning.propose_plan(
+            seeded,
+            ctx.policy,
+            ctx.ledger,
+            role="c2_supervisor" if ctx.strong else "c1_investigator",
+            strong=ctx.strong,
+            tools=TOOL_CAPABILITIES,
+        )
     if proposal is not None:
         proposed, violations = proposal.graph_params.to_params(ctx.policy)
         if proposed is None:

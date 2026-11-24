@@ -142,6 +142,7 @@ class DispositionWorksheet(StrictModel):
     regulatory_citations: list[str] = Field(default_factory=list)
     kyc_summaries: list[str] = Field(default_factory=list)
     degraded_evidence: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
     alert_amount_inr: Optional[str] = None
     verification_status: str = "passed"
     verification_discrepancies: list[dict[str, Any]] = Field(default_factory=list)
@@ -230,6 +231,7 @@ class InvestigationState(StrictModel):
     max_replans: int = Field(default_factory=lambda: _policy().budgets.max_replans)
 
     evidence_registry: dict[str, Any] = Field(default_factory=dict)
+    calc_log: list[dict[str, Any]] = Field(default_factory=list)
     retrieved_lessons: list[str] = Field(default_factory=list)
     transactions: list[dict[str, Any]] = Field(default_factory=list)
     kyc_profiles: list[dict[str, Any]] = Field(default_factory=list)
@@ -270,7 +272,7 @@ class InvestigateRequest(StrictModel):
     """The server resolves root account / network / amount from the trusted alert record."""
 
     alert_id: str
-    agent_mode: Literal["c0_fixed", "c1_single", "c2_multi"] = Field(validation_alias="mode")
+    agent_mode: Literal["c0_fixed", "rule_engine", "c1_single", "c2_multi"] = Field(validation_alias="mode")
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 

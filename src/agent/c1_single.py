@@ -1,10 +1,7 @@
 """
-AuditGuard C1 single-agent investigator: one LLM-driven agent running the compiled LangGraph (`src/agent/graph.py`).
-
-`plan -> gather_evidence -> form_hypotheses -> critique -> [replan -> gather_evidence]* -> draft ->
-human_gate(interrupt)`
-Every tool call is RBAC-checked, bounds-checked and budget-enforced by `GuardedToolbox`; all money flows through
-`Decimal`.
+AuditGuard C1 single-agent investigator: one LLM-driven agent running the OpenAI tool-calling loop
+(`src/agent/loop.py`) inside the compiled LangGraph (`src/agent/graph.py`), with deterministic
+offline fallback when `LLM_ENABLED=false` and no `llm_client` / `llm_mode` is configured.
 """
 
 from __future__ import annotations
@@ -15,6 +12,7 @@ from typing import Any, Optional
 
 from src.agent.graph import SimulatedCrashInterrupt, run_graph
 from src.agent.nodes import decide_disposition, widened_params
+from src.llm.client import LLMClientProtocol
 from src.models import Alert, InvestigationState
 
 __all__ = ["SimulatedCrashInterrupt", "decide_disposition", "run_investigation", "widened_params"]
@@ -32,12 +30,17 @@ async def run_investigation(
     reflexion_enabled: bool = False,
     memory_enabled: bool = True,
     budget_overrides: Optional[dict[str, Any]] = None,
+    llm_client: Optional[LLMClientProtocol] = None,
+    llm_mode: Optional[str] = None,
+    cassette_path: Optional[str] = None,
+    run_id: Optional[str] = None,
+    seed: Optional[int] = None,
     on_event: Optional[Callable[[str, dict[str, Any]], None]] = None,
 ) -> InvestigationState:
     """Execute C1; `resume=True` continues from the durable LangGraph checkpoint of `thread_id`."""
     return await run_graph(
         alert=alert,
-        mode="c1_single",
+        mode="rule_engine" if mode == "rule_engine" else "c1_single",
         thread_id=thread_id or f"thr-{uuid.uuid4().hex[:12]}",
         resume=resume,
         stop_after_node=stop_after_node,
@@ -47,5 +50,10 @@ async def run_investigation(
         reflexion_enabled=reflexion_enabled,
         memory_enabled=memory_enabled,
         budget_overrides=budget_overrides,
+        llm_client=llm_client,
+        llm_mode=llm_mode,
+        cassette_path=cassette_path,
+        run_id=run_id,
+        seed=seed,
         emit=on_event,
     )

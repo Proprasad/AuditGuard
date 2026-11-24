@@ -22,7 +22,24 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "get_alert_context",
         "find_candidate_fund_flows",
         "get_kyc_profile",
+        "check_commercial_registry",
         "search_regulations",
+        "calc",
+        "draft_disposition_report",
+        "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
+    },
+    "rule_engine": {
+        "search_regulations",
+        "get_clause_by_id",
+        "find_candidate_fund_flows",
+        "compute_flow_conservation",
+        "compare_graph_runs",
+        "get_alert_context",
+        "get_account_transactions",
+        "get_kyc_profile",
+        "get_counterparty_history",
+        "check_commercial_registry",
+        "calc",
         "draft_disposition_report",
         "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
@@ -37,6 +54,9 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "get_kyc_profile",
         "get_counterparty_history",
         "check_commercial_registry",
+        "calc",
+        "replan_graph",
+        "finish",
         "draft_disposition_report",
         "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
@@ -46,12 +66,15 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "compare_graph_runs",
         "get_alert_context",
         "get_account_transactions",
+        "calc",
+        "replan_graph",
     },
     "benign_investigator": {
         "get_kyc_profile",
         "get_counterparty_history",
         "check_commercial_registry",
         "get_account_transactions",
+        "calc",
     },
     "regulatory_analyst": {
         "search_regulations",
@@ -61,6 +84,8 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
         "find_candidate_fund_flows",
         "compute_flow_conservation",
         "compare_graph_runs",
+        "calc",
+        "finish",
         "draft_disposition_report",
         "submit_case_disposition",  # Gated: requires a verified, single-use human approval token
     },
@@ -117,13 +142,14 @@ def pre_tool_hook(
             message="submit_case_disposition requires a verified human approval token",
         )
 
-    if tool_name == "find_candidate_fund_flows":
+    if tool_name in ("find_candidate_fund_flows", "replan_graph"):
         bounds = validate_graph_bounds(params)
         if not bounds.allowed:
             return bounds
 
-    # Post-interrupt human disposition commit is an administrative gate action, not an autonomous agent tool step.
-    if ledger is not None and tool_name != "submit_case_disposition":
+    # Post-interrupt human disposition commit and the terminal `finish` wrapper (which delegates persistence
+    # to `draft_disposition_report`) do not double-charge an autonomous investigation tool slot.
+    if ledger is not None and tool_name not in ("submit_case_disposition", "finish"):
         is_exit_draft = tool_name == "draft_disposition_report"
         verdict = ledger.try_consume_tool_call(
             reserve=0 if is_exit_draft else 1,

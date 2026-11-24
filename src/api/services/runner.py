@@ -43,6 +43,10 @@ async def execute_mode(
         from src.agent.c0_fixed import run_fixed_pipeline
 
         return await run_fixed_pipeline(alert, thread_id=thread_id, resume=resume, on_event=on_event)
+    if mode == "rule_engine":
+        from src.agent.rule_engine import run_rule_engine
+
+        return await run_rule_engine(alert, thread_id=thread_id, resume=resume, on_event=on_event)
     if mode == "c2_multi":
         from src.agent.c2_multi import run_multi_agent
 
@@ -135,24 +139,84 @@ def _node_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, An
                 },
             )
         ]
-    if node in ("draft", "reporter_critic"):
-        events = [
-            ("agent_updated", {"category": "agent", "agent": a, "message": f"{a['agent_name']}: {a['summary']}"})
-            for a in inv.get("agent_runs", [])
-        ]
-        failed = inv.get("error") == "verification_failed"
+    if node in ("draft", "reporter_critic", "agent_loop", "c2_agent_team"):
+        return _draft_completion_events(node, inv)
+    return []
+
+
+def _llm_loop_summary_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    plan = inv.get("plan") or {}
+    steps = plan.get("steps", [])
+    events: list[tuple[str, dict[str, Any]]] = [
+        (
+            "plan_updated",
+            {
+                "category": "planning",
+                "steps": steps,
+                "graph_params": plan.get("graph_params"),
+                "replan_count": inv.get("replan_count", 0),
+                "message": f"Plan with {len(steps)} steps",
+            },
+        ),
+        (
+            "tool_called",
+            {
+                "category": "mcp_tool",
+                "node": node,
+                "tool_calls_used": inv.get("tool_calls_used", 0),
+                "paths_found": len(inv.get("fund_flow_paths", [])),
+                "kyc_checked": len(inv.get("kyc_profiles", [])),
+                "citations_found": len(inv.get("regulatory_snippets", [])),
+                "message": f"[{node}] Executed {inv.get('tool_calls_used', 0)} guarded tool calls",
+            },
+        ),
+    ]
+    if inv.get("replan_count", 0) > 0:
         events.append(
             (
-                "verification_completed",
+                "replan_triggered",
                 {
-                    "category": "verifier",
-                    "status": "failed" if failed else "passed",
-                    "message": "Deterministic verification " + ("FAILED (fail-closed)" if failed else "passed"),
+                    "category": "replan",
+                    "replan_count": inv.get("replan_count", 0),
+                    "reason": plan.get("replan_reason"),
+                    "new_params": plan.get("graph_params"),
+                    "message": f"Replan #{inv.get('replan_count', 0)}",
                 },
             )
         )
-        return events
-    return []
+    hyps = [{"label": h["label"], "confidence": h["confidence"]} for h in inv.get("active_hypotheses", [])]
+    events.append(
+        (
+            "hypotheses_scored",
+            {
+                "category": "reasoning",
+                "reasoning_mode": inv.get("reasoning_mode"),
+                "hypotheses": hyps,
+                "message": f"Scored competing hypotheses ({inv.get('reasoning_mode')})",
+            },
+        )
+    )
+    return events
+
+
+def _draft_completion_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    events = _llm_loop_summary_events(node, inv) if node in ("agent_loop", "c2_agent_team") else []
+    events.extend(
+        ("agent_updated", {"category": "agent", "agent": a, "message": f"{a['agent_name']}: {a['summary']}"})
+        for a in inv.get("agent_runs", [])
+    )
+    failed = inv.get("error") == "verification_failed"
+    events.append(
+        (
+            "verification_completed",
+            {
+                "category": "verifier",
+                "status": "failed" if failed else "passed",
+                "message": "Deterministic verification " + ("FAILED (fail-closed)" if failed else "passed"),
+            },
+        )
+    )
+    return events
 
 
 def live_callback(thread_id: str, alert: Alert, mode: str) -> Callable[[str, dict[str, Any]], None]:

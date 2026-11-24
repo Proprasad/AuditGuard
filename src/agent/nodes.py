@@ -12,6 +12,7 @@ from typing import Any, Literal, Optional
 from src.agent import reasoning
 from src.agent.drafting import draft_and_verify
 from src.agent.gathering import gather_evidence_node
+from src.agent.llm_client import LlmCallMeta
 from src.agent.planning import (
     TOOL_CAPABILITIES,
     RunContext,
@@ -114,13 +115,16 @@ async def hypothesis_node(state: InvestigationState, ctx: RunContext) -> dict[st
     susp_ids, benign_ids = list(path_ids), list(path_ids)
     mode = "rubric"
 
-    scoring, meta = await reasoning.assess_hypotheses(
-        state,
-        ctx.policy,
-        ctx.ledger,
-        role="c2_supervisor" if ctx.strong else "c1_investigator",
-        strong=ctx.strong,
-    )
+    scoring = None
+    meta = LlmCallMeta(used_live_llm=False, model="offline")
+    if ctx.allow_llm:
+        scoring, meta = await reasoning.assess_hypotheses(
+            state,
+            ctx.policy,
+            ctx.ledger,
+            role="c2_supervisor" if ctx.strong else "c1_investigator",
+            strong=ctx.strong,
+        )
     if scoring is not None:
         s_ok, s_bad = reasoning.grounded(
             scoring.suspicious.supporting_evidence_ids + scoring.suspicious.contradicting_evidence_ids,
@@ -200,13 +204,16 @@ async def critique_node(state: InvestigationState, ctx: RunContext) -> dict[str,
         critiques.append("Regulatory clauses missing; refresh compliance KB retrieval.")
         refresh_regs = True
 
-    verdict, meta = await reasoning.critique_evidence(
-        state,
-        ctx.policy,
-        ctx.ledger,
-        role="c2_supervisor" if ctx.strong else "c1_investigator",
-        strong=ctx.strong,
-    )
+    verdict = None
+    meta = LlmCallMeta(used_live_llm=False, model="offline")
+    if ctx.allow_llm:
+        verdict, meta = await reasoning.critique_evidence(
+            state,
+            ctx.policy,
+            ctx.ledger,
+            role="c2_supervisor" if ctx.strong else "c1_investigator",
+            strong=ctx.strong,
+        )
     degraded = list(state.degraded_evidence)
     if verdict is not None and verdict.contradiction_found:
         critiques.append(
@@ -462,29 +469,21 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
         use_strong_model=ctx.strong,
         narrative_role="c2_specialists" if ctx.mode == "c2_multi" else None,
         verify=ctx.deterministic_verifier,
+        allow_llm=ctx.allow_llm,
     )
     critic_ms = (time.perf_counter() - t0) * 1000
     ws = outcome.worksheet
     findings = list(state.specialist_findings)
     if ctx.parallel:
-        findings = upsert_finding(
-            findings,
-            SpecialistFinding(
-                task_id="HO-CRITIC",
-                agent_name="reporter_critic",
-                summary=f"Drafted {ws.worksheet_id} ({ws.recommended_disposition.value})",
-                tool_calls=box.calls,
-                evidence_ids_added=[ws.worksheet_id],
-            ),
+        c_sum = f"Drafted {ws.worksheet_id} ({ws.recommended_disposition.value})"
+        critic_f = SpecialistFinding(
+            task_id="HO-CRITIC", agent_name="reporter_critic", summary=c_sum, tool_calls=box.calls
         )
+        findings = upsert_finding(findings, critic_f)
     flow_summary = compute_network_flow_summary(
         state.alert.root_account, state.transactions, state.fund_flow_paths, state.kyc_profiles
     )
-    summary_txt = (
-        ws.recommendation_rationale
-        if ctx.mode != "c2_multi"
-        else f"Drafted {ws.worksheet_id} ({ws.recommended_disposition.value})"
-    )
+    summary_txt = ws.recommendation_rationale if ctx.mode != "c2_multi" else f"Drafted {ws.worksheet_id}"
     return {
         "worksheet": ws,
         "active_hypotheses": ws.hypotheses,

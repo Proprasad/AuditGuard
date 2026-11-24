@@ -198,86 +198,125 @@ async def test_17_respx_mocked_openrouter_http_end_to_end(monkeypatch):
     url = "https://openrouter.ai/api/v1/chat/completions"
     call_idx = 0
 
+    def _tc_resp(calls: list[tuple[str, dict[str, object]]], usage: dict[str, int]) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "openai/gpt-5-mini",
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{i + 1}",
+                                    "type": "function",
+                                    "function": {"name": n, "arguments": json.dumps(a)},
+                                }
+                                for i, (n, a) in enumerate(calls)
+                            ],
+                        },
+                    }
+                ],
+                "usage": usage,
+            },
+        )
+
     def responder(request: httpx.Request) -> httpx.Response:
         nonlocal call_idx
         call_idx += 1
         body = json.loads(request.content.decode("utf-8"))
-        user_msg = str(body["messages"][-1]["content"])
-        usage = {"prompt_tokens": 500, "completion_tokens": 200, "total_tokens": 700}
+        msgs = body["messages"]
+        usage = {"prompt_tokens": 550, "completion_tokens": 200, "total_tokens": 750}
+        tool_msgs = {
+            m["name"]: json.loads(m["content"]) for m in msgs if m.get("role") == "tool" and m.get("name")
+        }
 
-        if "Create an investigation plan" in user_msg:
-            return httpx.Response(
-                200,
-                json={
-                    "model": "openai/gpt-5-mini",
-                    "choices": [{"message": {"content": "{not valid json"}}],
-                    "usage": usage,
-                },
+        if call_idx == 1:
+            return _tc_resp([("get_alert_context", {"alert_id": "ALT-2026-0412"})], usage)
+        if call_idx == 2:
+            return _tc_resp([("find_candidate_fund_flows", {"root_account": "ACC-IND-1042"})], usage)
+        if call_idx == 3:
+            return _tc_resp(
+                [
+                    (
+                        "replan_graph",
+                        {
+                            "time_window_days": 21,
+                            "max_hops": 4,
+                            "amount_tolerance": "0.15",
+                            "reason": "Expand window to capture delayed consolidation leg.",
+                        },
+                    ),
+                    ("get_kyc_profile", {"account_id": "ACC-IND-1042"}),
+                    ("search_regulations", {"query": "scatter gather layering", "top_k": 3}),
+                ],
+                usage,
             )
-        if "COMPETING hypotheses" in user_msg:
-            content = json.dumps(
-                {
-                    "suspicious": {
-                        "explanation": "Staggered pass-through across intermediaries.",
-                        "supporting_evidence_ids": [],
-                        "contradicting_evidence_ids": [],
-                        "confidence": 0.89,
+        p0 = tool_msgs["replan_graph"]["paths"][0]
+        kyc_id = tool_msgs["get_kyc_profile"]["evidence_id"]
+        clause_id = tool_msgs["search_regulations"]["clauses"][0]["clause_id"]
+        if call_idx == 4:
+            # Deliberately emit ungrounded INR 777777.00 + prohibited guilt claim to verify 1-round repair
+            return _tc_resp(
+                [
+                    (
+                        "finish",
+                        {
+                            "recommended_disposition": "escalate_str",
+                            "confidence_score": "0.89",
+                            "recommendation_rationale": "Observed suspicious transfer of INR 777777.00.",
+                            "suspicious_hypothesis": {
+                                "explanation": "Staggered pass-through across intermediaries.",
+                                "confidence": "0.89",
+                                "evidence_ids": [p0["path_id"], kyc_id],
+                                "regulatory_citations": [clause_id],
+                            },
+                            "benign_hypothesis": {
+                                "explanation": "Money laundering confirmed in benign slot.",
+                                "confidence": "0.11",
+                                "evidence_ids": [kyc_id],
+                                "regulatory_citations": [clause_id],
+                            },
+                            "missing_evidence": ["Beneficiary bank statement"],
+                            "regulatory_citations": [clause_id],
+                        },
+                    )
+                ],
+                usage,
+            )
+        assert "UNGROUNDED_AMOUNT" in str(msgs[-1]["content"])
+        return _tc_resp(
+            [
+                (
+                    "finish",
+                    {
+                        "recommended_disposition": "escalate_str",
+                        "confidence_score": "0.89",
+                        "recommendation_rationale": (
+                            f"Observed dispersal of INR 900000.00 consolidated to INR 828000.00 across "
+                            f"{p0['path_id']} ({kyc_id}) under {clause_id}."
+                        ),
+                        "suspicious_hypothesis": {
+                            "explanation": f"Verified staggered consolidation trail on {p0['path_id']}.",
+                            "confidence": "0.89",
+                            "evidence_ids": [p0["path_id"], kyc_id],
+                            "regulatory_citations": [clause_id],
+                        },
+                        "benign_hypothesis": {
+                            "explanation": f"No active commercial registration found for {kyc_id}.",
+                            "confidence": "0.11",
+                            "evidence_ids": [kyc_id],
+                            "regulatory_citations": [clause_id],
+                        },
+                        "missing_evidence": ["Destination beneficiary source-of-funds records"],
+                        "regulatory_citations": [clause_id],
                     },
-                    "benign": {
-                        "explanation": "Money laundering confirmed in benign slot",
-                        "supporting_evidence_ids": [],
-                        "contradicting_evidence_ids": [],
-                        "confidence": 0.11,
-                    },
-                }
-            )
-            return httpx.Response(
-                200,
-                json={"model": "openai/gpt-5-mini", "choices": [{"message": {"content": content}}], "usage": usage},
-            )
-        if "Critique the current evidence" in user_msg:
-            has_multi = '"hops": 2' in user_msg or '"hops": 3' in user_msg
-            content = json.dumps(
-                {
-                    "contradiction_found": not has_multi,
-                    "reason": "Expand window to capture delayed consolidation leg.",
-                    "proposed_graph_params": None
-                    if has_multi
-                    else {
-                        "time_window_days": 21,
-                        "max_hops": 4,
-                        "amount_tolerance": "0.15",
-                        "min_intermediaries": 2,
-                    },
-                }
-            )
-            return httpx.Response(
-                200,
-                json={"model": "openai/gpt-5-mini", "choices": [{"message": {"content": content}}], "usage": usage},
-            )
-        if '"previous_draft_failed_verification": []' in user_msg:
-            bad_nar = json.dumps(
-                {
-                    "rationale": "Observed suspicious transfer of INR 777777.00 across intermediaries.",
-                    "suspicious_explanation": "Unverified amount test.",
-                    "benign_explanation": "No commercial registry.",
-                }
-            )
-            return httpx.Response(
-                200,
-                json={"model": "openai/gpt-5-mini", "choices": [{"message": {"content": bad_nar}}], "usage": usage},
-            )
-        assert "UNGROUNDED_AMOUNT" in user_msg
-        good_nar = json.dumps(
-            {
-                "rationale": "Observed dispersal of INR 900000.00 consolidated to INR 828000.00 across intermediaries.",
-                "suspicious_explanation": "Verified staggered consolidation trail.",
-                "benign_explanation": "No active commercial registration found.",
-            }
-        )
-        return httpx.Response(
-            200,
-            json={"model": "openai/gpt-5-mini", "choices": [{"message": {"content": good_nar}}], "usage": usage},
+                )
+            ],
+            usage,
         )
 
     with respx.mock(assert_all_called=True) as router:

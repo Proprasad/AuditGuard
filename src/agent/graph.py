@@ -21,8 +21,9 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 import logging
+import os
 from pathlib import Path
-from typing import Annotated, Any, Optional, TypedDict
+from typing import Annotated, Any, Optional, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables.config import var_child_runnable_config
@@ -31,11 +32,17 @@ from langgraph.types import Command, interrupt
 from pydantic_core import to_jsonable_python
 
 from src.agent import c0_fixed, nodes
+from src.agent.c2_loop import run_c2_agent_team
+from src.agent.llm_client import is_live_llm_active
+from src.agent.loop import run_c1_agent_loop
 from src.agent.nodes import RunContext
 from src.agent.tooling import GuardedToolbox
 from src.config import get_policy, settings
 from src.core.policy import PolicyConfig
-from src.db.database import get_sqlite_path, save_checkpoint
+from src.db.database import get_sqlite_path, load_checkpoint, save_checkpoint
+from src.llm.client import LLMClient, LLMClientProtocol
+from src.llm.replay import LLMMode
+from src.llm.schemas import ChatResponse
 from src.models import Alert, InvestigationState
 
 logger = logging.getLogger("auditguard.graph")
@@ -137,12 +144,27 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
         )
     if mode == "c0_fixed":
         box = GuardedToolbox("c0_fixed", ledger, thread_id)
+        flags.setdefault("allow_llm", False)
+        flags.setdefault("llm_mode", "offline")
         return RunContext(
             mode=mode,
             policy=policy,
             ledger=ledger,
             boxes={"primary": box},
             label="auditguard-c0-fixed",
+            role="c1_investigator",
+            **flags,
+        )
+    if mode == "rule_engine":
+        box = GuardedToolbox("rule_engine", ledger, thread_id)
+        flags["allow_llm"] = False
+        flags["llm_mode"] = "offline"
+        return RunContext(
+            mode=mode,
+            policy=policy,
+            ledger=ledger,
+            boxes={"primary": box},
+            label="auditguard-rule-engine",
             role="c1_investigator",
             **flags,
         )
@@ -353,9 +375,77 @@ def build_c0_graph(
     return graph
 
 
+class _GateOnlyLLM:
+    """Placeholder satisfying `LLMClientProtocol` when resuming an already-drafted LLM thread at `human_gate`."""
+
+    @property
+    def transcript_path(self) -> Optional[Path]:
+        return None
+
+    async def chat(self, messages: list[dict[str, Any]], **_: Any) -> ChatResponse:
+        raise RuntimeError("_GateOnlyLLM cannot execute chat turns during post-interrupt gate resume")
+
+
+def _resolve_llm_client(ctx: RunContext) -> Optional[LLMClientProtocol]:
+    if not ctx.allow_llm or ctx.mode in ("c0_fixed", "rule_engine"):
+        return None
+    if ctx.llm_client is not None:
+        return cast(LLMClientProtocol, ctx.llm_client)
+    raw_mode = (ctx.llm_mode or os.getenv("LLM_MODE") or "").strip().lower()
+    if raw_mode == "offline":
+        return None
+    if raw_mode in ("live", "record", "replay"):
+        return LLMClient(
+            mode=cast(LLMMode, raw_mode),
+            cassette_path=ctx.cassette_path or os.getenv("LLM_CASSETTE_PATH"),
+            run_id=ctx.run_id or os.getenv("LLM_RUN_ID"),
+        )
+    if is_live_llm_active():
+        return LLMClient(mode="live", run_id=ctx.run_id or os.getenv("LLM_RUN_ID"))
+    return None
+
+
+def build_llm_c1_graph(
+    ctx: RunContext, thread_id: str, llm_client: LLMClientProtocol
+) -> StateGraph[Any, Any, Any, Any]:
+    """Single-agent LLM ReAct tool-calling loop wrapped with `human_gate(interrupt)` and `commit_disposition`."""
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
+
+    async def _loop_node(state: InvestigationState, c: RunContext) -> dict[str, Any]:
+        return await run_c1_agent_loop(state, c, llm_client)
+
+    graph.add_node("agent_loop", _wrap("agent_loop", _loop_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_edge(START, "agent_loop")
+    _attach_gate_and_commit(graph, ctx, "agent_loop")
+    return graph
+
+
+def build_llm_c2_graph(
+    ctx: RunContext, thread_id: str, llm_client: LLMClientProtocol
+) -> StateGraph[Any, Any, Any, Any]:
+    """Supervisor + 4 RBAC Specialist LLMs wrapped with `human_gate(interrupt)` and `commit_disposition`."""
+    graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
+
+    async def _team_node(state: InvestigationState, c: RunContext) -> dict[str, Any]:
+        return await run_c2_agent_team(state, c, llm_client)
+
+    graph.add_node("c2_agent_team", _wrap("c2_agent_team", _team_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_edge(START, "c2_agent_team")
+    _attach_gate_and_commit(graph, ctx, "c2_agent_team")
+    return graph
+
+
 def select_graph(ctx: RunContext, thread_id: str) -> StateGraph[Any, Any, Any, Any]:
     if ctx.mode == "c0_fixed":
         return build_c0_graph(ctx, thread_id, c0_fixed.scan_node, c0_fixed.draft_node)
+    if ctx.mode == "rule_engine":
+        return build_graph(ctx, thread_id)
+    llm_client = _resolve_llm_client(ctx)
+    if llm_client is not None:
+        ctx.llm_client = llm_client
+        if ctx.mode == "c2_multi":
+            return build_llm_c2_graph(ctx, thread_id, llm_client)
+        return build_llm_c1_graph(ctx, thread_id, llm_client)
     if ctx.mode == "c2_multi":
         return build_c2_graph(ctx, thread_id)
     return build_graph(ctx, thread_id)
@@ -369,6 +459,25 @@ def _is_paused(snapshot: Any) -> bool:
     return bool(snapshot.values) and any(getattr(t, "interrupts", None) for t in snapshot.tasks)
 
 
+_MULTI_NODE_STAGES = frozenset(
+    {
+        "plan",
+        "gather_evidence",
+        "form_hypotheses",
+        "critique",
+        "replan",
+        "draft",
+        "supervisor_plan",
+        "flow_tracer",
+        "parallel_specialists",
+        "supervisor_hypotheses",
+        "supervisor_critique",
+        "supervisor_replan",
+        "reporter_critic",
+    }
+)
+
+
 async def run_graph(
     *,
     alert: Alert,
@@ -379,6 +488,13 @@ async def run_graph(
     **flags: Any,
 ) -> InvestigationState:
     """Run (or resume) the compiled graph until the human-approval `interrupt()`; returns the paused state."""
+    if stop_after_node in _MULTI_NODE_STAGES and flags.get("llm_mode") is None and flags.get("llm_client") is None:
+        flags["llm_mode"] = "offline"
+    elif resume and flags.get("llm_client") is None and flags.get("llm_mode") is None:
+        cp = await asyncio.to_thread(load_checkpoint, thread_id)
+        cp_state = (cp or {}).get("state") or {}
+        if isinstance(cp_state, dict) and cp_state.get("reasoning_mode") != "llm_tool_loop":
+            flags["llm_mode"] = "offline"
     ctx = make_context(mode, thread_id, **flags)
     config = _config(thread_id, ctx.policy)
     async with _lock_for_thread(thread_id), open_saver() as saver:
@@ -412,9 +528,17 @@ async def run_graph(
     return state
 
 
+async def _context_for_gate_resume(mode: str, thread_id: str) -> RunContext:
+    cp = await asyncio.to_thread(load_checkpoint, thread_id)
+    saved_state = (cp or {}).get("state") or {}
+    if isinstance(saved_state, dict) and saved_state.get("reasoning_mode") == "llm_tool_loop":
+        return make_context(mode, thread_id, llm_client=_GateOnlyLLM())
+    return make_context(mode, thread_id, llm_mode="offline")
+
+
 async def resume_gate(thread_id: str, mode: str, decision: dict[str, Any]) -> bool:
     """Resume the paused `human_gate` interrupt with the human decision. Returns False if no interrupt is pending."""
-    ctx = make_context(mode, thread_id)
+    ctx = await _context_for_gate_resume(mode, thread_id)
     config = _config(thread_id, ctx.policy)
     async with _lock_for_thread(thread_id), open_saver() as saver:
         compiled = select_graph(ctx, thread_id).compile(checkpointer=saver)
@@ -429,7 +553,7 @@ async def resume_and_commit_gate(thread_id: str, mode: str, decision: dict[str, 
     Resume `human_gate` and execute `commit_disposition` through the guarded MCP tool gate.
     Returns `None` if no LangGraph `interrupt()` is currently active on `thread_id`.
     """
-    ctx = make_context(mode, thread_id)
+    ctx = await _context_for_gate_resume(mode, thread_id)
     config = _config(thread_id, ctx.policy)
     async with _lock_for_thread(thread_id), open_saver() as saver:
         compiled = select_graph(ctx, thread_id).compile(checkpointer=saver)

@@ -220,6 +220,18 @@ async def run_case(
             final_state = await run_fixed_pipeline(
                 alert, verify=deterministic_verifier, budget_overrides=budget_overrides
             )
+        elif mode == "rule_engine":
+            from src.agent.rule_engine import run_rule_engine
+
+            final_state = await run_rule_engine(
+                alert,
+                configurable_graph=configurable_graph,
+                replanning_enabled=replanning_enabled,
+                deterministic_verifier=deterministic_verifier,
+                reflexion_enabled=reflexion_enabled,
+                memory_enabled=memory_enabled,
+                budget_overrides=budget_overrides,
+            )
         elif mode == "c2_multi":
             from src.agent.c2_multi import run_multi_agent
 
