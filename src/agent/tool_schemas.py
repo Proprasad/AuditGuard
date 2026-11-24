@@ -101,7 +101,10 @@ class HypothesisDraft(StrictModel):
     )
     regulatory_citations: list[str] = Field(
         default_factory=list,
-        description="Retrieved passage IDs (e.g. PMLA-2002-*, PMLR-2005-*, RBI-KYC-2016-*, FIU-IND-RFI-*, FATF-*, SOP-*)",
+        description=(
+            "Retrieved passage IDs (e.g. PMLA-2002-*, PMLR-2005-*, RBI-KYC-2016-*, "
+            "FIU-IND-RFI-*, FATF-*, SOP-*)"
+        ),
     )
 
 
@@ -222,7 +225,8 @@ TOOL_SPECS: dict[str, tuple[str, type[BaseModel], str]] = {
     "get_clause_by_id": (
         "compliance-kb",
         GetClauseInput,
-        "Fetch a specific regulatory passage or internal SOP by its exact ID (e.g. FIU-IND-RFI-BA-01, PMLA-2002-S12-P01).",
+        "Fetch a specific regulatory passage or internal SOP by its exact ID "
+        "(e.g. FIU-IND-RFI-BA-01, PMLA-2002-S12-P01).",
     ),
     "calc": (
         "local",

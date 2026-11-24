@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """
 Deterministic Retrieval Benchmark v2 Builder (`eval/build_retrieval_bench_v2.py`).
 

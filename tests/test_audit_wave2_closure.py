@@ -318,7 +318,9 @@ async def test_w2_05_prose_amounts_and_canonical_hash_parity(client: Any, auth: 
     }
     bad_rupees = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 900001 rupees."}, reg)
     bad_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9.5 lakhs."}, reg)
-    good_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9 lakhs citing FIU-IND-RFI-BA-01."}, reg)
+    good_lakhs = verify_worksheet(
+        {**base_ws, "recommendation_rationale": "Moved 9 lakhs citing FIU-IND-RFI-BA-01."}, reg
+    )
     assert not bad_rupees.passed and any(d.code == "UNGROUNDED_AMOUNT" for d in bad_rupees.discrepancies)
     assert not bad_lakhs.passed and any(d.code == "UNGROUNDED_AMOUNT" for d in bad_lakhs.discrepancies)
     assert good_lakhs.passed is True

@@ -116,10 +116,8 @@ def _features(
     if risk == "high":
         susp.append("Seed account carries HIGH KYC risk rating")
     if root_reg and corr.corroborated_benign:
-        benign.append(
-            f"Corroborated commercial/NGO/chit registration ({root_kyc.get('registry_type') or root_kyc.get('entity_type')}; "
-            f"score={corr.corroboration_score})"
-        )
+        reg_lbl = root_kyc.get("registry_type") or root_kyc.get("entity_type")
+        benign.append(f"Corroborated commercial/NGO/chit registration ({reg_lbl}; score={corr.corroboration_score})")
     elif root_reg:
         susp.append(
             f"Commercial registration uncorroborated or contradicted by scatter-gather topology "
@@ -414,10 +412,14 @@ def _c2_runs(
     tw, mh = (state.plan.graph_params.time_window_days, state.plan.graph_params.max_hops) if state.plan else (0, 0)
     multi = sum(1 for p in state.fund_flow_paths if p.hop_count >= 2)
     specs = (
-        ("flow_tracer", "Flow Tracing Agent", f"Graph traversal ({tw}d, {mh} hops) & Decimal conservation", flow_ms, f"Found {len(state.fund_flow_paths)} candidate paths ({multi} multi-hop)"),
-        ("benign_investigator", "Benign Context Agent", "Multi-bank KYC verification & GST/MCA/80G/Chit registry checks", ev_ms, f"Verified {len(state.kyc_profiles)} KYC/registry record(s)"),
-        ("regulatory_analyst", "Regulatory Research Agent", "Hybrid RAG (BM25 + Vector + RRF + Reranker) over Indian AML corpus", ev_ms, f"Retrieved {len(state.regulatory_clauses)} regulatory clauses"),
-        ("reporter_critic", "Reporting & Critique Agent", "Hypothesis reconciliation, deterministic verifier & SHA-256 worksheet draft", round(critic_ms, 1), summary),
+        ("flow_tracer", "Flow Tracing Agent", f"Graph ({tw}d, {mh} hops) & Decimal conservation", flow_ms,
+         f"Found {len(state.fund_flow_paths)} candidate paths ({multi} multi-hop)"),
+        ("benign_investigator", "Benign Context Agent", "Multi-bank KYC & GST/MCA/80G/Chit registry checks", ev_ms,
+         f"Verified {len(state.kyc_profiles)} KYC/registry record(s)"),
+        ("regulatory_analyst", "Regulatory Research Agent", "Hybrid RAG over Indian AML corpus", ev_ms,
+         f"Retrieved {len(state.regulatory_clauses)} regulatory clauses"),
+        ("reporter_critic", "Reporting & Critique Agent", "Verifier v2 & SHA-256 worksheet draft",
+         round(critic_ms, 1), summary),
     )
     return [
         {

@@ -1,0 +1,10 @@
+{
+  "annotator_1_rows": 0,
+  "annotator_2_rows": 0,
+  "cross_family_ok": true,
+  "judge_model": "google/gemini-3.1-flash-lite",
+  "packet_dev": 20,
+  "packet_held_out": 40,
+  "packet_worksheets": 60,
+  "status": "awaiting_human_annotations"
+}

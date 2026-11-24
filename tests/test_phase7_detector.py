@@ -263,7 +263,14 @@ async def test_explicit_missing_data_detection_all_four_conditions() -> None:
         "is_commercially_registered": True,
         "registry_check": {"is_registered": True, "registry_status": "ACTIVE", "registered_since": "2026-08-15"},
     }
-    tx_recent = [{"tx_id": "TXN-N1", "sender_account": "ACC-NEW", "receiver_account": "ACC-B1", "timestamp": "2026-09-01T10:00:00Z"}]
+    tx_recent = [
+        {
+            "tx_id": "TXN-N1",
+            "sender_account": "ACC-NEW",
+            "receiver_account": "ACC-B1",
+            "timestamp": "2026-09-01T10:00:00Z",
+        }
+    ]
     corr_new = assess_registration_corroboration("ACC-NEW", kyc_new, [], [], tx_recent, {})
     assert corr_new.registry_active is True
     assert corr_new.corroborated_benign is False
@@ -374,7 +381,10 @@ async def test_aggregate_root_flow_metric_deduplicates_shared_edges_and_conserva
         time_window_days=14, max_hops=4, amount_tolerance=Decimal("0.10"), min_intermediaries=2
     )
     rules = SuspicionRules(
-        scatter_gather_min_nodes=3, rapid_layering_max_days=7, rapid_layering_min_nodes=4, fee_skim_min_ratio=Decimal("0.05")
+        scatter_gather_min_nodes=3,
+        rapid_layering_max_days=7,
+        rapid_layering_min_nodes=4,
+        fee_skim_min_ratio=Decimal("0.05"),
     )
     limits = GraphLimits(max_raw_paths=50, max_paths_returned=20, anchor_lookback_days=1)
     run = graph_math.find_candidate_paths(txns, "ROOT", params, rules, limits)

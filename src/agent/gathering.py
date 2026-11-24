@@ -87,7 +87,10 @@ def _missing_evidence_query(paths: list[FundFlowPath], profiles: list[dict[str, 
     if any(w in deg_blob for w in ("external", "correspondent", "wire", "unavailable", "timeout")):
         return "external correspondent bank visibility gap wire transfer originator metadata RBI Para 64 FATF R16"
     if not any(p.hop_count >= 2 for p in paths):
-        return "outbound dispersal without consolidation bounded graph replanning external bank gap SOP-SG-001 SOP-SG-002"
+        return (
+            "outbound dispersal without consolidation bounded graph replanning "
+            "external bank gap SOP-SG-001 SOP-SG-002"
+        )
     return "missing external beneficiary bank statements STR seven working day timeline PMLR Rule 8"
 
 

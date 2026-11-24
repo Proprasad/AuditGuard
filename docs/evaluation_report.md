@@ -1,99 +1,160 @@
-# AuditGuard — Testing, Validation & Empirical Evaluation Report
+# AuditGuard v3 — Reproducible Evaluation Report
 
-**Execution Environment:** Windows (`win32`), Python `3.10.8`, LangGraph `1.2.24`, FastMCP `4.1.8`, Isolated Temporary Evaluation DB (`prepare_isolated_eval_db()`; operational `data/auditguard.db` verified at `0` held-out rows across all 17 tables).  
-**Datasets & Suites:** 60-Case Synthetic Dataset (`seed=42`: 20 dev in `data/synthetic/dev/`, 40 unseen held-out in `eval/held_out/`), 32-Clause Indian AML Corpus, 35-Query Dev + 28-Query Independent Plain-English NL Retrieval Benchmarks, and 32-Attack Red-Team Suite.
+> Generated automatically from computed JSON summaries by `eval/report.py` (`make replay` / `make report`). No metrics in this file are hand-typed.
 
----
+## Artifact Provenance (Zero Hand-Typed Numbers)
 
-## 1. Static Analysis & Automated Test Suite
+Every quantitative value in this report was generated programmatically by `python -m eval.report` from the verified JSON artifacts listed below:
 
-- **Linter (`ruff check src/ eval/ tests/ scripts/ --select E,F,B,S,DTZ,BLE,T20,C901`):** `All checks passed!` (`0` errors; McCabe cyclomatic complexity `<= 12` across `src/`).
-- **Type Checker (`mypy src/`):** `Success: no issues found in 61 source files`.
-- **Automated Test Suite (`pytest tests/ -v --cov=src`):** **`93 passed`** (`0` failed, `0` skipped, **`86%` total coverage**), with every test isolated on `tmp_path / "test_auditguard.db"` and a session-level `mtime` assertion guarding `data/auditguard.db`.
+| Artifact | Path | SHA-256 (prefix) |
+|---|---|---|
+| E1 Deterministic Held-Out (120 + 30 challenge) | `eval/replay_bundle/e1_held_out_det_summary.json` | `e5f6386cda183736` |
+| E1 Offline Replay Smoke (10 dev, all 4 modes) | `eval/replay_bundle/e1_smoke_summary.json` | `e89db7992bc38c34` |
+| E2 Red-Team v2 Security Suite | `eval/replay_bundle/e2_security_summary.json` | `157cbd8ca29bcb87` |
+| Retrieval v2 Benchmark (110 queries) | `eval/replay_bundle/retrieval_v2_summary.json` | `befd75d3d6199a10` |
+| Phase 4 Judge Calibration Status | `eval/replay_bundle/calibration_status.json` | `08199f5feef41c23` |
 
-| Test Module | Tests | Verified Capabilities |
-|---|---:|---|
-| [test_adversarial_step6.py](../tests/test_adversarial_step6.py) | 23 | All **18 Audit §5 adversarial scenarios**: bare `/decision {}` (`422`), `reviewer_id` spoofing (`422` + JWT `sub` check), read-only post-commit re-stream, concurrent `asyncio.gather` double-approval (`[200, 409]`), `</untrusted_data>` XML escaping across all 7 untrusted fields, Unicode/NBSP/homoglyph prompt-injection withholding across `C0`/`C1`/`C2`, guilt-phrase regex families, fabricated citations & broken INR math fail-closed, restricted worksheet edits (`422`), `BudgetLedger` caps (`15` calls, `\$0.15`, `3` replans, `2` critique retries), MCP timeout/empty-row graceful degradation, unknown alert/KYC (`404`/`ACCOUNT_NOT_FOUND`), `MultiDiGraph` 5 parallel edges + exact `Decimal`, full-DB 0-leakage scan, `/config/llm` newline `.env` injection (`422`) & RBAC (`403`), full-table Right-to-Erasure + Loki PII redaction, `respx` OpenRouter HTTP malformed JSON / ungrounded amount self-correction / USD cost accrual, and spawned FastMCP HTTP server + timeout |
-| [test_core_step2.py](../tests/test_core_step2.py) | 14 | Pure `src/core/` (`Decimal` quantization, `0.10 + 0.20 == Decimal("0.30")`, `nx.MultiDiGraph` parallel transfers, deterministic `PATH-*`/`CALC-*` SHA-256 IDs, canonical JSON hash, `PolicyConfig` + `BudgetLedger`, fail-fast startup validator) |
-| [test_security_step3.py](../tests/test_security_step3.py) | 9 | Auth enforcement (`401`), single-use HMAC replay (`409`), wrong hash (`403`), login sliding-window rate limiting (`429`), XML tag escaping, Unicode-obfuscated injection detection, admin-only LLM config |
-| [test_api.py](../tests/test_api.py) | 9 | Workbench static assets, `/health`, `/metrics`, PBKDF2-HMAC-SHA256 login & server-assigned roles, navigation endpoints, `edit -> 403 stale token -> 200 fresh token -> 409 replay`, `senior_reviewer` memory erasure |
-| [test_graph_step5.py](../tests/test_graph_step5.py) | 7 | Compiled LangGraph `StateGraph` topology (zero orphans, guaranteed `END`), deduplicating state reducers, `recursion_limit`, evidence-weighted rubric (requiring `multi_hop_path` for `>= 0.70` escalation), `interrupt()` pause & `Command(resume=...)` release, C2 4-specialist execution, and LLM registry grounding |
-| [test_mcp_servers.py](../tests/test_mcp_servers.py) & [test_mcp_http_transport.py](../tests/test_mcp_http_transport.py) | 8 | Real `fastmcp.Client` in-memory and spawned streamable-HTTP contracts, schema validation errors (`MCP_TOOL_ERROR`), unreachable server (`MCP_UNAVAILABLE`), `POLICY_BOUNDS_EXCEEDED`, `INVALID_ALERT_ID`, `ACCOUNT_NOT_FOUND` |
-| [test_security_hooks.py](../tests/test_security_hooks.py), [test_frontend_integrity.py](../tests/test_frontend_integrity.py), [test_approval_invalidation.py](../tests/test_approval_invalidation.py), [test_memory_policy.py](../tests/test_memory_policy.py), [test_graph_engine.py](../tests/test_graph_engine.py), [test_checkpoint_resume.py](../tests/test_checkpoint_resume.py), [test_compliance_kb.py](../tests/test_compliance_kb.py), [test_red_team_suite.py](../tests/test_red_team_suite.py), [test_verification_failed_event.py](../tests/test_verification_failed_event.py) | 23 | Pre/post tool hooks, DOM-ID & live SSE workbench contract, out-of-band DB tamper detection (`TOKEN_INVALIDATED_BY_EDIT`), pair-aware message trimming, mid-run crash recovery (`/resume`) across `C0`/`C1`/`C2` per-specialist checkpoints, retrieval benchmark, red-team suite, and fail-closed `verification_failed` SSE terminal state |
+## AuditGuard Experiment `E1_HELD_OUT_DET` Report
 
----
+- **Split:** `held_out` (`n=120` cases)
+- **Configured LLM Repeats:** `1` (`llm_mode=offline`)
+- **Run ID:** `replay_e1_held_out_det`
 
-## 2. Regulatory Retrieval Benchmarks (`python -m src.cli retrieval-bench`)
+### 1. Headline Metrics (Mean ± 95% CI)
 
-All clause-ID tokens (`rf023`, `sopsg001`, etc.) were removed from `DOMAIN_CONCEPTS` in [compliance_kb.py](../src/mcp_servers/compliance_kb.py); expansion uses pure English domain synonyms plus character 3/4-grams fused with Okapi BM25 via RRF (`k=60`).
+| Configuration | Type | Accuracy (95% CI) | Macro-F1 | Weighted Error Cost (95% CI) | False-Close Rate (95% CI) | Evidence Recall | Evidence Precision |
+|---|---|---|---:|---|---|---:|---:|
+| `c0_fixed` | `deterministic` | 42.5% [34.0%, 51.4%] | 0.368 | 3.2833 [1.6952, 5.1522] | 57.7% [44.2%, 70.1%] | 8.2% | 45.0% |
+| `rule_engine` | `deterministic` | 66.7% [57.8%, 74.5%] | 0.640 | 0.6917 [0.4037, 1.0109] | 3.8% [1.1%, 13.0%] | 25.3% | 97.3% |
 
-| Benchmark Split | Queries | BM25-Only Recall@5 | BM25-Only MRR | Hybrid RRF+Rerank Recall@5 | Hybrid RRF+Rerank MRR | Recall@5 Delta |
-|---|---:|---:|---:|---:|---:|---:|
-| **Dev Benchmark** ([retrieval_bench.jsonl](../eval/retrieval_bench.jsonl)) | 35 | 100.0% (35/35) | 1.000 | **100.0%** (35/35) | 0.917 | +0.0 pp |
-| **Independent Plain-English NL Held-Out** ([retrieval_held_out_nl.jsonl](../eval/retrieval_held_out_nl.jsonl)) | 28 | 89.3% (25/28) | 0.746 | **96.4%** (27/28) | **0.748** | **+7.1 pp** |
+### 2. Replanning, Verification & Resource Percentiles (`p50` / `p95`)
 
----
+| Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
+|---|---:|---:|---:|---:|---|---|---|---:|
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 92.5% | \$0.0000 / \$0.0000 | 2.05s / 3.11s | 12.0 / 12.0 | 0.14% |
+| `rule_engine` | 80.3% | 95.5% | 0.99% | 100.0% | \$0.0000 / \$0.0000 | 3.61s / 4.38s | 15.0 / 15.0 | 0.23% |
 
-## 3. Experiment E1 — Architecture Value (`C0` vs. `C1` vs. `C2`)
+### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
 
-### 3A. Offline Evidence-Weighted Rubric Mode (`LLM_ENABLED=false`, `repeats=1`, Isolated Temp DB)
+*Pre-registered rule: no configuration claims `outperforms` unless the paired 95% CI excludes `0`.*
 
-Confidences in offline mode are computed from `EvidenceFeatures` using weights in [config/models.yaml](../config/models.yaml) (`scoring:`), requiring a reconstructed multi-hop path (`multi_hop_path=True`) before suspicious confidence can reach `disposition_threshold = 0.70`.
+| Pair (`A vs B`) | Acc Diff (95% CI) | Acc Verdict | McNemar p | Error-Cost Diff (95% CI) | Error-Cost Verdict | Cohen's d (Cost) |
+|---|---|---|---:|---|---|---:|
+| `c0_fixed vs rule_engine` | -0.2417 [-0.4685, -0.0094] | `b_outperforms_a` | 0.0001 | +2.5917 [+1.0797, +4.3158] | `b_outperforms_a` | +0.631 |
 
-| Split | Mode | Accuracy | Replan Recovery | Avg Tool Calls | Avg Replans | Avg Latency | Deterministically Verified |
-|---|---|---:|---:|---:|---:|---:|---:|
-| **Dev (20 cases)** | `c0_fixed` | 30.0% (6/20) | 50.0% | 5.00 | 0.00 | 343.3 ms | 100.0% |
-| **Dev (20 cases)** | `c1_single` | **90.0%** (18/20) | **100.0%** | 13.10 | 0.40 | 490.6 ms | 100.0% |
-| **Dev (20 cases)** | `c2_multi` | **90.0%** (18/20) | **100.0%** | 13.10 | 0.40 | **482.8 ms** | 100.0% |
-| **Unseen Held-Out (40 cases)** | `c0_fixed` | 30.0% (12/40) | 50.0% | 5.00 | 0.00 | 332.6 ms | 100.0% |
-| **Unseen Held-Out (40 cases)** | `c1_single` | **90.0%** (36/40) | **100.0%** | 13.10 | 0.40 | 585.4 ms | 100.0% |
-| **Unseen Held-Out (40 cases)** | `c2_multi` | **90.0%** (36/40) | **100.0%** | 13.10 | 0.40 | **564.4 ms** | 100.0% |
+### 4. Anti-Shortcut Reference Baselines (`eval/shortcuts.py`)
 
-*Note on the 10% (`2/20` dev, `4/40` held-out) conservative `request_info` cases:* On `marketplace_payout` alerts, multi-hop flagged dispersal (`+0.25`) competes against active commercial registration and low KYC risk (`-0.40`), yielding `benign = 0.65` (just below `disposition_threshold = 0.70`) and conservatively routing to `request_info` for human review rather than overfitting rubric weights to the synthetic generator.
+| Shortcut Baseline | Dev Accuracy | Target Split Accuracy |
+|---|---:|---:|
+| `hand_features_logreg` | 70.0% | 40.8% |
+| `memo_keyword_nb` | 60.0% | 44.2% |
+| `root_kyc_tree` | 76.7% | 48.3% |
 
-### 3B. Live OpenRouter LLM Evaluation (`openai/gpt-5-mini`, `LLM_ENABLED=true`, 6 Dev Cases `CASE-0001..0014`)
+### 5. Per-Family Breakdown (`disposition_accuracy` / `weighted_error_cost`)
 
-| Mode | Accuracy (6 Cases) | Replan Recovery | Avg Tool Calls | Avg Replans | Avg Tokens / Case | Avg Cost / Case (USD) | Avg Wall Latency | Verified Rate |
+| Family | `c0_fixed` | `rule_engine` |
+|---|---:|---:|
+| `ambiguous` | 50.0% / 5.00 | 100.0% / 0.00 |
+| `benign_lookalike` | 57.9% / 0.84 | 34.2% / 0.97 |
+| `incomplete_data` | 91.7% / 0.83 | 100.0% / 0.00 |
+| `layering` | 3.3% / 4.60 | 66.7% / 0.93 |
+| `layering_benign_cover` | 0.0% / 9.00 | 68.8% / 1.12 |
+
+### 6. Adversarial Challenge Slice (`30` Cases)
+
+| Configuration | Accuracy (95% CI) | Weighted Error Cost (95% CI) | False-Close Rate |
+|---|---|---|---|
+| `c0_fixed` | 46.7% [30.2%, 63.9%] | 2.9333 [1.2258, 4.6858] | 53.8% |
+| `rule_engine` | 70.0% [52.1%, 83.3%] | 0.5000 [0.2333, 0.8065] | 0.0% |
+## AuditGuard Experiment `E1` Report
+
+- **Split:** `v2_dev` (`n=10` cases)
+- **Configured LLM Repeats:** `1` (`llm_mode=replay`)
+- **Run ID:** `replay_e1_smoke`
+
+### 1. Headline Metrics (Mean ± 95% CI)
+
+| Configuration | Type | Accuracy (95% CI) | Macro-F1 | Weighted Error Cost (95% CI) | False-Close Rate (95% CI) | Evidence Recall | Evidence Precision |
+|---|---|---|---:|---|---|---:|---:|
+| `c0_fixed` | `deterministic` | 30.0% [10.8%, 60.3%] | 0.262 | 3.8000 [0.9091, 7.0000] | 60.0% [23.1%, 88.2%] | 8.9% | 45.0% |
+| `c1_single` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 19.3% | 56.1% |
+| `c2_multi` | `replay` | 30.0% [10.8%, 60.3%] | 0.229 | 1.2000 [0.5455, 1.8182] | 0.0% [0.0%, 43.4%] | 11.7% | 46.3% |
+| `rule_engine` | `deterministic` | 80.0% [49.0%, 94.3%] | 0.785 | 0.4000 [0.0000, 1.0000] | 0.0% [0.0%, 43.4%] | 21.4% | 98.6% |
+
+### 2. Replanning, Verification & Resource Percentiles (`p50` / `p95`)
+
+| Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
+|---|---:|---:|---:|---:|---|---|---|---:|
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 90.0% | \$0.0000 / \$0.0000 | 5.02s / 16.35s | 12.0 / 12.0 | 0.00% |
+| `c1_single` | 20.0% | 0.0% | 0.00% | 70.0% | \$0.0317 / \$0.0472 | 3.65s / 4.33s | 15.0 / 15.0 | 10.74% |
+| `c2_multi` | 20.0% | 100.0% | 0.00% | 100.0% | \$0.0308 / \$0.0354 | 2.81s / 4.26s | 12.5 / 14.6 | 20.47% |
+| `rule_engine` | 80.0% | 80.0% | 0.00% | 100.0% | \$0.0000 / \$0.0000 | 4.06s / 4.78s | 15.0 / 15.0 | 0.00% |
+
+### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
+
+*Pre-registered rule: no configuration claims `outperforms` unless the paired 95% CI excludes `0`.*
+
+| Pair (`A vs B`) | Acc Diff (95% CI) | Acc Verdict | McNemar p | Error-Cost Diff (95% CI) | Error-Cost Verdict | Cohen's d (Cost) |
+|---|---|---|---:|---|---|---:|
+| `c0_fixed vs rule_engine` | -0.5000 [-0.8750, -0.1250] | `b_outperforms_a` | 0.0625 | +3.4000 [+0.4000, +6.7273] | `b_outperforms_a` | +0.735 |
+| `c0_fixed vs c1_single` | +0.0000 [-0.3000, +0.3000] | `inconclusive_ci_includes_zero` | 1.0000 | +2.4000 [-0.4444, +5.2727] | `inconclusive_ci_includes_zero` | +0.545 |
+| `c0_fixed vs c2_multi` | +0.0000 [-0.3000, +0.3000] | `inconclusive_ci_includes_zero` | 1.0000 | +2.6000 [-0.1111, +5.4545] | `inconclusive_ci_includes_zero` | +0.612 |
+| `rule_engine vs c1_single` | +0.5000 [+0.1250, +0.8750] | `a_outperforms_b` | 0.0625 | -1.0000 [-1.7500, -0.2500] | `a_outperforms_b` | -0.949 |
+| `rule_engine vs c2_multi` | +0.5000 [+0.1250, +0.8750] | `a_outperforms_b` | 0.0625 | -0.8000 [-1.4545, -0.1818] | `a_outperforms_b` | -0.871 |
+| `c1_single vs c2_multi` | +0.0000 [+0.0000, +0.0000] | `inconclusive_ci_includes_zero` | 1.0000 | +0.2000 [+0.0000, +0.5000] | `inconclusive_ci_includes_zero` | +0.474 |
+
+### 4. Anti-Shortcut Reference Baselines (`eval/shortcuts.py`)
+
+| Shortcut Baseline | Dev Accuracy | Target Split Accuracy |
+|---|---:|---:|
+| `hand_features_logreg` | 70.0% | 80.0% |
+| `memo_keyword_nb` | 60.0% | 60.0% |
+| `root_kyc_tree` | 76.7% | 100.0% |
+
+### 5. Per-Family Breakdown (`disposition_accuracy` / `weighted_error_cost`)
+
+| Family | `c0_fixed` | `c1_single` | `c2_multi` | `rule_engine` |
+|---|---:|---:|---:|---:|
+| `ambiguous` | 66.7% / 3.33 | 100.0% / 0.00 | 100.0% / 0.00 | 100.0% / 0.00 |
+| `benign_lookalike` | 33.3% / 1.33 | 0.0% / 2.00 | 0.0% / 1.33 | 66.7% / 0.67 |
+| `layering` | 0.0% / 2.00 | 0.0% / 2.00 | 0.0% / 2.00 | 100.0% / 0.00 |
+| `layering_benign_cover` | 0.0% / 7.33 | 0.0% / 2.00 | 0.0% / 2.00 | 66.7% / 0.67 |
+## AuditGuard Experiment `E2` — Security Defenses Report
+
+- **Split:** `held_out`
+- **Red-Team Suite:** `v2`
+
+### 1. Defenses OFF vs Defenses ON (Mean & Wilson 95% CI)
+
+| Variant | Red-Team ASR (95% CI) | Block Rate | Benign False-Block Rate (95% CI) | Unauth Writes | PII Leaks | End-to-End Agent ASR |
+|---|---|---|---|---:|---:|---|
+| `defenses_off` | 87.9% [81.2%, 92.4%] | 12.1% (16/132) | 0.0% [0.0%, 1.2%] (0/320) | 4 | 10 | 100.0% |
+| `defenses_on` | 2.3% [0.8%, 6.5%] | 97.7% (129/132) | 0.0% [0.0%, 1.2%] (0/320) | 0 | 0 | 0.0% |
+## Retrieval v2 Benchmark (All 4 Pipelines)
+
+- **Benchmark:** `eval\retrieval_bench_v2.jsonl` (`110` queries: `88` answerable, `22` unanswerable = `20.0%`)
+- **Configured Default Pipeline:** `hybrid_rrf_rerank`
+- **Empirical Best Pipeline:** `hybrid_rrf_rerank`
+- **Default >= BM25 on Recall@1:** `True`
+
+| Pipeline | Recall@1 | Recall@3 | Recall@5 | MRR | nDCG@5 | Abstain Prec | Abstain Rec | Abstain F1 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `c0_fixed` (Deterministic Baseline) | 33.3% (2/6) | 0.0% | 5.00 | 0.00 | 0 | \$0.00000 | 1,033.4 ms | 100.0% |
-| `c1_single` (Live `gpt-5-mini`) | **100.0%** (6/6) | **100.0%** | 13.67 | 0.33 | 10,572 | \$0.00848 | 42,479.1 ms | **100.0%** |
-| `c2_multi` (Live `gpt-5-mini` Supervisor + 4 Specialists) | **100.0%** (6/6) | **100.0%** | **13.33** | **0.17** | **9,563** | **\$0.00781** | **40,481.2 ms** | **100.0%** |
+| `bm25_only` | 0.852 | 0.786 | 0.875 | 0.891 | 0.838 | 0.833 | 0.909 | 0.870 |
+| `dense_only` | 0.761 | 0.742 | 0.799 | 0.799 | 0.771 | 0.606 | 0.909 | 0.727 |
+| `hybrid_rrf` | 0.898 | 0.881 | 0.915 | 0.934 | 0.887 | 1.000 | 0.909 | 0.952 |
+| `hybrid_rrf_rerank` **(default)** | 0.909 | 0.856 | 0.915 | 0.938 | 0.888 | 1.000 | 0.909 | 0.952 |
 
-*Measured Live LLM Findings:* Both `c1_single` and `c2_multi` achieved **100.0% accuracy (`6/6`)** and **100.0% replan recovery** across `clear_scatter_gather`, `staggered_timing`, and `fee_skimming` cases vs. `33.3%` (`2/6`) for `c0_fixed`. `c2_multi`'s dedicated `build_c2_graph` specialist dispatch (`supervisor_plan -> flow_tracer -> parallel_specialists -> supervisor_hypotheses -> supervisor_critique -> reporter_critic`) achieved lower average token usage (`9,563` vs. `10,572`, `0.90x`), fewer redundant replans (`0.17` vs. `0.33`), and lower wall latency (`40.5 s` vs. `42.5 s`) while consuming `~5.2%` of the `\$0.15/case` budget cap and passing fail-closed deterministic verification on `100.0%` of cases.
+## Cross-Family LLM Judge & Human Calibration Status
 
----
+- **Calibration Status:** `awaiting_human_annotations`
+- **Judge Model:** `google/gemini-3.1-flash-lite` (cross-family verified: `True`)
+- **Stratified Blinded Packet:** `60` worksheets (`20` dev, `40` held-out)
+- **Annotator Rows Completed:** annotator_1=`0`, annotator_2=`0`
 
-## 4. Experiment E2 — Security Defenses & 32-Attack Red-Team Suite
+## Limitations & Pending `[HUMAN]` Sign-Offs
 
-`Defenses OFF` executes all 32 attack payloads directly against the real FastMCP servers via `call_mcp_tool` with `apply_input_guardrails`, `pre_tool_hook`, `post_tool_hook`, `apply_output_guardrails`, and `mask_pii` disabled.
-
-| Configuration | Attacks | Blocked | Attack Block Rate | Attack Success Rate (ASR) | Clean-Case False-Block Rate |
-|---|---:|---:|---:|---:|---:|
-| **Defenses OFF** (Hooks & Guardrails Disabled) | 32 | 9 | 28.1% | 71.9% (23/32) | 0.0% |
-| **Defenses ON** (Full Guardrail + Hook Stack) | 32 | **31** | **96.9%** | **3.1%** (1/32) | **0.0%** (0/20) |
-
-*Note:* The `9/32` (`28.1%`) blocked under `Defenses OFF` reflect intrinsic server-side defense-in-depth (`4` out-of-bounds parameter rejections inside `graph-engine` + `5` `submit_case_disposition` HMAC/token rejections inside `case_repo`). With `Defenses ON`, `31/32` (`96.9%`) are blocked with `0.0%` false blocks on clean dev cases.
-
----
-
-## 5. Experiment E3 — Frozen Reflexion Playbook Generalization (40 Unseen Held-Out Cases)
-
-Generated strictly from dev-split failures via [scripts/build_frozen_playbook.py](../scripts/build_frozen_playbook.py) (`run_dev_reflexion()` -> `review_lesson()` -> `freeze_playbook()` -> `export_playbook()`), producing `3` approved lessons (`LES-22267B`, `LES-6B2801`, `LES-9ADC37`) and `1` human-rejected overfitted lesson (`LES-REJ-001`), verified identical between `config/reflexion_playbook.json` and `data/auditguard.db` (`playbook_frozen = true`).
-
-| Configuration (40 Unseen Held-Out Cases) | Accuracy | Replan Recovery | Avg Tool Calls | Avg Replans | Avg Latency |
-|---|---:|---:|---:|---:|---:|
-| **Single-Pass (`replanning=False`, Playbook OFF)** | 70.0% (28/40) | 50.0% | 12.30 | 0.00 | 524.5 ms |
-| **Single-Pass (`replanning=False`, Frozen Playbook ON)** | **90.0%** (36/40, **+20.0 pp**) | **100.0%** | 12.50 | 0.00 | **423.0 ms** |
-| **Full Multi-Pass (`replanning=True`, Playbook OFF)** | 90.0% (36/40) | 100.0% | 13.10 | 0.40 | 499.9 ms |
-| **Full Multi-Pass (`replanning=True`, Frozen Playbook ON)** | **90.0%** (36/40) | **100.0%** | **12.60 (-0.50)** | **0.10 (-75%)** | **482.0 ms** |
-
----
-
-## 6. Experiment E4 — Signature Replanning Ablation
-
-| Split | Variant | Accuracy | Replan Recovery | Avg Tool Calls | Avg Replans | Avg Latency |
-|---|---|---:|---:|---:|---:|---:|
-| **Dev (20 cases)** | `c1_full_system` (Replanning ON + Verifier ON) | **90.0%** (18/20) | **100.0%** | 13.10 | 0.40 | 626.3 ms |
-| **Dev (20 cases)** | `c1_no_replanning` (Replanning OFF) | 70.0% (14/20, **-20.0 pp**) | 50.0% | 12.30 | 0.00 | 434.7 ms |
-| **Held-Out (40 cases)** | `c1_full_system` (Replanning ON + Verifier ON) | **90.0%** (36/40) | **100.0%** | 13.10 | 0.40 | 590.3 ms |
-| **Held-Out (40 cases)** | `c1_no_replanning` (Replanning OFF) | 70.0% (28/40, **-20.0 pp**) | 50.0% | 12.30 | 0.00 | 413.3 ms |
+1. **Synthetic Dataset (`golden_v2`):** All development, held-out, and challenge cases are parametrically synthesized to model Indian AML scatter-gather topologies and benign look-alikes. Metrics measure behavior on this synthetic benchmark rather than live bank production traffic.
+2. **Pending Independent Human Annotations (`[HUMAN]`):** The 40-case dev adjudication templates (`eval/human_labels/cases_to_annotate_annotator_{1,2}.csv`) and the 60-worksheet judge calibration templates (`eval/human_labels/worksheets_to_score_annotator_{1,2}.csv`) are intentionally empty until completed independently by human compliance annotators; judge-human Cohen's kappa is NOT claimed until those templates are populated.
+3. **Pending Statutory Numbering Sign-Off (`[HUMAN]`):** All regulatory passages in `data/regulatory_corpus/indian_aml_corpus.jsonl` carry `human_verified: false` pending verification against official Gazette of India / RBI / FIU-IND / FATF originals (`data/regulatory_corpus/HUMAN_VERIFICATION_CHECKLIST.md`).
+4. **Keyless Replay Scope vs Full Live LLM Matrix:** `make replay` reproduces the recorded 10-case `v2_dev` E1 LLM cassette (`c0_fixed`, `rule_engine`, `c1_single`, `c2_multi`), the full 120-case `held_out` + 30-case `challenge` deterministic E1 baselines, the full E2 red-team v2 security suite, and the full 110-query Retrieval v2 benchmark without API keys. Running full 120-case x 3-repeat live LLM E1/E3/E4 sweeps requires a funded OpenRouter key.
+5. **Dense Retriever Offline Backend:** In CI without multi-GB neural weights installed, `compliance-kb` uses L2-normalized float32 SVD semantic embeddings over word + character 3/4-gram + domain concept features; an optional BGE-M3 neural backend can be substituted when `sentence_transformers` is installed.

@@ -398,7 +398,8 @@ async def test_c2_multi_agent_parallel_specialists_and_replan() -> None:
         known = ctx_blob["known_evidence_ids"]
         path_id = next(x for x in known if x.startswith("PATH-"))
         kyc_id = next(x for x in known if x.startswith("KYC-"))
-        reg_id = next(x for x in known if x.startswith(("REG-", "SOP-", "PMLA-", "PMLR-", "RBI-", "FIU-", "FATF-", "CHIT-")))
+        clause_pfx = ("REG-", "SOP-", "PMLA-", "PMLR-", "RBI-", "FIU-", "FATF-", "CHIT-")
+        reg_id = next(x for x in known if x.startswith(clause_pfx))
         return make_tool_turn(
             (
                 "finish",
