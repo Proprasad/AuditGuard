@@ -3,7 +3,7 @@
  * 1. Fund Flow Summary Donut Chart (Consolidated vs. Retained)
  * 2. Cumulative Flow Timeline Line/Area Chart (Outflow vs. Consolidation over Days)
  */
-import { formatINR, formatINRCompact } from "./api.js";
+import { formatINR, formatINRCompact } from "./api.js?v=1.2.1";
 
 export function renderDonutChart(containerEl, flowSummary) {
   if (!containerEl) return;

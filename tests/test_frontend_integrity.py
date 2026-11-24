@@ -110,3 +110,21 @@ def test_llm_config_toggle_and_secret_masking(client, auth):
     r2 = client.post("/api/v1/config/llm", json={"enabled": False, "strong_model": "openai/gpt-5-nano"}, headers=admin)
     assert r2.status_code == 200
     assert r2.json()["c2_supervisor_model"] == "openai/gpt-5-nano"
+
+
+def test_case_switch_resets_workspace_and_guards_stale_streams():
+    app_js = (STATIC_DIR / "js" / "app.js").read_text(encoding="utf-8")
+    api_js = (STATIC_DIR / "js" / "api.js").read_text(encoding="utf-8")
+    graph_js = (STATIC_DIR / "js" / "graph-view.js").read_text(encoding="utf-8")
+
+    # Switching cases must abort prior SSE stream, reset in-memory state/DOM, and guard against out-of-order streams
+    assert "function resetInvestigationWorkspace()" in app_js
+    assert "api.closeStream()" in app_js
+    assert "const runSeq = ++state.runSeq;" in app_js
+    assert "if (runSeq !== state.runSeq) return;" in app_js
+    assert "state.invState = null;" in app_js
+    assert "state.threadId = null;" in app_js
+    assert "state.payloadHash = null;" in app_js
+    assert "graphView.clear(" in app_js
+    assert "clear(message =" in graph_js
+    assert "if (ctrl.signal.aborted)" in api_js

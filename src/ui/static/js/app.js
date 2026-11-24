@@ -3,9 +3,9 @@
  * Coordinates all 9 Sidebar Views, 5 Center Workspace Tabs, Live SSE Trace Streaming,
  * Interactive Transaction Graph, Decimal Charts, Evidence Inspector, and SHA-256 Human Gate.
  */
-import { AuditGuardAPI, formatINR } from "./api.js?v=1.2.0";
-import { TransactionGraphView } from "./graph-view.js?v=1.2.0";
-import { renderDonutChart, renderTimelineChart } from "./charts.js?v=1.2.0";
+import { AuditGuardAPI, formatINR } from "./api.js?v=1.2.1";
+import { TransactionGraphView } from "./graph-view.js?v=1.2.1";
+import { renderDonutChart, renderTimelineChart } from "./charts.js?v=1.2.1";
 
 const api = new AuditGuardAPI();
 
@@ -18,8 +18,11 @@ const state = {
   threadId: null,
   worksheetId: null,
   payloadHash: null,
+  approvedHash: null,
+  approvalToken: null,
   invState: null,
   invStatus: "idle",
+  runSeq: 0,
   tracePaused: false,
   traceEvents: [],
   regulationsCache: {},
@@ -125,11 +128,26 @@ function updateTopbarLlmPill(llm) {
   }
 }
 
+function syncAlertCatalog(alerts, preferredAlertId = null) {
+  state.alerts = alerts || [];
+  const sel = document.getElementById("headerAlertSelect");
+  const targetId = preferredAlertId || state.selectedAlert?.alert_id || sel.value;
+  sel.innerHTML = state.alerts
+    .map(
+      (a) =>
+        `<option value="${esc(a.alert_id)}">${esc(a.alert_id)} · ${formatINR(a.initial_amount_inr)} (${esc(a.full_name || a.seed_account_id)}) [${esc(a.status)}]</option>`
+    )
+    .join("");
+  if (targetId && state.alerts.some((a) => a.alert_id === targetId)) {
+    sel.value = targetId;
+  }
+}
+
 async function refreshHealthAndCatalog() {
   try {
     const [health, alertData, regData, cfgData] = await Promise.all([
       api.getHealth(),
-      api.getAlerts(50),
+      api.getAlerts(60),
       api.getRegulations(),
       api.getConfigInfo(),
     ]);
@@ -139,8 +157,7 @@ async function refreshHealthAndCatalog() {
     document.getElementById("sidebarVersion").textContent = `v${health.version || "1.0.0"}`;
     updateTopbarLlmPill(cfgData.llm);
 
-    state.alerts = alertData.alerts || [];
-    const openCount = alertData.open_count ?? state.alerts.length;
+    const openCount = alertData.open_count ?? (alertData.alerts || []).length;
     document.getElementById("navAlertBadge").textContent = openCount;
     document.getElementById("topNotifBadge").textContent = openCount;
 
@@ -148,15 +165,7 @@ async function refreshHealthAndCatalog() {
       state.regulationsCache[c.clause_id] = c;
     }
 
-    const sel = document.getElementById("headerAlertSelect");
-    const prev = sel.value;
-    sel.innerHTML = state.alerts
-      .map(
-        (a) =>
-          `<option value="${esc(a.alert_id)}">${esc(a.alert_id)} · ${formatINR(a.initial_amount_inr)} (${esc(a.full_name || a.seed_account_id)}) [${esc(a.status)}]</option>`
-      )
-      .join("");
-    if (prev && state.alerts.some((a) => a.alert_id === prev)) sel.value = prev;
+    syncAlertCatalog(alertData.alerts || []);
   } catch (err) {
     document.getElementById("healthPill").innerHTML = `<span class="health-dot" style="background:#ef4444;box-shadow:none;"></span> Offline`;
     console.error("Bootstrap error:", err);
@@ -276,6 +285,83 @@ function bindUIEvents() {
 }
 
 /* ── Live Investigation Execution (SSE) ──────────────────────────────────── */
+function resetInvestigationWorkspace() {
+  api.closeStream();
+  closeModal();
+
+  const alertObj = state.selectedAlert || {};
+  const aid = alertObj.alert_id || "selected alert";
+
+  state.threadId = null;
+  state.worksheetId = null;
+  state.payloadHash = null;
+  state.approvedHash = null;
+  state.approvalToken = null;
+  state.invState = null;
+  state.invStatus = "running";
+  state.traceEvents = [];
+
+  // KPI ribbon reset
+  document.getElementById("kpiRiskCard").className = "kpi-card";
+  document.getElementById("kpiRiskValue").textContent = "--%";
+  const riskBadge = document.getElementById("kpiRiskBadge");
+  riskBadge.className = "tag-badge tag-info";
+  riskBadge.textContent = "Running";
+  document.getElementById("kpiTotalFlow").textContent = formatINR(alertObj.initial_amount_inr || 0);
+  document.getElementById("kpiPathsCount").textContent = "0";
+  document.getElementById("kpiMaxHops").textContent = "0";
+  document.getElementById("kpiAccountsCount").textContent = "0";
+  document.getElementById("kpiDispositionCard").className = "kpi-card kpi-disposition";
+  document.getElementById("kpiDispValue").textContent = "RUNNING";
+  document.getElementById("kpiDispSub").textContent = `Investigating ${aid}`;
+
+  // Left column reset
+  document.getElementById("traceStreamBox").innerHTML = "";
+  renderRunningSkeleton();
+
+  // Center graph, charts, findings & secondary tabs reset
+  const patternBadge = document.getElementById("graphPatternBadge");
+  patternBadge.className = "tag-badge tag-info";
+  patternBadge.textContent = "Analyzing...";
+  document.getElementById("graphSearchInput").value = "";
+  document.getElementById("graphPathSelect").innerHTML = `<option value="all">All Paths</option>`;
+  document.getElementById("legSourceCount").textContent = "Source (0)";
+  document.getElementById("legInterCount").textContent = "Intermediary (0)";
+  document.getElementById("legDestCount").textContent = "Destination (0)";
+  if (graphView) graphView.clear(`Investigating ${aid}...`);
+
+  document.getElementById("donutChartBox").innerHTML =
+    `<div style="color:#7c8db0;font-size:12px;padding:24px 0;text-align:center;">Computing flow summary...</div>`;
+  document.getElementById("timelineChartBox").innerHTML =
+    `<div style="color:#7c8db0;font-size:12px;padding:24px 0;text-align:center;">Building flow timeline...</div>`;
+  document.getElementById("keyFindingsGrid").innerHTML =
+    `<div style="color:#7c8db0;font-size:12px;">Running investigation for ${esc(aid)}...</div>`;
+  if (state.activeCenterTab !== "graph") {
+    document.getElementById("centerDeepDivePanel").innerHTML =
+      `<div style="color:#7c8db0;font-size:12.5px;padding:12px 0;">Running ${esc(modeLabel(state.mode))} investigation for <code>${esc(aid)}</code>...</div>`;
+  }
+
+  // Right column reset (new alert summary, hypotheses, citations & approval gate)
+  renderDefaultAlertContext();
+  document.getElementById("hypothesesBox").innerHTML =
+    `<div style="color:#7c8db0;font-size:11.5px;">Evaluating competing hypotheses...</div>`;
+  document.getElementById("citationsCountBadge").textContent = "0";
+  document.getElementById("citationsBox").innerHTML = "";
+  document.getElementById("approvalBanner").className = "approval-banner";
+  document.getElementById("gateDispCode").textContent = "RUNNING";
+  document.getElementById("gateDispSub").textContent = `Investigating ${aid}`;
+  document.getElementById("gateConfidence").textContent = "--%";
+  document.getElementById("gateHashBox").textContent = "SHA-256: -";
+  document.getElementById("editRationaleInput").value = "";
+  document.getElementById("analystNotesInput").value = "";
+  document.getElementById("gateFeedback").style.display = "none";
+  document.getElementById("editDrawer").style.display = "none";
+  document.getElementById("btnApproveCommit").disabled = true;
+  document.getElementById("btnToggleEdit").disabled = true;
+  document.getElementById("btnRejectDisp").disabled = true;
+  document.getElementById("btnExportReport").disabled = true;
+}
+
 async function runLiveInvestigation() {
   if (!state.selectedAlert && state.alerts.length > 0) {
     state.selectedAlert = state.alerts[0];
@@ -287,22 +373,28 @@ async function runLiveInvestigation() {
     switchSidebarView("investigation");
   }
 
-  state.traceEvents = [];
-  document.getElementById("traceStreamBox").innerHTML = "";
-  document.getElementById("gateFeedback").style.display = "none";
-  document.getElementById("editDrawer").style.display = "none";
+  const runSeq = ++state.runSeq;
+  const targetAlert = state.selectedAlert;
+  const targetMode = state.mode;
 
   updateHeaderMetadata();
-  renderRunningSkeleton();
+  resetInvestigationWorkspace();
 
   try {
-    const reg = await api.registerInvestigation(state.selectedAlert, state.mode);
+    const reg = await api.registerInvestigation(targetAlert, targetMode);
+    if (runSeq !== state.runSeq) return;
+
     state.threadId = reg.thread_id;
     state.invStatus = "running";
+    document.getElementById("btnExportReport").disabled = false;
 
-    api.streamInvestigation(state.threadId, state.selectedAlert.alert_id, state.mode, {
-      onEvent: (evName, payload) => appendTraceEvent(evName, payload),
+    api.streamInvestigation(state.threadId, targetAlert.alert_id, targetMode, {
+      onEvent: (evName, payload) => {
+        if (runSeq !== state.runSeq) return;
+        appendTraceEvent(evName, payload);
+      },
       interrupt_required: (data) => {
+        if (runSeq !== state.runSeq) return;
         state.worksheetId = data.worksheet_id;
         state.payloadHash = data.payload_hash;
         state.approvedHash = data.approved_hash;
@@ -312,6 +404,7 @@ async function runLiveInvestigation() {
         renderFullInvestigationState();
       },
       verification_failed: (data) => {
+        if (runSeq !== state.runSeq) return;
         state.worksheetId = data.worksheet_id;
         state.payloadHash = data.payload_hash;
         state.approvedHash = null;
@@ -322,10 +415,14 @@ async function runLiveInvestigation() {
         showGateFeedback(data.message || "Verification failed (fail-closed). Edit the rationale to continue.", "danger");
       },
       error: (errData) => {
-        showGateFeedback(`Investigation error: ${errData.error || "Unknown"}`, "danger");
+        if (runSeq !== state.runSeq) return;
+        state.invStatus = "error";
+        showGateFeedback(`Investigation error: ${errData.error || errData.message || "Unknown"}`, "danger");
       },
     });
   } catch (err) {
+    if (runSeq !== state.runSeq) return;
+    state.invStatus = "error";
     showGateFeedback(`Failed to start investigation: ${err.message}`, "danger");
   }
 }
@@ -418,7 +515,8 @@ function renderFullInvestigationState() {
   renderWorkflowTimeline(st.workflow_steps || [], st.agent_runs || []);
 
   // 3. Center Column: Transaction Network Graph
-  const rootAcc = st.kyc_profiles?.[0]?.account_id || state.selectedAlert?.seed_account_id || "";
+  const rootAcc =
+    st.alert?.root_account || state.selectedAlert?.seed_account_id || st.kyc_profiles?.[0]?.account_id || "";
   const patternBadge = document.getElementById("graphPatternBadge");
   const multiHopCount = (ws.candidate_paths || []).filter((p) => p.hop_count >= 2).length;
   if (dm.code === "CLOSE_BENIGN") {
@@ -536,7 +634,8 @@ function renderKeyFindings(findings) {
 function renderDefaultAlertContext() {
   const a = state.selectedAlert || {};
   const st = state.invState || {};
-  const rootKyc = st.kyc_profiles?.[0] || {};
+  const rootAcc = st.alert?.root_account || a.seed_account_id || "";
+  const rootKyc = (st.kyc_profiles || []).find((k) => k.account_id === rootAcc) || st.kyc_profiles?.[0] || {};
   document.getElementById("contextPanelTitle").textContent = "Alert & Customer Context";
   document.getElementById("contextTableBody").innerHTML = `
     <tr><td class="kv-key">Alert ID</td><td class="kv-val">${esc(a.alert_id || "-")}</td></tr>
@@ -892,6 +991,7 @@ async function switchSidebarView(navName) {
   try {
     if (navName === "alerts") {
       const data = await api.getAlerts(60);
+      syncAlertCatalog(data.alerts || []);
       subView.innerHTML = `
         <div class="panel-card">
           <div class="panel-header">
@@ -920,7 +1020,7 @@ async function switchSidebarView(navName) {
           const found = state.alerts.find((x) => x.alert_id === aid) || data.alerts.find((x) => x.alert_id === aid);
           if (found) {
             state.selectedAlert = found;
-            document.getElementById("headerAlertSelect").value = found.alert_id;
+            syncAlertCatalog(state.alerts.length ? state.alerts : data.alerts || [], found.alert_id);
             switchSidebarView("investigation");
             runLiveInvestigation();
           }

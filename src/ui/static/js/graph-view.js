@@ -7,7 +7,7 @@
  * - Renders glowing FinTech circular node badges (Green Source, Blue Intermediary, Amber Destination,
  *   Red High-Risk KYC Halo, Grey Unknown) + directed edges with formatted INR labels + dashed detected paths
  */
-import { formatINR } from "./api.js";
+import { formatINR } from "./api.js?v=1.2.1";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -183,10 +183,40 @@ export class TransactionGraphView {
     this.render();
   }
 
+  clear(message = "Loading transaction flow network...") {
+    this.nodes = [];
+    this.edges = [];
+    this.paths = [];
+    this.focusedPathId = "all";
+    this.searchQuery = "";
+    this.selectedId = null;
+    this.scale = 1;
+    this.tx = 0;
+    this.ty = 0;
+    this._hideTooltip();
+    this._applyTransform();
+    if (this.pathsG) this.pathsG.innerHTML = "";
+    if (this.edgesG) this.edgesG.innerHTML = "";
+    if (this.nodesG) {
+      this.nodesG.innerHTML = "";
+      const txt = document.createElementNS(SVG_NS, "text");
+      txt.setAttribute("x", "50%");
+      txt.setAttribute("y", "50%");
+      txt.setAttribute("text-anchor", "middle");
+      txt.setAttribute("fill", "#7c8db0");
+      txt.setAttribute("font-size", "13");
+      txt.textContent = message;
+      this.nodesG.appendChild(txt);
+    }
+  }
+
   /**
    * Populate graph strictly from backend investigation state.
    */
   setData({ rootAccount, transactions = [], candidatePaths = [], kycProfiles = [], nodeRoles = {} }) {
+    this.focusedPathId = "all";
+    this.searchQuery = "";
+    this._hideTooltip();
     const kycMap = {};
     for (const k of kycProfiles) {
       if (k.account_id) kycMap[k.account_id] = k;

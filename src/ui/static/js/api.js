@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AuditGuard Centralized API & SSE Stream Client
  * Ensures clean subscription lifecycle (zero EventSource leaks) and strict backend verification.
  */
@@ -31,7 +31,8 @@ export class AuditGuardAPI {
     return this.token ? { Authorization: `Bearer ${this.token}` } : {};
   }
 
-  closeStream() {
+  closeStream(targetCtrl = null) {
+    if (targetCtrl && this.activeAbort !== targetCtrl) return;
     if (this.activeAbort) {
       this.activeAbort.abort();
       this.activeAbort = null;
@@ -156,6 +157,7 @@ export class AuditGuardAPI {
     const terminal = new Set(["interrupt_required", "verification_failed", "completed", "error"]);
 
     const dispatch = (name, raw) => {
+      if (ctrl.signal.aborted) return true;
       let parsed;
       try {
         parsed = JSON.parse(raw);
@@ -174,6 +176,7 @@ export class AuditGuardAPI {
           headers: this._authHeaders(),
           signal: ctrl.signal,
         });
+        if (ctrl.signal.aborted) return;
         if (!res.ok) {
           if (res.status === 401) this.clearToken();
           if (handlers.error) handlers.error({ error: `Stream failed (HTTP ${res.status})` });
@@ -183,8 +186,9 @@ export class AuditGuardAPI {
         const decoder = new TextDecoder();
         let buf = "";
         for (;;) {
+          if (ctrl.signal.aborted) break;
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done || ctrl.signal.aborted) break;
           buf += decoder.decode(value, { stream: true });
           let idx;
           while ((idx = buf.indexOf("\n\n")) >= 0) {
@@ -197,13 +201,17 @@ export class AuditGuardAPI {
               else if (line.startsWith("data:")) data += line.slice(5).trim();
             }
             if (data && dispatch(name, data)) {
-              this.closeStream();
+              this.closeStream(ctrl);
               return;
             }
           }
         }
       } catch (err) {
-        if (err.name !== "AbortError" && handlers.error) handlers.error({ error: err.message });
+        if (!ctrl.signal.aborted && err.name !== "AbortError" && handlers.error) {
+          handlers.error({ error: err.message });
+        }
+      } finally {
+        if (this.activeAbort === ctrl) this.activeAbort = null;
       }
     })();
     return ctrl;
