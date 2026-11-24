@@ -1,78 +1,54 @@
 """
-Deterministic, FAIL-CLOSED verifier core (pure).
+Verifier v2 — Deterministic, FAIL-CLOSED Compliance Worksheet Verifier (`src/core/verifier.py`).
 
-Checks every worksheet against the run's `evidence_registry`:
-  * guilt-assertion families (normalised) across ALL narrative fields
-  * every cited / referenced evidence ID (TXN-, KYC-, CALC-, PATH-, REGISTRY-, REG-, SOP-) must resolve
-  * all INR math recomputed in `Decimal` (path net / retention / registry cross-check / narrative figures)
-  * canonical SHA-256 payload hash
-`evidence_registry=None` is itself a failure. Failures carry structured discrepancies used as critique feedback.
+Checks every worksheet and records each as a named boolean in `VerificationResult.checks`:
+  1. `numbers_match_calc`      : prose INR amounts, percentages, and path math match `calc_log`/tool outputs
+                                 within ₹0.01 (`Decimal`); calls `verify_inr_math`; records `inr_error_count`
+                                 and `inr_numbers_total`.
+  2. `citations_exist`         : every cited clause ID exists in the regulatory corpus index (and `evidence_registry`).
+  3. `citations_relevant`      : cited clause category belongs to the allowed set from `typology_registry`
+                                 OR `judge_citation_relevant` (Phase 4); stores both signals separately.
+  4. `evidence_ids_registered` : every `TXN-*/KYC-*/REGISTRY-*/CALC-*/PATH-*/CP-*` mentioned is in `evidence_registry`,
+                                 and each material claim carries >= 1 registered ID.
+  5. `no_guilt_claims`         : expanded phrase + normalized-whitespace/lemma matching (with negation guard).
+  6. `both_hypotheses_present` & `missing_evidence_stated`.
 """
 
 from __future__ import annotations
 
-import re
-import unicodedata
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from src.core.canonical import CENT, NumericError, canonical_sha256, to_confidence, to_decimal, to_money
+from src.core.verifier_patterns import (
+    CITATION_FORMAT,
+    DATA_EVIDENCE_PATTERN,
+    PROHIBITED_PHRASES,
+    REF_PATTERN,
+    as_pct,
+    check_prohibited_claims,
+    extract_prose_amounts,
+    extract_prose_percentages,
+    load_corpus_category_map,
+)
+from src.typology_registry import typology_registry
 
 DEFAULT_CONSERVATION_TOLERANCE = Decimal("0.05")
-
-# Back-compat literal list (also screened) + normalised regex families.
-PROHIBITED_PHRASES = [
-    "money laundering has occurred",
-    "is guilty",
-    "is a money launderer",
-    "definitively laundering",
-    "confirms money laundering",
-    "proves fraud",
-    "criminal activity confirmed",
-]
-_GUILT_FAMILIES = [
-    re.compile(
-        r"money laundering (?:has |have )?(?:been )?(?:occurred|"
-        r"confirmed|proven|proved|established|committed)"
-    ),
-    re.compile(
-        r"\b(?:laundering|fraud|offen[cs]e) (?:is|was|has been|have been) "
-        r"(?:confirmed|proven|proved|established|committed|occurred)"
-    ),
-    re.compile(r"\b(?:confirmed|proven|definitive|undeniable) (?:money )?laundering\b"),
-    re.compile(r"\b(?:is|are|was|were) (?:a |an )?(?:guilty|criminal|money launderers?|launderers?|fraudsters?)\b"),
-    re.compile(r"\bguilty of\b"),
-    re.compile(r"\b(?:customer|account holder|accused|subject|entity|he|she|they) (?:has |have )?launder(?:ed|s)\b"),
-    re.compile(r"\blaundered (?:the |these )?(?:funds|money|proceeds)\b"),
-    re.compile(
-        r"\bcriminal (?:intent|activity|conduct) (?:is |"
-        r"was |has been )?(?:confirmed|proven|proved|established)\b"
-    ),
-    re.compile(
-        r"\bconfirms? (?:the )?(?:money )?laundering\b|"
-        r"\bproves? (?:the )?(?:money laundering|fraud)\b|\bdefinitive(?:ly)? launder"
-    ),
-]
-
-_REF_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
-_PROSE_CURRENCY_RE = re.compile(
-    r"(?:(INR|₹|Rs\.?)\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(lakhs?|lacs?|crores?|rupees?))?(?!\w))"
-    r"|(?:(?<!\w)([0-9][0-9,]*(?:\.[0-9]+)?)\s*(rupees?|rs\.?|inr|lakhs?|lacs?|crores?)(?!\w))",
-    re.IGNORECASE,
-)
-_UNIT_MULTIPLIERS = {
-    "lakh": Decimal("100000"),
-    "lakhs": Decimal("100000"),
-    "lac": Decimal("100000"),
-    "lacs": Decimal("100000"),
-    "crore": Decimal("10000000"),
-    "crores": Decimal("10000000"),
-}
-_CITATION_FORMAT = re.compile(r"^[A-Z][A-Z0-9\-]+$")
+MONEY_TOLERANCE = Decimal("0.01")
 _VALID_DISPOSITIONS = {"escalate_str", "close_benign", "request_info", "pending"}
+_MISSING_CUES = (
+    "missing evidence",
+    "degraded evidence",
+    "unavailable",
+    "not available",
+    "insufficient_data",
+    "out-of-network",
+    "out-of-bank",
+    "pending verification",
+)
 _HASH_EXCLUDED = {
     "approval_token",
     "reviewer_id",
@@ -81,7 +57,24 @@ _HASH_EXCLUDED = {
     "reviewed_at",
     "payload_hash",
     "_payload_hash",
+    "judge_citation_relevant",
+    "enforce_verifier_gate",
 }
+
+__all__ = [
+    "DEFAULT_CONSERVATION_TOLERANCE",
+    "MONEY_TOLERANCE",
+    "PROHIBITED_PHRASES",
+    "Discrepancy",
+    "VerificationResult",
+    "check_prohibited_claims",
+    "compute_canonical_hash",
+    "extract_prose_amounts",
+    "extract_prose_percentages",
+    "load_corpus_category_map",
+    "verify_inr_math",
+    "verify_worksheet",
+]
 
 
 class Discrepancy(BaseModel):
@@ -100,18 +93,10 @@ class VerificationResult(BaseModel):
     errors: list[str]
     discrepancies: list[Discrepancy]
     payload_hash: str
-
-
-def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text).casefold())
-
-
-def check_prohibited_claims(text: str) -> list[str]:
-    """Return matched prohibited phrases/families (empty list = clean)."""
-    norm = _normalise(text)
-    hits = [phrase for phrase in PROHIBITED_PHRASES if phrase in norm]
-    hits += [p.pattern for p in _GUILT_FAMILIES if p.search(norm)]
-    return hits
+    inr_error_count: int = 0
+    inr_numbers_total: int = 0
+    deterministic_citation_relevant: bool = True
+    judge_citation_relevant: Optional[bool] = None
 
 
 def verify_inr_math(
@@ -126,27 +111,29 @@ def verify_inr_math(
     except NumericError as exc:
         return False, f"Decimal arithmetic error: {exc}"
     diff = abs(out - infl)
-    pct = diff / out if out > 0 else Decimal("0")
-    return pct <= tol, f"out={out} inflow={infl} diff={diff} ({pct:.2%})"
+    if out == 0:
+        return infl == 0, f"out={out} inflow={infl} diff={diff}"
+    pct = diff / out
+    return (pct <= tol or diff <= MONEY_TOLERANCE), f"out={out} inflow={infl} diff={diff} ({pct:.2%})"
 
 
 def compute_canonical_hash(payload: Mapping[str, Any]) -> str:
-    return canonical_sha256({k: v for k, v in payload.items() if k not in _HASH_EXCLUDED})
+    clean = {k: v for k, v in payload.items() if k not in _HASH_EXCLUDED}
+    clean.setdefault("missing_evidence", [])
+    return canonical_sha256(clean)
 
 
-# ------------------------------------------------------------------------------------------------
 def _narrative_fields(ws: Mapping[str, Any]) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = [
         ("recommendation_rationale", str(ws.get("recommendation_rationale", ""))),
-        ("analyst_notes", str(ws.get("analyst_notes", ""))),
+        ("analyst_notes", str(ws.get("analyst_notes", "") or "")),
     ]
     fields += [(f"kyc_summaries[{i}]", str(s)) for i, s in enumerate(ws.get("kyc_summaries", []))]
     for i, hyp in enumerate(ws.get("hypotheses", [])):
-        if not isinstance(hyp, Mapping):
-            continue
-        fields.append((f"hypotheses[{i}].explanation", str(hyp.get("explanation", ""))))
-        for key in ("supporting_evidence", "contradicting_evidence"):
-            fields += [(f"hypotheses[{i}].{key}", str(e)) for e in hyp.get(key, [])]
+        if isinstance(hyp, Mapping):
+            fields.append((f"hypotheses[{i}].explanation", str(hyp.get("explanation", ""))))
+            for key in ("supporting_evidence", "contradicting_evidence"):
+                fields += [(f"hypotheses[{i}].{key}", str(e)) for e in hyp.get(key, [])]
     return [(name, text) for name, text in fields if text]
 
 
@@ -157,84 +144,196 @@ def _as_money(value: Any) -> Decimal | None:
         return None
 
 
-def _path_totals(ws: Mapping[str, Any]) -> set[Decimal]:
-    """Every per-path amount plus the sums across paths (the only figures a narrative may quote from graph results)."""
-    known: set[Decimal] = set()
+def _ingest_mapping_numbers(source: Mapping[str, Any], amounts: set[Decimal], pcts: set[Decimal]) -> None:
+    for key, value in source.items():
+        lk = str(key).lower()
+        if ("inr" in lk or "amount" in lk) and (m := _as_money(value)) is not None:
+            amounts.add(m)
+        elif ("pct" in lk or "percent" in lk) and (p := as_pct(value)) is not None:
+            pcts.add(p)
+        elif "leakage_ratio" in lk and (lr := as_pct(value)) is not None:
+            pcts.add((lr * Decimal("100")).quantize(CENT))
+
+
+def _collect_known_numbers(
+    ws: Mapping[str, Any],
+    registry: Mapping[str, Any],
+    calc_log: Sequence[Mapping[str, Any]],
+) -> tuple[set[Decimal], set[Decimal]]:
+    amounts: set[Decimal] = set()
+    pcts: set[Decimal] = set()
     series: dict[str, list[Decimal]] = {"total_outflow_inr": [], "total_consolidated_inr": [], "net_difference_inr": []}
     for path in ws.get("candidate_paths", []):
-        for key, acc in series.items():
-            if (m := _as_money(path.get(key))) is not None:
-                known.add(m)
-                acc.append(m)
-    known.update(sum(values, Decimal("0.00")) for values in series.values() if values)
-    return known
+        if isinstance(path, Mapping):
+            for key, acc in series.items():
+                if (m := _as_money(path.get(key))) is not None:
+                    amounts.add(m)
+                    acc.append(m)
+            if (rp := as_pct(path.get("retention_pct"))) is not None:
+                pcts.add(rp)
+            if (lr := as_pct(path.get("amount_leaked_ratio"))) is not None:
+                pcts.add((lr * Decimal("100")).quantize(CENT))
+    amounts.update(sum(vals, Decimal("0.00")) for vals in series.values() if vals)
+    if (alert_amt := _as_money(ws.get("alert_amount_inr"))) is not None:
+        amounts.add(alert_amt)
+    for src in [*registry.values(), *calc_log]:
+        if isinstance(src, Mapping):
+            _ingest_mapping_numbers(src, amounts, pcts)
+    return amounts, pcts
 
 
-def _known_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any]) -> set[Decimal]:
-    known = _path_totals(ws)
-    if (alert_amount := _as_money(ws.get("alert_amount_inr"))) is not None:
-        known.add(alert_amount)
-    for item in registry.values():
-        if isinstance(item, Mapping):
-            known.update(
-                m
-                for key, value in item.items()
-                if "inr" in key or "amount" in key
-                if (m := _as_money(value)) is not None
-            )
-    return known
+def _matches_within_cent(val: Decimal | None, known: Collection[Decimal]) -> bool:
+    return val is not None and any(abs(val - k) <= MONEY_TOLERANCE for k in known)
 
 
-def _check_paths(ws: Mapping[str, Any], registry: Mapping[str, Any], out: list[Discrepancy]) -> bool:
-    ok = True
+def _check_paths_math(
+    ws: Mapping[str, Any], registry: Mapping[str, Any], out: list[Discrepancy]
+) -> tuple[bool, int, int]:
+    ok, errors, total = True, 0, 0
     for i, path in enumerate(ws.get("candidate_paths", [])):
-        pid = str(path.get("path_id", ""))
-        field = f"candidate_paths[{i}]"
+        pid, field = str(path.get("path_id", "")), f"candidate_paths[{i}]"
+        total += 2
         try:
             outflow, cons = to_money(path["total_outflow_inr"]), to_money(path["total_consolidated_inr"])
             net, retention = to_money(path["net_difference_inr"]), to_money(path["retention_pct"])
         except (KeyError, NumericError) as exc:
             out.append(Discrepancy(code="MALFORMED_PATH_AMOUNTS", field=field, detail=str(exc)))
-            ok = False
-            continue
-        if net != (outflow - cons).quantize(CENT):
-            out.append(
-                Discrepancy(
-                    code="INR_NET_MISMATCH", field=field, detail=f"net {net} != outflow {outflow} - consolidated {cons}"
-                )
-            )
-            ok = False
+            return False, errors + 1, total
+        if abs(net - (outflow - cons).quantize(CENT)) > MONEY_TOLERANCE:
+            out.append(Discrepancy(code="INR_NET_MISMATCH", field=field, detail=f"net {net} != {outflow} - {cons}"))
+            ok, errors = False, errors + 1
         expected_ret = (net / outflow * 100).quantize(CENT) if outflow > 0 else Decimal("0.00")
-        if retention != expected_ret:
+        if abs(retention - expected_ret) > MONEY_TOLERANCE:
             out.append(
-                Discrepancy(
-                    code="INR_RETENTION_MISMATCH",
-                    field=field,
-                    detail=f"retention {retention}% != recomputed {expected_ret}%",
-                )
+                Discrepancy(code="INR_RETENTION_MISMATCH", field=field, detail=f"{retention}% != {expected_ret}%")
             )
-            ok = False
+            ok, errors = False, errors + 1
         reg_path = registry.get(pid)
         if not isinstance(reg_path, Mapping):
-            out.append(
-                Discrepancy(code="UNRESOLVED_EVIDENCE_ID", field=field, detail=f"path {pid!r} not in evidence_registry")
-            )
+            out.append(Discrepancy(code="UNRESOLVED_EVIDENCE_ID", field=field, detail=f"path {pid!r} not in registry"))
             ok = False
             continue
-        for label, stated, key in (
-            ("outflow", outflow, "total_outflow_inr"),
-            ("consolidated", cons, "total_consolidated_inr"),
-        ):
+        pairs = (("outflow", outflow, "total_outflow_inr"), ("consolidated", cons, "total_consolidated_inr"))
+        for label, stated, key in pairs:
+            total += 1
             same, detail = verify_inr_math(stated, reg_path.get(key, "0"), tolerance="0")
             if not same:
                 out.append(Discrepancy(code="INR_REGISTRY_MISMATCH", field=field, detail=f"{label}: {detail}"))
-                ok = False
-    return ok
+                ok, errors = False, errors + 1
+    return ok, errors, total
+
+
+def _check_prose_numbers(
+    ws: Mapping[str, Any], known_amounts: set[Decimal], known_pcts: set[Decimal], out: list[Discrepancy]
+) -> tuple[bool, int, int]:
+    ok, errors, total = True, 0, 0
+    for name, text in _narrative_fields(ws):
+        for label, amount in extract_prose_amounts(text):
+            total += 1
+            if not _matches_within_cent(amount, known_amounts):
+                out.append(Discrepancy(code="UNGROUNDED_AMOUNT", field=name, detail=f"{label} not in calc_log/outputs"))
+                ok, errors = False, errors + 1
+        for p_label, pct in extract_prose_percentages(text):
+            total += 1
+            if not _matches_within_cent(pct, known_pcts):
+                out.append(
+                    Discrepancy(code="UNGROUNDED_PERCENTAGE", field=name, detail=f"{p_label} not in calc_log/outputs")
+                )
+                ok, errors = False, errors + 1
+    return ok, errors, total
+
+
+def _resolve_corpus_map(
+    corpus_ids: Collection[str] | Mapping[str, Any] | None, registry: Mapping[str, Any]
+) -> dict[str, str]:
+    default_map = load_corpus_category_map()
+    if corpus_ids is None:
+        merged = dict(default_map)
+    elif isinstance(corpus_ids, Mapping):
+        merged = {
+            str(k): (str(v.get("category", "")) if isinstance(v, Mapping) else str(v or default_map.get(str(k), "")))
+            for k, v in corpus_ids.items()
+        }
+    else:
+        merged = {str(cid): default_map.get(str(cid), "") for cid in corpus_ids}
+    for k, v in registry.items():
+        if isinstance(v, Mapping) and str(k) in merged and not merged[str(k)] and v.get("category"):
+            merged[str(k)] = str(v["category"])
+    return merged
+
+
+_FailFn = Callable[[str, str, str, str], None]
+
+
+def _all_cited_clauses(ws: Mapping[str, Any]) -> list[str]:
+    citations = [str(c) for c in ws.get("regulatory_citations", [])]
+    for hyp in ws.get("hypotheses", []):
+        if isinstance(hyp, Mapping):
+            for hc in hyp.get("regulatory_citations", []):
+                if str(hc) not in citations:
+                    citations.append(str(hc))
+    return citations
+
+
+def _validate_single_citation(
+    cs: str, corpus_map: Mapping[str, str], registry: Mapping[str, Any], fail: _FailFn
+) -> bool:
+    if not CITATION_FORMAT.match(cs):
+        fail("citation_format_valid", "BAD_CITATION_FORMAT", "regulatory_citations", cs)
+        fail("citations_exist", "BAD_CITATION_FORMAT", "regulatory_citations", cs)
+        return False
+    if cs not in corpus_map:
+        fail("citations_exist", "UNRESOLVED_CITATION", "regulatory_citations", f"{cs!r} not in corpus index")
+        fail("citations_resolved", "UNRESOLVED_CITATION", "regulatory_citations", f"{cs!r} not in corpus index")
+        return False
+    if cs not in registry:
+        fail("citations_resolved", "UNRESOLVED_CITATION", "regulatory_citations", f"{cs!r} not in registry")
+        fail("citations_exist", "UNRESOLVED_CITATION", "regulatory_citations", f"{cs!r} not in registry")
+        return False
+    return True
+
+
+def _check_citations_v2(
+    ws: Mapping[str, Any],
+    registry: Mapping[str, Any],
+    corpus_map: Mapping[str, str],
+    disposition: str,
+    judge_relevant: Optional[bool],
+    fail: _FailFn,
+) -> bool:
+    citations = _all_cited_clauses(ws)
+    exempt_empty = bool(ws.get("degraded_evidence")) and disposition == "request_info"
+    if not citations:
+        if not exempt_empty:
+            fail("has_citations", "NO_CITATIONS", "regulatory_citations", "at least one citation is required")
+            fail("citations_exist", "NO_CITATIONS", "regulatory_citations", "at least one citation is required")
+            return False
+        return True
+
+    exist_flags = [_validate_single_citation(cs, corpus_map, registry, fail) for cs in citations]
+    if not all(exist_flags):
+        return False
+
+    typology_id = str(ws.get("typology_id") or "scatter_gather")
+    allowed_all = typology_registry.all_typology_categories(typology_id)
+    allowed_claim = typology_registry.allowed_categories_for_claim(disposition, typology_id)
+    known_cats = [c for c in (corpus_map.get(cs, "") for cs in citations) if c]
+    det_rel = (not known_cats) or (
+        all(c in allowed_all for c in known_cats) and any(c in allowed_claim for c in known_cats)
+    )
+    if not (det_rel or judge_relevant is True):
+        fail(
+            "citations_relevant",
+            "IRRELEVANT_CITATION",
+            "regulatory_citations",
+            f"categories {known_cats} not relevant for disposition={disposition!r}",
+        )
+    return det_rel
 
 
 def _referenced_ids(ws: Mapping[str, Any]) -> Iterable[tuple[str, str]]:
     for name, text in _narrative_fields(ws):
-        for ref in _REF_PATTERN.findall(text):
+        for ref in REF_PATTERN.findall(text):
             yield name, ref.rstrip("-_.")
     for i, hyp in enumerate(ws.get("hypotheses", [])):
         if isinstance(hyp, Mapping):
@@ -242,63 +341,66 @@ def _referenced_ids(ws: Mapping[str, Any]) -> Iterable[tuple[str, str]]:
                 yield f"hypotheses[{i}]", str(ref)
 
 
-_FailFn = Callable[[str, str, str, str], None]
+def _check_evidence_registration(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
+    for field, ref in _referenced_ids(ws):
+        if ref not in registry:
+            fail("evidence_ids_registered", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
+            fail("evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
 
-
-def _check_citations(ws: Mapping[str, Any], registry: Mapping[str, Any], disposition: Any, fail: _FailFn) -> None:
-    citations = list(ws.get("regulatory_citations", []))
-    if not citations and not (bool(ws.get("degraded_evidence")) and disposition == "request_info"):
-        fail("has_citations", "NO_CITATIONS", "regulatory_citations", "at least one resolvable citation is required")
-    for cite in citations:
-        if not _CITATION_FORMAT.match(str(cite)):
-            fail("citation_format_valid", "BAD_CITATION_FORMAT", "regulatory_citations", str(cite))
-        elif cite not in registry:
-            fail(
-                "citations_resolved",
-                "UNRESOLVED_CITATION",
-                "regulatory_citations",
-                f"{cite!r} not in evidence_registry",
-            )
-
-
-def _extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
-    found: list[tuple[str, Decimal | None]] = []
-    for m in _PROSE_CURRENCY_RE.finditer(text):
-        prefix, p_num, p_unit, s_num, s_unit = m.groups()
-        raw_num = p_num if p_num is not None else s_num
-        unit = (p_unit or s_unit or "").lower().rstrip(".")
-        mult = _UNIT_MULTIPLIERS.get(unit, Decimal("1"))
-        try:
-            scaled = to_money(to_decimal(raw_num.replace(",", ""), Decimal("0.0001")) * mult)
-        except NumericError:
-            scaled = None
-        label = f"{prefix} {raw_num}".strip() if prefix else f"{raw_num} {s_unit}"
-        if p_unit:
-            label = f"{label} {p_unit}"
-        found.append((label, scaled))
-    return found
-
-
-def extract_prose_amounts(text: str) -> list[tuple[str, Decimal | None]]:
-    return _extract_prose_amounts(text)
-
-
-def _check_narrative_amounts(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
-    known = _known_amounts(ws, registry)
-    for name, text in _narrative_fields(ws):
-        for label, amount in _extract_prose_amounts(text):
-            if amount is None or amount not in known:
+    non_clause_ids = [k for k in registry if not str(k).startswith(("REG-", "SOP-"))]
+    exempt_degraded = bool(ws.get("degraded_evidence")) and str(ws.get("recommended_disposition")) == "request_info"
+    rationale = str(ws.get("recommendation_rationale", ""))
+    if not exempt_degraded and not REF_PATTERN.search(rationale) and not ws.get("regulatory_citations"):
+        fail("evidence_ids_registered", "UNCITED_MATERIAL_CLAIM", "recommendation_rationale", "rationale lacks IDs")
+    if non_clause_ids and not exempt_degraded:
+        for i, hyp in enumerate(ws.get("hypotheses", [])):
+            if not isinstance(hyp, Mapping):
+                continue
+            expl = str(hyp.get("explanation", ""))
+            has_id = bool(hyp.get("evidence_ids")) or bool(DATA_EVIDENCE_PATTERN.search(expl))
+            if not has_id:
                 fail(
-                    "narrative_amounts_grounded",
-                    "UNGROUNDED_AMOUNT",
-                    name,
-                    f"{label} does not match any verified amount",
+                    "evidence_ids_registered",
+                    "UNCITED_MATERIAL_CLAIM",
+                    f"hypotheses[{i}]",
+                    f"hypothesis {hyp.get('label')!r} carries 0 registered evidence IDs",
                 )
 
 
+def _check_hypotheses_and_missing(ws: Mapping[str, Any], fail: _FailFn) -> None:
+    hyps = [h for h in ws.get("hypotheses", []) if isinstance(h, Mapping)]
+    labels = {str(h.get("label", "")).lower() for h in hyps if str(h.get("explanation", "")).strip()}
+    if not ({"suspicious", "benign"} <= labels):
+        fail("both_hypotheses_present", "MISSING_COMPETING_HYPOTHESES", "hypotheses", "both hypotheses required")
+
+    explicit_list = [str(m).strip() for m in (ws.get("missing_evidence") or []) if str(m).strip()]
+    degraded_list = [str(d).strip() for d in (ws.get("degraded_evidence") or []) if str(d).strip()]
+    rationale_low = str(ws.get("recommendation_rationale", "")).lower()
+    notes_low = str(ws.get("analyst_notes") or "").lower()
+    if not (explicit_list or degraded_list or any(c in rationale_low or c in notes_low for c in _MISSING_CUES)):
+        fail("missing_evidence_stated", "MISSING_EVIDENCE_NOT_STATED", "missing_evidence", "missing evidence required")
+
+
+def _check_confidence_and_disp(ws: Mapping[str, Any], fail: _FailFn) -> str:
+    try:
+        to_confidence(ws.get("confidence_score", 0))
+    except NumericError:
+        fail("confidence_in_range", "CONFIDENCE_OUT_OF_RANGE", "confidence_score", str(ws.get("confidence_score")))
+    disp = str(ws.get("recommended_disposition", ""))
+    if disp not in _VALID_DISPOSITIONS:
+        fail("valid_disposition", "INVALID_DISPOSITION", "recommended_disposition", disp)
+    return disp
+
+
 def verify_worksheet(
-    worksheet: Mapping[str, Any], evidence_registry: Mapping[str, Any] | None = None
+    worksheet: Mapping[str, Any],
+    evidence_registry: Mapping[str, Any] | None = None,
+    corpus_ids: Collection[str] | Mapping[str, Any] | None = None,
+    calc_log: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    judge_citation_relevant: Optional[bool] = None,
 ) -> VerificationResult:
+    """Run all 6 deterministic Verifier v2 checks and return structured `VerificationResult`."""
     issues: list[Discrepancy] = []
     checks: dict[str, bool] = {}
 
@@ -307,53 +409,47 @@ def verify_worksheet(
         issues.append(Discrepancy(code=code, field=field, detail=detail))
 
     registry: Mapping[str, Any] = evidence_registry if evidence_registry is not None else {}
-    checks["evidence_registry_present"] = evidence_registry is not None
     if evidence_registry is None:
-        fail(
-            "evidence_registry_present",
-            "EVIDENCE_REGISTRY_MISSING",
-            "evidence_registry",
-            "verification requires the run's evidence registry",
-        )
+        fail("evidence_registry_present", "EVIDENCE_REGISTRY_MISSING", "evidence_registry", "registry is required")
+    checks.setdefault("evidence_registry_present", True)
 
     for name, text in _narrative_fields(worksheet):
         if hits := check_prohibited_claims(text):
-            fail("no_prohibited_claims", "PROHIBITED_CLAIM", name, f"guilt assertion matched: {hits}")
-    checks.setdefault("no_prohibited_claims", True)
+            fail("no_guilt_claims", "PROHIBITED_CLAIM", name, f"guilt assertion matched: {hits}")
+            checks["no_prohibited_claims"] = False
 
-    try:
-        to_confidence(worksheet.get("confidence_score", 0))
-        conf_ok = True
-    except NumericError:
-        conf_ok = False
-    checks["confidence_in_range"] = conf_ok
-    if not conf_ok:
-        fail(
-            "confidence_in_range", "CONFIDENCE_OUT_OF_RANGE", "confidence_score", str(worksheet.get("confidence_score"))
-        )
+    disposition = _check_confidence_and_disp(worksheet, fail)
+    judge_sig = judge_citation_relevant
+    if judge_sig is None and isinstance(worksheet.get("judge_citation_relevant"), bool):
+        judge_sig = bool(worksheet["judge_citation_relevant"])
+    cmap = _resolve_corpus_map(corpus_ids, registry)
+    det_rel = _check_citations_v2(worksheet, registry, cmap, disposition, judge_sig, fail)
+    _check_evidence_registration(worksheet, registry, fail)
+    _check_hypotheses_and_missing(worksheet, fail)
 
-    disposition = worksheet.get("recommended_disposition", "")
-    if disposition not in _VALID_DISPOSITIONS:
-        fail("valid_disposition", "INVALID_DISPOSITION", "recommended_disposition", str(disposition))
-    checks.setdefault("valid_disposition", True)
+    for default_ok in (
+        "no_guilt_claims",
+        "no_prohibited_claims",
+        "confidence_in_range",
+        "valid_disposition",
+        "has_citations",
+        "citation_format_valid",
+        "citations_resolved",
+        "citations_exist",
+        "citations_relevant",
+        "evidence_ids_registered",
+        "evidence_ids_resolved",
+        "both_hypotheses_present",
+        "missing_evidence_stated",
+    ):
+        checks.setdefault(default_ok, True)
 
-    _check_citations(worksheet, registry, disposition, fail)
-    for name in ("has_citations", "citation_format_valid", "citations_resolved"):
-        checks.setdefault(name, True)
-
-    for field, ref in _referenced_ids(worksheet):
-        if ref not in registry:
-            fail(
-                "evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in this run's evidence_registry"
-            )
-    checks.setdefault("evidence_ids_resolved", True)
-
-    path_issues: list[Discrepancy] = []
-    checks["inr_math_verified"] = _check_paths(worksheet, registry, path_issues)
-    issues += path_issues
-
-    _check_narrative_amounts(worksheet, registry, fail)
-    checks.setdefault("narrative_amounts_grounded", True)
+    known_amounts, known_pcts = _collect_known_numbers(worksheet, registry, calc_log or ())
+    paths_ok, path_errs, path_total = _check_paths_math(worksheet, registry, issues)
+    prose_ok, prose_errs, prose_total = _check_prose_numbers(worksheet, known_amounts, known_pcts, issues)
+    checks["inr_math_verified"] = paths_ok
+    checks["narrative_amounts_grounded"] = prose_ok
+    checks["numbers_match_calc"] = (path_errs + prose_errs) == 0 and paths_ok and prose_ok
 
     return VerificationResult(
         passed=all(checks.values()) and not issues,
@@ -361,4 +457,8 @@ def verify_worksheet(
         errors=[f"{d.code}: {d.field}: {d.detail}" for d in issues],
         discrepancies=issues,
         payload_hash=compute_canonical_hash(worksheet),
+        inr_error_count=path_errs + prose_errs,
+        inr_numbers_total=path_total + prose_total,
+        deterministic_citation_relevant=det_rel,
+        judge_citation_relevant=judge_sig,
     )

@@ -11,8 +11,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.core.verifier import extract_prose_amounts
+from src.core.verifier import VerificationResult, extract_prose_amounts, load_corpus_category_map
 from src.mcp_servers import compliance_kb
+from src.typology_registry import typology_registry
 
 _EVIDENCE_ID_RE = re.compile(r"\b(?:TXN|KYC|REG|SOP|CALC|PATH|CP)-[A-Za-z0-9\-_]+\b")
 
@@ -86,30 +87,41 @@ def compute_case_quality(
     case: dict[str, Any],
     ws_dict: dict[str, Any] | None,
     discrepancies: list[dict[str, Any]],
+    vr: VerificationResult | None = None,
 ) -> dict[str, float]:
     gold_ids = gold_evidence_ids(case)
     cited_ids = cited_evidence_ids(ws_dict)
     ev_recall = len(cited_ids & gold_ids) / len(gold_ids) if gold_ids else 1.0
 
     corpus_ids = _corpus_clause_ids()
+    cat_map = load_corpus_category_map()
+    allowed_cats = typology_registry.all_typology_categories("scatter_gather")
     citations = list((ws_dict or {}).get("regulatory_citations", []))
     if citations:
-        valid_cites = sum(1 for c in citations if c in corpus_ids)
+        claim_ok = True if vr is None else bool(vr.checks.get("citations_relevant", True))
+        valid_cites = sum(
+            1 for c in citations if c in corpus_ids and cat_map.get(str(c), "") in allowed_cats and claim_ok
+        )
         citation_validity = valid_cites / len(citations)
     else:
         citation_validity = 0.0
 
-    texts = []
-    if ws_dict:
-        texts.append(str(ws_dict.get("recommendation_rationale", "")))
-        texts.extend(str(h.get("explanation", "")) for h in ws_dict.get("hypotheses", []) if isinstance(h, dict))
-    prose_nums = sum(len(extract_prose_amounts(t)) for t in texts)
-    path_nums = len((ws_dict or {}).get("candidate_paths", [])) * 2
-    denom = max(1, prose_nums + path_nums)
-    math_errs = sum(
-        1 for d in discrepancies if d.get("code") in ("UNGROUNDED_AMOUNT", "INR_MATH_DISCREPANCY", "PATH_MATH_MISMATCH")
-    )
-    inr_err_rate = min(1.0, math_errs / denom)
+    if vr is not None:
+        inr_err_rate = (vr.inr_error_count / vr.inr_numbers_total) if vr.inr_numbers_total > 0 else 0.0
+    else:
+        texts = []
+        if ws_dict:
+            texts.append(str(ws_dict.get("recommendation_rationale", "")))
+            texts.extend(str(h.get("explanation", "")) for h in ws_dict.get("hypotheses", []) if isinstance(h, dict))
+        prose_nums = sum(len(extract_prose_amounts(t)) for t in texts)
+        path_nums = len((ws_dict or {}).get("candidate_paths", [])) * 2
+        denom = max(1, prose_nums + path_nums)
+        math_errs = sum(
+            1
+            for d in discrepancies
+            if d.get("code") in ("UNGROUNDED_AMOUNT", "UNGROUNDED_PERCENTAGE", "INR_NET_MISMATCH")
+        )
+        inr_err_rate = min(1.0, math_errs / denom)
     return {
         "evidence_recall": ev_recall,
         "citation_validity_rate": citation_validity,

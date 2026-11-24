@@ -42,6 +42,9 @@ class DraftOutcome:
     llm_model: str
 
 
+DEFAULT_MISSING_EVIDENCE = ["Out-of-network beneficiary bank statements and source-of-funds documentation"]
+
+
 def _payload(
     *,
     alert: Alert,
@@ -56,6 +59,7 @@ def _payload(
     degraded: list[str],
     status: str,
     discrepancies: list[dict[str, Any]],
+    missing_evidence: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     return {
         "alert_id": alert.alert_id,
@@ -68,6 +72,7 @@ def _payload(
         "kyc_summaries": summaries,
         "hypotheses": [h.model_dump(mode="json") for h in hypotheses],
         "degraded_evidence": degraded,
+        "missing_evidence": list(missing_evidence if missing_evidence is not None else DEFAULT_MISSING_EVIDENCE),
         "alert_amount_inr": dec_str(alert.total_amount_inr),
         "verification_status": status,
         "verification_discrepancies": discrepancies,
@@ -100,14 +105,16 @@ async def _verify_narrative_loop(
     citations: list[str],
     summaries: list[str],
     registry: Mapping[str, Any],
-    replan_count: int,
-    base_rationale: str,
-    degraded: list[str],
-    use_strong_model: bool,
-    narrative_role: Optional[str],
-    verify: bool,
-    allow_llm: bool,
+    calc_log: Optional[list[dict[str, Any]]] = None,
+    replan_count: int = 0,
+    base_rationale: str = "",
+    degraded: Optional[list[str]] = None,
+    use_strong_model: bool = False,
+    narrative_role: Optional[str] = None,
+    verify: bool = True,
+    allow_llm: bool = True,
 ) -> tuple[str, list[Hypothesis], str, bool, list[dict[str, Any]]]:
+    deg_list = list(degraded or [])
     feedback: list[dict[str, Any]] = []
     discrepancies: list[dict[str, Any]] = []
     while True:
@@ -130,8 +137,6 @@ async def _verify_narrative_loop(
             llm_out = {"used_live_llm": False, "model": "offline-deterministic", "rationale": base_rationale}
         rationale, llm_model = str(llm_out["rationale"]), str(llm_out["model"])
         hyps = _with_llm_text(hypotheses, llm_out)
-        if not verify:
-            return rationale, hyps, llm_model, True, []
         candidate = _payload(
             alert=alert,
             thread_id=thread_id,
@@ -142,13 +147,15 @@ async def _verify_narrative_loop(
             hypotheses=hyps,
             citations=citations,
             summaries=summaries,
-            degraded=degraded,
+            degraded=deg_list,
             status="passed",
             discrepancies=[],
         )
-        result = verify_worksheet(candidate, registry)
+        result = verify_worksheet(candidate, registry, calc_log=calc_log)
         discrepancies = [d.model_dump() for d in result.discrepancies]
-        if result.passed or not llm_out.get("used_live_llm"):
+        # In E4 `no_verifier` (`verify=False`), checks run and discrepancies are recorded,
+        # without blocking, repairing, or downgrading the disposition.
+        if not verify or result.passed or not llm_out.get("used_live_llm"):
             return rationale, hyps, llm_model, result.passed, discrepancies
         feedback = discrepancies
         if not ledger.try_critique_retry().allowed:
@@ -185,6 +192,7 @@ def _worksheet_from_draft(
         regulatory_citations=citations,
         kyc_summaries=summaries,
         degraded_evidence=degraded,
+        missing_evidence=list(stored.get("missing_evidence", payload["missing_evidence"])),
         alert_amount_inr=str(payload["alert_amount_inr"]),
         verification_status=stored_status,
         verification_discrepancies=stored_discrepancies,
@@ -214,6 +222,7 @@ async def draft_and_verify(
     base_rationale: str,
     degraded: list[str],
     use_strong_model: bool,
+    calc_log: Optional[list[dict[str, Any]]] = None,
     narrative_role: Optional[str] = None,
     verify: bool = True,
     allow_llm: bool = True,
@@ -229,6 +238,7 @@ async def draft_and_verify(
         citations=citations,
         summaries=summaries,
         registry=registry,
+        calc_log=calc_log,
         replan_count=replan_count,
         base_rationale=base_rationale,
         degraded=degraded,
@@ -237,28 +247,22 @@ async def draft_and_verify(
         verify=verify,
         allow_llm=allow_llm,
     )
-    failed = verify and not passed
-    if failed:
+    gate_failed = verify and not passed
+    if gate_failed:
         codes = sorted({d["code"] for d in discrepancies})
         rationale = f"{base_rationale} [VERIFICATION FAILED - manual review required: {', '.join(codes)}]"
         hyps = [h.model_copy(deep=True) for h in hypotheses]
         disposition = DispositionDecision.REQUEST_INFO
-    payload = _payload(
-        alert=alert,
-        thread_id=thread_id,
-        disposition=disposition,
-        rationale=rationale,
-        confidence=confidence,
-        paths=paths,
-        hypotheses=hyps,
-        citations=citations,
-        summaries=summaries,
-        degraded=degraded,
-        status="failed" if failed else "passed",
-        discrepancies=discrepancies if failed else [],
-    )
-    if verify:
-        payload["evidence_registry"] = dict(registry)
+    payload = {
+        **_payload(
+            alert=alert, thread_id=thread_id, disposition=disposition, rationale=rationale, confidence=confidence,
+            paths=paths, hypotheses=hyps, citations=citations, summaries=summaries, degraded=degraded,
+            status="passed" if passed else "failed", discrepancies=[] if passed else discrepancies,
+        ),
+        "evidence_registry": dict(registry),
+        "calc_log": list(calc_log or []),
+        "enforce_verifier_gate": verify,
+    }
     draft = await box.call("case-actions", "draft_disposition_report", payload)
     if is_error(draft):
         raise DraftError(f"draft_disposition_report failed: {draft.get('error_code') or draft.get('error')}")

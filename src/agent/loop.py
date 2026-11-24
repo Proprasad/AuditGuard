@@ -57,6 +57,7 @@ def _candidate_draft_payload(
     hypotheses: list[Hypothesis],
     citations: list[str],
     degraded: list[str],
+    missing_evidence: Optional[list[str]] = None,
     status: str = "passed",
     discrepancies: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
@@ -71,6 +72,7 @@ def _candidate_draft_payload(
         "kyc_summaries": kyc_summaries(runtime.kyc_profiles, limit=5),
         "hypotheses": [h.model_dump(mode="json") for h in hypotheses],
         "degraded_evidence": degraded,
+        "missing_evidence": list(missing_evidence or []),
         "alert_amount_inr": dec_str(alert.total_amount_inr),
         "verification_status": status,
         "verification_discrepancies": discrepancies or [],
@@ -101,7 +103,12 @@ def validate_finish_candidate(
     *,
     verify: bool = True,
 ) -> tuple[bool, list[str], dict[str, Any], list[Hypothesis], list[str], list[dict[str, Any]]]:
-    """Validate `FinishInvestigationInput` against `verify_worksheet` and evidence grounding rules."""
+    """
+    Run Verifier v2 (`verify_worksheet` with `calc_log`) on every finish candidate.
+    Even when `verify=False` (E4 `no_verifier`), checks execute and discrepancies are returned;
+    the caller decides whether to gate/repair (`verify=True`) or pass through (`verify=False`).
+    """
+    _ = verify  # gate enforcement happens in `handle_finish_attempt` / `persist_verified_worksheet`
     disp, conf, rationale = format_rationale_with_missing(sub)
     hyps = build_hypotheses_from_finish(sub)
     citations = _resolve_citations(sub, runtime)
@@ -121,13 +128,12 @@ def validate_finish_candidate(
         hypotheses=hyps,
         citations=citations,
         degraded=degraded,
+        missing_evidence=list(sub.missing_evidence),
     )
-    discrepancies: list[dict[str, Any]] = []
-    if verify:
-        vr = verify_worksheet(payload, runtime.evidence_registry)
-        if not vr.passed:
-            errors.extend(vr.errors)
-            discrepancies = [d.model_dump() for d in vr.discrepancies]
+    vr = verify_worksheet(payload, runtime.evidence_registry, calc_log=runtime.calc_log)
+    discrepancies = [d.model_dump() for d in vr.discrepancies]
+    if not vr.passed:
+        errors.extend(vr.errors)
     return (len(errors) == 0), errors, payload, hyps, citations, discrepancies
 
 
@@ -144,10 +150,13 @@ async def persist_verified_worksheet(
     missing_evidence: list[str],
     verify: bool,
 ) -> DispositionWorksheet:
-    """Persist validated worksheet via `case-actions.draft_disposition_report`."""
-    call_payload = dict(payload)
-    if verify:
-        call_payload["evidence_registry"] = dict(runtime.evidence_registry)
+    """Persist worksheet via `case-actions.draft_disposition_report` (`enforce_verifier_gate=verify`)."""
+    call_payload = {
+        **payload,
+        "evidence_registry": dict(runtime.evidence_registry),
+        "calc_log": list(runtime.calc_log),
+        "enforce_verifier_gate": verify,
+    }
     draft = await runtime.box.call("case-actions", "draft_disposition_report", call_payload)
     if is_error(draft):
         raise RuntimeError(f"draft_disposition_report failed: {draft.get('error_code') or draft.get('message')}")
@@ -231,6 +240,7 @@ async def persist_forced_finish(
         hypotheses=hyps,
         citations=citations,
         degraded=degraded,
+        missing_evidence=missing,
     )
     return await persist_verified_worksheet(
         runtime=runtime,
@@ -321,10 +331,13 @@ async def handle_finish_attempt(
 
     degraded = sorted({*runtime.degraded_evidence, *all_security_notes(ctx), *tool_error_notes(ctx)})
     sub = runtime.finish_submission
-    ok, v_errors, payload, hyps, citations, _ = validate_finish_candidate(
+    ok, v_errors, payload, hyps, citations, discrepancies = validate_finish_candidate(
         runtime, sub, state.alert, state.thread_id, degraded, verify=ctx.deterministic_verifier
     )
-    if ok:
+    if ok or not ctx.deterministic_verifier:
+        if not ok:
+            payload["verification_status"] = "failed"
+            payload["verification_discrepancies"] = discrepancies
         ws = await persist_verified_worksheet(
             runtime=runtime,
             alert=state.alert,
@@ -558,7 +571,11 @@ async def run_c1_agent_loop(
         "reasoning_mode": "llm_tool_loop",
         "messages": trimmed_msgs,
         "rolling_summary": rolling,
-        "error": "verification_failed" if worksheet.verification_status == "failed" else None,
+        "error": (
+            "verification_failed"
+            if (ctx.deterministic_verifier and worksheet.verification_status == "failed")
+            else None
+        ),
         "is_complete": True,
         "current_node": "interrupt_required",
         "current_step": state.current_step + 1,

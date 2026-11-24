@@ -88,7 +88,11 @@ def prepare_decision(thread: dict[str, Any], approved_hash: str | None, reviewer
     ws = _require_open(thread, ("interrupt_required",))
     if approved_hash and approved_hash != ws["current_hash"]:
         raise DecisionError(403, "APPROVAL_HASH_MISMATCH", "approved_hash does not match the current worksheet")
-    recheck = verify_worksheet(ws["content"], thread["state"].get("evidence_registry", {}))
+    recheck = verify_worksheet(
+        ws["content"],
+        thread["state"].get("evidence_registry", {}),
+        calc_log=thread["state"].get("calc_log"),
+    )
     if not recheck.passed or ws["content"].get("verification_status") == "failed":
         raise DecisionError(
             409,
@@ -130,7 +134,7 @@ def apply_edit(
 
     candidate = {**ws["content"], **changes}
     registry = thread["state"].get("evidence_registry", {})
-    result = verify_worksheet(candidate, registry)
+    result = verify_worksheet(candidate, registry, calc_log=thread["state"].get("calc_log"))
     if not result.passed:
         raise DecisionError(
             422,
@@ -236,7 +240,11 @@ async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -
         raise DecisionError(422, "MISSING_APPROVAL_CREDENTIALS", "approved_hash and approval_token are required")
     if req.approved_hash != ws["current_hash"]:
         raise DecisionError(403, "APPROVAL_HASH_MISMATCH", "approved_hash does not match the current worksheet")
-    recheck = verify_worksheet(ws["content"], thread["state"].get("evidence_registry", {}))
+    recheck = verify_worksheet(
+        ws["content"],
+        thread["state"].get("evidence_registry", {}),
+        calc_log=thread["state"].get("calc_log"),
+    )
     if not recheck.passed or ws["content"].get("verification_status") == "failed":
         raise DecisionError(
             409,

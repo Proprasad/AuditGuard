@@ -180,6 +180,7 @@ class DispositionWorksheet(StrictModel):
             "kyc_summaries": list(self.kyc_summaries),
             "hypotheses": [h.model_dump(mode="json") for h in self.hypotheses],
             "degraded_evidence": list(self.degraded_evidence),
+            "missing_evidence": list(self.missing_evidence),
             "alert_amount_inr": self.alert_amount_inr,
             "verification_status": self.verification_status,
             "verification_discrepancies": list(self.verification_discrepancies),

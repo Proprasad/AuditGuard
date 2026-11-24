@@ -537,7 +537,11 @@ def _c2_state_update(
         "worksheet": worksheet,
         "flow_summary": flow_summary,
         "reasoning_mode": "llm_tool_loop",
-        "error": "verification_failed" if worksheet.verification_status == "failed" else None,
+        "error": (
+            "verification_failed"
+            if (ctx.deterministic_verifier and worksheet.verification_status == "failed")
+            else None
+        ),
         "is_complete": True,
         "current_node": "interrupt_required",
         "current_step": state.current_step + 1,

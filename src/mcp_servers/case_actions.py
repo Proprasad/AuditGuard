@@ -46,10 +46,13 @@ class DraftDispositionInput(_Strict):
     kyc_summaries: list[str] = Field(default_factory=list)
     hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     degraded_evidence: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
     alert_amount_inr: Optional[str] = None
     verification_status: Literal["passed", "failed"] = "passed"
     verification_discrepancies: list[dict[str, Any]] = Field(default_factory=list)
     evidence_registry: Optional[dict[str, Any]] = None
+    calc_log: Optional[list[dict[str, Any]]] = None
+    enforce_verifier_gate: bool = True
 
 
 class DraftDispositionOutput(_Strict):
@@ -83,10 +86,19 @@ class SubmitCaseDispositionOutput(_Strict):
 
 
 def _enforce_server_side_verification(
-    content: dict[str, Any], evidence_registry: Optional[dict[str, Any]]
+    content: dict[str, Any],
+    evidence_registry: Optional[dict[str, Any]],
+    calc_log: Optional[list[dict[str, Any]]] = None,
+    enforce_verifier_gate: bool = True,
 ) -> dict[str, Any]:
-    """Defense-in-depth: never persist a `passed` worksheet if prohibited claims or registry mismatches exist."""
-    if content.get("verification_status") != "passed":
+    """
+    Defense-in-depth verification:
+    - Always runs Verifier v2 when `evidence_registry` is provided so discrepancies are recorded.
+    - When `enforce_verifier_gate=True` (default), any violation downgrades disposition to `request_info`.
+    - When `enforce_verifier_gate=False` (E4 `no_verifier` ablation), discrepancies are recorded without
+      blocking or downgrading `recommended_disposition`.
+    """
+    if content.get("verification_status") != "passed" and enforce_verifier_gate:
         return content
     texts = [str(content.get("recommendation_rationale", ""))] + [
         str(h.get("explanation", "")) for h in content.get("hypotheses", []) if isinstance(h, dict)
@@ -94,17 +106,19 @@ def _enforce_server_side_verification(
     guilt_hits = [hit for t in texts for hit in check_prohibited_claims(t)]
     if guilt_hits:
         content["verification_status"] = "failed"
-        content["recommended_disposition"] = "request_info"
         content["verification_discrepancies"] = [
             {"code": "PROHIBITED_CLAIM", "field": "recommendation_rationale", "detail": str(guilt_hits)}
         ]
+        if enforce_verifier_gate:
+            content["recommended_disposition"] = "request_info"
         return content
     if evidence_registry is not None:
-        vr = verify_worksheet(content, evidence_registry)
+        vr = verify_worksheet(content, evidence_registry, calc_log=calc_log)
         if not vr.passed:
             content["verification_status"] = "failed"
-            content["recommended_disposition"] = "request_info"
             content["verification_discrepancies"] = [d.model_dump() for d in vr.discrepancies]
+            if enforce_verifier_gate:
+                content["recommended_disposition"] = "request_info"
     return content
 
 
@@ -112,8 +126,11 @@ def _enforce_server_side_verification(
 async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispositionOutput:
     """Persist a verified draft disposition worksheet and return its canonical SHA-256 hash."""
     now = utc_now_iso()
-    raw_content = {**params.model_dump(mode="json", exclude={"thread_id", "evidence_registry"}), "drafted_at": now}
-    verified_content = _enforce_server_side_verification(raw_content, params.evidence_registry)
+    excluded = {"thread_id", "evidence_registry", "calc_log", "enforce_verifier_gate"}
+    raw_content = {**params.model_dump(mode="json", exclude=excluded), "drafted_at": now}
+    verified_content = _enforce_server_side_verification(
+        raw_content, params.evidence_registry, params.calc_log, params.enforce_verifier_gate
+    )
     record = await asyncio.to_thread(case_repo.upsert_draft, verified_content, params.thread_id, 1)
     return DraftDispositionOutput(
         worksheet_id=record["worksheet_id"],

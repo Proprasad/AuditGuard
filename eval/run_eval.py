@@ -259,14 +259,15 @@ async def run_case(
         ws_dict: dict[str, Any] | None = None
         discrepancies: list[dict[str, Any]] = []
         vr_ok = False
+        vr_res = None
         if ws:
             ws_dict = ws.model_dump(mode="json")
             ws_dict["alert_amount_inr"] = str(alert.total_amount_inr)
-            vr = verify_worksheet(ws_dict, final_state.evidence_registry)
-            vr_ok = vr.passed
-            discrepancies = [d.model_dump() for d in vr.discrepancies]
+            vr_res = verify_worksheet(ws_dict, final_state.evidence_registry, calc_log=final_state.calc_log)
+            vr_ok = vr_res.passed
+            discrepancies = [d.model_dump() for d in vr_res.discrepancies]
 
-        quality = compute_case_quality(gold_snapshot, ws_dict, discrepancies)
+        quality = compute_case_quality(gold_snapshot, ws_dict, discrepancies, vr=vr_res)
         return {
             "case_id": str(case["case_id"]),
             "disposition": ws.recommended_disposition.value if ws else "unknown",

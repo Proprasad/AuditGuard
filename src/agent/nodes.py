@@ -105,14 +105,23 @@ def _features(state: InvestigationState) -> tuple[EvidenceFeatures, list[str], l
 async def hypothesis_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
     feats, susp_ev, benign_ev = _features(state)
     citations = [c["clause_id"] for c in state.regulatory_clauses if c.get("clause_id")]
-    path_ids = [p.path_id for p in state.fund_flow_paths]
+    path_ids = [p.path_id for p in state.fund_flow_paths if p.path_id in state.evidence_registry]
+    fallback_ids = [
+        eid
+        for eid in [
+            *(str(k.get("evidence_id", "")) for k in state.kyc_profiles[:3]),
+            *(str(t.get("tx_id", "")) for t in state.transactions[:2]),
+        ]
+        if eid and eid in state.evidence_registry
+    ]
+    base_ids = path_ids or fallback_ids
     degraded = list(state.degraded_evidence)
     rubric = rubric_scores(feats, ctx.policy.scoring)
 
     susp_conf, benign_conf = rubric.suspicious, rubric.benign
     susp_expl = "Scatter-gather layering network across intermediaries"
     benign_expl = "Legitimate commercial, payroll, charitable, chit-fund, or merchant-settlement activity"
-    susp_ids, benign_ids = list(path_ids), list(path_ids)
+    susp_ids, benign_ids = list(base_ids), list(base_ids)
     mode = "rubric"
 
     scoring = None
@@ -425,6 +434,37 @@ def _telemetry(state: InvestigationState, ctx: RunContext, worksheet_summary: st
     return {"workflow_steps": steps, "agent_runs": runs}
 
 
+def _build_node_rationale(
+    state: InvestigationState,
+    ctx: RunContext,
+    disposition: DispositionDecision,
+    confidence: float,
+    citations: list[str],
+    degraded: list[str],
+) -> str:
+    refs = [
+        r
+        for r in [
+            *(p.path_id for p in state.fund_flow_paths[:2]),
+            *(str(k.get("evidence_id", "")) for k in state.kyc_profiles[:1]),
+            *citations[:2],
+        ]
+        if r and r in state.evidence_registry
+    ]
+    ref_tag = f" [refs: {', '.join(refs)}]" if refs else ""
+    rationale = (
+        f"{ctx.label}: analyzed {len(state.fund_flow_paths)} candidate path(s) across "
+        f"{state.replan_count + 1} graph pass(es) (replans={state.replan_count}, "
+        f"tool_calls={ctx.ledger.calls_used}) and {len(state.kyc_profiles)} KYC/registry records "
+        f"[reasoning={state.reasoning_mode}].{ref_tag} Recommended disposition: "
+        f"{disposition.value} (confidence={confidence:.2f}) pending mandatory human review. "
+        "Missing evidence: Out-of-network beneficiary bank statements."
+    )
+    if degraded:
+        rationale += " Degraded evidence: " + "; ".join(degraded)
+    return rationale
+
+
 async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
     t0 = time.perf_counter()
     box = ctx.box("reporter_critic")
@@ -439,17 +479,7 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
     )
     citations = sorted({c for h in state.active_hypotheses for c in h.regulatory_citations})
     summaries = kyc_summaries(state.kyc_profiles, limit=5)
-    rationale = (
-        f"{ctx.label}: analyzed {len(state.fund_flow_paths)} candidate "
-        f"path(s) across {state.replan_count + 1} bounded graph pass(es) "
-        f"(replans={state.replan_count}, tool_calls={ctx.ledger.calls_used}) "
-        f"and {len(state.kyc_profiles)} KYC/registry records "
-        f"[reasoning={state.reasoning_mode}]. Recommended disposition: "
-        f"{disposition.value} ({confidence:.0%} confidence) "
-        f"pending mandatory human review."
-    )
-    if degraded:
-        rationale += " Degraded evidence: " + "; ".join(degraded)
+    rationale = _build_node_rationale(state, ctx, disposition, confidence, citations, degraded)
     outcome = await draft_and_verify(
         box=box,
         ledger=ctx.ledger,
@@ -463,6 +493,7 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
         citations=citations,
         summaries=summaries,
         registry=state.evidence_registry,
+        calc_log=state.calc_log,
         replan_count=state.replan_count,
         base_rationale=rationale,
         degraded=degraded,

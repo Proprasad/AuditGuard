@@ -404,9 +404,10 @@ def _sync_registry(entity_name: str, account_id: Optional[str], not_found: dict[
 async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
     """GST / MCA / Section 80G / Chit registration lookup (a clean NOT_FOUND is a legitimate answer)."""
     overlay = _eval_case_ctx.get()
+    slug = "".join(ch if ch.isalnum() else "-" for ch in (params.account_id or params.entity_name)).strip("-") or "NA"
     not_found = {
         "status": "ok",
-        "evidence_id": f"REGISTRY-NONE-{params.entity_name}",
+        "evidence_id": f"REGISTRY-NONE-{slug}",
         "entity_name": params.entity_name,
         "is_registered": False,
         "registry_status": "NOT_FOUND",

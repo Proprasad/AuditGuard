@@ -238,6 +238,21 @@ def test_w3_04_dual_affix_currency_prose_decimal_confidence_and_canonical_json()
         "confidence_score": "0.8500",
         "regulatory_citations": ["REG-FIU-RF-014"],
         "alert_amount_inr": "900000.00",
+        "hypotheses": [
+            {
+                "label": "suspicious",
+                "explanation": "Dispersal on TXN-1.",
+                "confidence": "0.8500",
+                "evidence_ids": ["TXN-1"],
+            },
+            {
+                "label": "benign",
+                "explanation": "Merchant settlement checked on TXN-1.",
+                "confidence": "0.1500",
+                "evidence_ids": ["TXN-1"],
+            },
+        ],
+        "missing_evidence": ["Counterparty tax invoices"],
     }
     vr_ok = verify_worksheet(ok_ws, registry)
     assert vr_ok.passed, vr_ok.discrepancies

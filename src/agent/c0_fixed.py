@@ -255,6 +255,33 @@ def _c0_telemetry(
     return steps, runs
 
 
+def _c0_hypotheses(
+    state: InvestigationState,
+    disposition: DispositionDecision,
+    confidence: float,
+    citations: list[str],
+    ev_ids: list[str],
+) -> list[Hypothesis]:
+    susp_conf = confidence if disposition == DispositionDecision.ESCALATE_STR else round(1.0 - confidence, 4)
+    benign_conf = confidence if disposition == DispositionDecision.CLOSE_BENIGN else round(1.0 - susp_conf, 4)
+    return [
+        Hypothesis(
+            label=HypothesisLabel.SUSPICIOUS,
+            explanation="Fixed 14d/4-hop multi-hop scatter-gather topology assessment.",
+            confidence=to_confidence(susp_conf),
+            regulatory_citations=citations,
+            evidence_ids=ev_ids,
+        ),
+        Hypothesis(
+            label=HypothesisLabel.BENIGN,
+            explanation="Fixed KYC and commercial registry corroboration check across root and counterparties.",
+            confidence=to_confidence(benign_conf),
+            regulatory_citations=citations,
+            evidence_ids=ev_ids,
+        ),
+    ]
+
+
 async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
     t0 = time.perf_counter()
     box = ctx.box("primary")
@@ -272,27 +299,14 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
         for eid in [
             *(p.path_id for p in state.fund_flow_paths),
             *(str(k.get("evidence_id", "")) for k in state.kyc_profiles),
+            *(str(t.get("tx_id", "")) for t in state.transactions[:2]),
         ]
         if eid and eid in state.evidence_registry
     ]
-    susp_conf = confidence if disposition == DispositionDecision.ESCALATE_STR else round(1.0 - confidence, 4)
-    benign_conf = confidence if disposition == DispositionDecision.CLOSE_BENIGN else round(1.0 - susp_conf, 4)
-    hypotheses = [
-        Hypothesis(
-            label=HypothesisLabel.SUSPICIOUS,
-            explanation="Fixed 14d/4-hop multi-hop scatter-gather topology assessment.",
-            confidence=to_confidence(susp_conf),
-            regulatory_citations=citations,
-            evidence_ids=ev_ids,
-        ),
-        Hypothesis(
-            label=HypothesisLabel.BENIGN,
-            explanation="Fixed KYC and commercial registry corroboration check across root and counterparties.",
-            confidence=to_confidence(benign_conf),
-            regulatory_citations=citations,
-            evidence_ids=ev_ids,
-        ),
-    ]
+    refs = [*ev_ids[:2], *citations[:2]]
+    if refs:
+        rationale += f" [refs: {', '.join(refs)}]"
+    hypotheses = _c0_hypotheses(state, disposition, confidence, citations, ev_ids)
     outcome = await draft_and_verify(
         box=box,
         ledger=ctx.ledger,
@@ -306,6 +320,7 @@ async def draft_node(state: InvestigationState, ctx: RunContext) -> dict[str, An
         citations=citations,
         summaries=summaries,
         registry=state.evidence_registry,
+        calc_log=state.calc_log,
         replan_count=0,
         base_rationale=rationale,
         degraded=degraded,

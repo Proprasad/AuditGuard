@@ -149,6 +149,11 @@ async def test_w2_01_case_actions_http_hmac_auth_server_verifier_and_interrupt_g
             "recommendation_rationale": "Grounded outflow INR 900000.00 citing REG-FIU-RF-014.",
             "confidence_score": "0.8500",
             "regulatory_citations": ["REG-FIU-RF-014"],
+            "hypotheses": [
+                {"label": "suspicious", "explanation": "Scatter-gather trail.", "confidence": "0.8500"},
+                {"label": "benign", "explanation": "Registry check negative.", "confidence": "0.1500"},
+            ],
+            "missing_evidence": ["Beneficiary bank statements"],
             "alert_amount_inr": "900000.00",
             "verification_status": "passed",
             "verification_discrepancies": [],
@@ -305,6 +310,11 @@ async def test_w2_05_prose_amounts_and_canonical_hash_parity(client: Any, auth: 
         "confidence_score": "0.8500",
         "regulatory_citations": ["REG-FIU-RF-014"],
         "alert_amount_inr": "900000.00",
+        "hypotheses": [
+            {"label": "suspicious", "explanation": "Rapid dispersal pattern.", "confidence": "0.8500"},
+            {"label": "benign", "explanation": "Commercial invoice hypothesis.", "confidence": "0.1500"},
+        ],
+        "missing_evidence": ["Beneficiary bank statements"],
     }
     bad_rupees = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 900001 rupees."}, reg)
     bad_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9.5 lakhs."}, reg)
