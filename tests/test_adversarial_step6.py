@@ -279,13 +279,13 @@ async def test_06_normalized_injection_caught_end_to_end_c0_c1_c2(payload: str):
     ],
 )
 def test_07_guilt_phrase_families_blocked_by_verifier(phrase: str):
-    registry = {"REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014"}}
+    registry = {"FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"}}
     ws_rat = {
         "alert_id": "ALT-1",
         "recommended_disposition": "escalate_str",
         "recommendation_rationale": phrase,
         "confidence_score": 0.8,
-        "regulatory_citations": ["REG-FIU-RF-014"],
+        "regulatory_citations": ["FIU-IND-RFI-BA-01"],
     }
     res1 = verify_worksheet(ws_rat, registry)
     assert res1.passed is False and any(d.code == "PROHIBITED_CLAIM" for d in res1.discrepancies)
@@ -293,9 +293,9 @@ def test_07_guilt_phrase_families_blocked_by_verifier(phrase: str):
     ws_hyp = {
         "alert_id": "ALT-1",
         "recommended_disposition": "escalate_str",
-        "recommendation_rationale": "Neutral rationale citing REG-FIU-RF-014.",
+        "recommendation_rationale": "Neutral rationale citing FIU-IND-RFI-BA-01.",
         "confidence_score": 0.8,
-        "regulatory_citations": ["REG-FIU-RF-014"],
+        "regulatory_citations": ["FIU-IND-RFI-BA-01"],
         "hypotheses": [{"label": "suspicious", "explanation": phrase, "confidence": 0.8}],
     }
     res2 = verify_worksheet(ws_hyp, registry)
@@ -304,7 +304,7 @@ def test_07_guilt_phrase_families_blocked_by_verifier(phrase: str):
 
 def test_08_fabricated_citation_and_mismatched_inr_math_fail_closed():
     registry = {
-        "REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014"},
+        "FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"},
         "PATH-REAL0001": {
             "path_id": "PATH-REAL0001",
             "total_outflow_inr": "900000.00",

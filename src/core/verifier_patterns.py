@@ -69,8 +69,15 @@ _NEGATION_CLAUSE_RE = re.compile(
     r"(?:\s+\w+){0,14}\s*$"
 )
 
-REF_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|CP|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
+REF_PATTERN = re.compile(
+    r"\b(?:(?:TXN|KYC|CALC|PATH|REGISTRY|CP|REG|SOP)-[A-Za-z0-9][A-Za-z0-9\-_]*"
+    r"|(?:PMLA|PMLR|CHIT)-[0-9]{4}-[A-Za-z0-9\-]+"
+    r"|RBI-(?:KYC|PA)-[0-9]{4}-[A-Za-z0-9\-]+"
+    r"|FIU-IND-RFI-[A-Za-z0-9\-]+"
+    r"|FATF-R[0-9]+-[A-Za-z0-9\-]+)"
+)
 DATA_EVIDENCE_PATTERN = re.compile(r"\b(?:TXN|KYC|CALC|PATH|REGISTRY|CP)-[A-Za-z0-9][A-Za-z0-9\-_]*")
+CLAUSE_ID_PREFIXES = ("REG-", "SOP-", "PMLA-", "PMLR-", "RBI-", "FIU-", "FATF-", "CHIT-")
 CITATION_FORMAT = re.compile(r"^[A-Z][A-Z0-9\-]+$")
 
 _PROSE_CURRENCY_RE = re.compile(

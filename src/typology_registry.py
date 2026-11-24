@@ -32,6 +32,7 @@ _SUSPICIOUS_CATEGORIES = [
     "principal_officer",
     "filing_timeline",
     "chit_fund",
+    "ngo_monitoring",
     "wire_traceability",
     "str_standard",
     "replanning",
@@ -140,7 +141,7 @@ typology_registry.register(
             "check_commercial_registry",
             "search_regulations",
         ],
-        applicable_regulations=["REG-FIU-RF-014", "REG-RBI-KYC-P35", "REG-PMLA-R3"],
+        applicable_regulations=["FIU-IND-RFI-BA-01", "RBI-KYC-2016-P35-P01", "PMLR-2005-R3-P03"],
         allowed_categories=_ALL_SCATTER_GATHER_CATEGORIES,
         claim_category_map={
             "escalate_str": _SUSPICIOUS_CATEGORIES,

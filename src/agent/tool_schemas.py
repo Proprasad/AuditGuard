@@ -99,7 +99,10 @@ class HypothesisDraft(StrictModel):
         default_factory=list,
         description="Immutable IDs (`TXN-*`, `PATH-*`, `KYC-*`, `REGISTRY-*`, `CALC-*`) grounding this hypothesis",
     )
-    regulatory_citations: list[str] = Field(default_factory=list, description="Retrieved clause IDs (`REG-*`, `SOP-*`)")
+    regulatory_citations: list[str] = Field(
+        default_factory=list,
+        description="Retrieved passage IDs (e.g. PMLA-2002-*, PMLR-2005-*, RBI-KYC-2016-*, FIU-IND-RFI-*, FATF-*, SOP-*)",
+    )
 
 
 _DISP_ALIASES: dict[str, str] = {
@@ -219,7 +222,7 @@ TOOL_SPECS: dict[str, tuple[str, type[BaseModel], str]] = {
     "get_clause_by_id": (
         "compliance-kb",
         GetClauseInput,
-        "Fetch a specific regulatory clause by its exact ID (e.g. REG-FIU-RF-014).",
+        "Fetch a specific regulatory passage or internal SOP by its exact ID (e.g. FIU-IND-RFI-BA-01, PMLA-2002-S12-P01).",
     ),
     "calc": (
         "local",

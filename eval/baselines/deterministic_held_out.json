@@ -1,10 +1,10 @@
 {
   "modes": {
     "c0_fixed": {
-      "citation_validity_rate": 1.0,
+      "citation_validity_rate": 0.933333,
       "cost_usd": 0.0,
       "disposition_accuracy": 0.308333,
-      "evidence_precision": 0.434762,
+      "evidence_precision": 0.450238,
       "evidence_recall": 0.082309,
       "false_close_rate": 0.576923,
       "inr_arithmetic_error_rate": 0.0,
@@ -20,7 +20,7 @@
       "citation_validity_rate": 1.0,
       "cost_usd": 0.0,
       "disposition_accuracy": 0.45,
-      "evidence_precision": 0.77051,
+      "evidence_precision": 0.861368,
       "evidence_recall": 0.202311,
       "false_close_rate": 0.365385,
       "inr_arithmetic_error_rate": 0.010974,

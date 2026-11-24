@@ -120,50 +120,46 @@ def investigate(
     typer.echo(json.dumps(out, indent=2))
 
 
-def _load_bench_queries(bench_path: Path) -> list[dict[str, object]]:
-    return [json.loads(ln) for ln in bench_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-
-
 @app.command("retrieval-bench")
-def retrieval_bench() -> None:
-    """Run regulatory retrieval benchmarks (35-query dev + 28-query independent NL held-out)."""
-    from src.mcp_servers.client import call_mcp_tool
+def retrieval_bench(
+    report: bool = typer.Option(False, "--report", help="Print full Markdown report across all 4 pipelines"),
+    bench: str = typer.Option("eval/retrieval_bench_v2.jsonl", "--bench", help="Path to retrieval benchmark JSONL"),
+    out: Optional[str] = typer.Option(None, "--out", help="Optional output path to save Markdown report"),
+) -> None:
+    """Evaluate BM25, dense, hybrid-RRF, and hybrid+reranker on Retrieval Benchmark v2."""
+    from eval.retrieval_eval import ALL_PIPELINES, format_retrieval_report, run_retrieval_benchmark
 
-    async def _eval_suite(bench_path: Path, mode: str) -> tuple[float, float, int]:
-        queries = await asyncio.to_thread(_load_bench_queries, bench_path)
-        hits = 0
-        rr_sum = 0.0
-        for q in queries:
-            res = await call_mcp_tool(
-                "compliance-kb", "search_regulations", {"query": str(q["query"]), "top_k": 5, "mode": mode}
-            )
-            returned = [c["clause_id"] for c in res.get("clauses", [])]
-            expected_raw = q["expected_ids"]
-            expected = set(expected_raw) if isinstance(expected_raw, list) else set()
-            if expected & set(returned):
-                hits += 1
-                for rank, cid in enumerate(returned, start=1):
-                    if cid in expected:
-                        rr_sum += 1.0 / rank
-                        break
-        n = max(len(queries), 1)
-        return hits / n, rr_sum / n, len(queries)
+    bench_path = Path(bench)
+    if not bench_path.exists():
+        typer.echo(f"BENCHMARK_NOT_FOUND: {bench_path}")
+        raise typer.Exit(code=1)
 
-    for label, rel in (
-        ("Dev Benchmark", "eval/retrieval_bench.jsonl"),
-        ("Independent NL Held-Out", "eval/retrieval_held_out_nl.jsonl"),
-    ):
-        path = Path(rel)
-        if not path.exists():
-            continue
-        bm25_r5, bm25_mrr, n = asyncio.run(_eval_suite(path, "bm25_only"))
-        hyb_r5, hyb_mrr, _ = asyncio.run(_eval_suite(path, "hybrid_rrf_rerank"))
-        typer.echo(f"\n=== {label} ({n} queries) ===")
-        typer.echo(f"  BM25-Only         -> Recall@5: {bm25_r5:.1%}, MRR: {bm25_mrr:.3f}")
+    summary = run_retrieval_benchmark(bench_path)
+    md = format_retrieval_report(summary)
+    out_path = _opt_str(out)
+    if out_path:
+        Path(out_path).write_text(md, encoding="utf-8")
+
+    if report:
+        typer.echo(md)
+        return
+
+    typer.echo(
+        f"\n=== Retrieval Benchmark ({summary['total_queries']} queries: "
+        f"{summary['n_answerable']} answerable, {summary['n_unanswerable']} unanswerable) ==="
+    )
+    for mode in ALL_PIPELINES:
+        m = summary["results"][mode]
+        tag = " [default]" if mode == summary["default_mode"] else ""
         typer.echo(
-            f"  Hybrid RRF+Rerank -> Recall@5: {hyb_r5:.1%}, MRR: {hyb_mrr:.3f} "
-            f"(Delta: {(hyb_r5 - bm25_r5) * 100:+.1f} pp)"
+            f"  {mode:18s}{tag:10s} -> R@1: {m['recall_at_1']:.3f}, R@3: {m['recall_at_3']:.3f}, "
+            f"R@5: {m['recall_at_5']:.3f}, MRR: {m['mrr']:.3f}, nDCG@5: {m['ndcg_at_5']:.3f}, "
+            f"AbstainP: {m['abstain_precision']:.3f}"
         )
+    typer.echo(
+        f"  Best mode: {summary['empirical_best_mode']} | "
+        f"Default >= BM25 R@1: {summary['default_beats_or_ties_bm25_r1']}"
+    )
 
 
 @app.command("serve")

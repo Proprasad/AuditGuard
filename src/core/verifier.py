@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict
 from src.core.canonical import CENT, NumericError, canonical_sha256, to_confidence, to_decimal, to_money
 from src.core.verifier_patterns import (
     CITATION_FORMAT,
+    CLAUSE_ID_PREFIXES,
     DATA_EVIDENCE_PATTERN,
     PROHIBITED_PHRASES,
     REF_PATTERN,
@@ -347,7 +348,7 @@ def _check_evidence_registration(ws: Mapping[str, Any], registry: Mapping[str, A
             fail("evidence_ids_registered", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
             fail("evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
 
-    non_clause_ids = [k for k in registry if not str(k).startswith(("REG-", "SOP-"))]
+    non_clause_ids = [k for k in registry if not str(k).startswith(CLAUSE_ID_PREFIXES)]
     exempt_degraded = bool(ws.get("degraded_evidence")) and str(ws.get("recommended_disposition")) == "request_info"
     rationale = str(ws.get("recommendation_rationale", ""))
     if not exempt_degraded and not REF_PATTERN.search(rationale) and not ws.get("regulatory_citations"):

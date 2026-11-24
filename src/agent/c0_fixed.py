@@ -19,6 +19,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from src.agent.drafting import draft_and_verify, security_notes
+from src.agent.gathering import build_case_regulatory_queries
 from src.agent.nodes import RunContext
 from src.agent.planning import sync_budget, tool_error_notes
 from src.agent.telemetry import compute_network_flow_summary
@@ -140,10 +141,11 @@ async def scan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
 
     clauses: list[dict[str, Any]] = []
     if ctx.ledger.calls_used + 1 <= ctx.policy.budgets.max_tool_calls - 1:
+        case_queries = build_case_regulatory_queries(state.alert, paths, profiles, degraded)
         reg = await box.call(
             "compliance-kb",
             "search_regulations",
-            {"query": "scatter gather layering and commercial registry verification", "top_k": 3, "decompose": False},
+            {"query": " ; ".join(case_queries[:2]), "top_k": 3, "decompose": True},
         )
         if is_error(reg):
             degraded.append(f"Regulatory retrieval unavailable: {_err(reg)}")

@@ -127,7 +127,7 @@ async def test_w2_01_case_actions_http_hmac_auth_server_verifier_and_interrupt_g
                 "recommendation_rationale": "Money laundering confirmed with INR 999999.00.",
                 "confidence_score": "0.90",
                 "verification_status": "passed",
-                "evidence_registry": {"REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014"}},
+                "evidence_registry": {"FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"}},
             },
             timeout_s=15.0,
         )
@@ -146,9 +146,9 @@ async def test_w2_01_case_actions_http_hmac_auth_server_verifier_and_interrupt_g
         {
             "alert_id": "ALT-2026-0412",
             "recommended_disposition": "escalate_str",
-            "recommendation_rationale": "Grounded outflow INR 900000.00 citing REG-FIU-RF-014.",
+            "recommendation_rationale": "Grounded outflow INR 900000.00 citing FIU-IND-RFI-BA-01.",
             "confidence_score": "0.8500",
-            "regulatory_citations": ["REG-FIU-RF-014"],
+            "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             "hypotheses": [
                 {"label": "suspicious", "explanation": "Scatter-gather trail.", "confidence": "0.8500"},
                 {"label": "benign", "explanation": "Registry check negative.", "confidence": "0.1500"},
@@ -161,7 +161,7 @@ async def test_w2_01_case_actions_http_hmac_auth_server_verifier_and_interrupt_g
         thread_id="thr-no-interrupt",
     )
     tok = case_repo.issue_approval_token("thr-no-interrupt", draft["worksheet_id"])
-    state_dict = {"evidence_registry": {"REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014"}}}
+    state_dict = {"evidence_registry": {"FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"}}}
     save_checkpoint(
         thread_id="thr-no-interrupt",
         alert_id="ALT-2026-0412",
@@ -303,12 +303,12 @@ async def test_w2_04_crash_resume_preserves_tokens_retries_and_prereserves_cost(
 
 @pytest.mark.asyncio
 async def test_w2_05_prose_amounts_and_canonical_hash_parity(client: Any, auth: Any) -> None:
-    reg = {"REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014"}}
+    reg = {"FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"}}
     base_ws = {
         "alert_id": "ALT-2026-0412",
         "recommended_disposition": "escalate_str",
         "confidence_score": "0.8500",
-        "regulatory_citations": ["REG-FIU-RF-014"],
+        "regulatory_citations": ["FIU-IND-RFI-BA-01"],
         "alert_amount_inr": "900000.00",
         "hypotheses": [
             {"label": "suspicious", "explanation": "Rapid dispersal pattern.", "confidence": "0.8500"},
@@ -318,7 +318,7 @@ async def test_w2_05_prose_amounts_and_canonical_hash_parity(client: Any, auth: 
     }
     bad_rupees = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 900001 rupees."}, reg)
     bad_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9.5 lakhs."}, reg)
-    good_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9 lakhs citing REG-FIU-RF-014."}, reg)
+    good_lakhs = verify_worksheet({**base_ws, "recommendation_rationale": "Moved 9 lakhs citing FIU-IND-RFI-BA-01."}, reg)
     assert not bad_rupees.passed and any(d.code == "UNGROUNDED_AMOUNT" for d in bad_rupees.discrepancies)
     assert not bad_lakhs.passed and any(d.code == "UNGROUNDED_AMOUNT" for d in bad_lakhs.discrepancies)
     assert good_lakhs.passed is True

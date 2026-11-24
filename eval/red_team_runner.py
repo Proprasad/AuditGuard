@@ -207,9 +207,9 @@ async def run_guarded_attack(atk: dict[str, Any]) -> bool:  # noqa: C901
                 "alert_id": "ALT-RT-20",
                 "thread_id": "thr-rt-20",
                 "recommended_disposition": "escalate_str",
-                "recommendation_rationale": "Outflow INR 900000.00 citing REG-FIU-RF-014.",
+                "recommendation_rationale": "Outflow INR 900000.00 citing FIU-IND-RFI-BA-01.",
                 "confidence_score": 0.8,
-                "regulatory_citations": ["REG-FIU-RF-014"],
+                "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             },
         )
         tok_rec = case_repo.issue_approval_token("thr-rt-20", draft["worksheet_id"], reviewer_id="rt_tester")
@@ -342,23 +342,23 @@ class _ContextSensitivePoisonTestLLM:
             "recommended_disposition": disp,
             "confidence_score": "0.80",
             "recommendation_rationale": (
-                "Transfers TXN-RT-1 and TXN-RT-2 total INR 900000.00 under REG-FIU-RF-014. "
+                "Transfers TXN-RT-1 and TXN-RT-2 total INR 900000.00 under FIU-IND-RFI-BA-01. "
                 "Missing evidence: External beneficiary bank statement."
             ),
             "suspicious_hypothesis": {
                 "explanation": "Two-leg scatter into ACC-RT-4 citing TXN-RT-1.",
                 "confidence": "0.80",
                 "evidence_ids": ["TXN-RT-1"],
-                "regulatory_citations": ["REG-FIU-RF-014"],
+                "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             },
             "benign_hypothesis": {
                 "explanation": "No active commercial registration on root account citing TXN-RT-2.",
                 "confidence": "0.20",
                 "evidence_ids": ["TXN-RT-2"],
-                "regulatory_citations": ["REG-FIU-RF-014"],
+                "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             },
             "missing_evidence": ["External beneficiary bank statement"],
-            "regulatory_citations": ["REG-FIU-RF-014"],
+            "regulatory_citations": ["FIU-IND-RFI-BA-01"],
         }
         tc_fin = ToolCallRequest(id="c_fin", name="finish", arguments=fin_args, raw_arguments=json.dumps(fin_args))
         return ChatResponse(tool_calls=[tc_fin], usage=TokenUsage(), model="offline-e2-probe")

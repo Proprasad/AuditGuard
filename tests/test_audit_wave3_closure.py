@@ -229,14 +229,14 @@ async def test_w3_03_dynamic_account_transactions_days_back_and_counterparty_his
 def test_w3_04_dual_affix_currency_prose_decimal_confidence_and_canonical_json() -> None:
     registry = {
         "TXN-1": {"tx_id": "TXN-1", "amount_inr": "900000.00"},
-        "REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014", "title": "Scatter Gather"},
+        "FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01", "title": "Scatter Gather"},
     }
     ok_ws = {
         "alert_id": "ALT-1",
         "recommended_disposition": "escalate_str",
-        "recommendation_rationale": "Observed dispersal of INR 9 lakhs citing REG-FIU-RF-014.",
+        "recommendation_rationale": "Observed dispersal of INR 9 lakhs citing FIU-IND-RFI-BA-01.",
         "confidence_score": "0.8500",
-        "regulatory_citations": ["REG-FIU-RF-014"],
+        "regulatory_citations": ["FIU-IND-RFI-BA-01"],
         "alert_amount_inr": "900000.00",
         "hypotheses": [
             {
@@ -259,7 +259,7 @@ def test_w3_04_dual_affix_currency_prose_decimal_confidence_and_canonical_json()
 
     bad_amt_ws = {
         **ok_ws,
-        "recommendation_rationale": "Observed dispersal of INR 9.5 lakhs citing REG-FIU-RF-014.",
+        "recommendation_rationale": "Observed dispersal of INR 9.5 lakhs citing FIU-IND-RFI-BA-01.",
     }
     vr_bad_amt = verify_worksheet(bad_amt_ws, registry)
     assert not vr_bad_amt.passed
@@ -294,9 +294,9 @@ async def test_w3_05_mcp_client_pool_and_red_team_guarded_toolbox_parity() -> No
 
     open_mcp_client_pool()
     try:
-        res1 = await call_mcp_tool("compliance-kb", "get_clause_by_id", {"clause_id": "REG-FIU-RF-014"})
-        res2 = await call_mcp_tool("compliance-kb", "get_clause_by_id", {"clause_id": "REG-FIU-RF-014"})
-        assert res1["clause_id"] == res2["clause_id"] == "REG-FIU-RF-014"
+        res1 = await call_mcp_tool("compliance-kb", "get_clause_by_id", {"clause_id": "FIU-IND-RFI-BA-01"})
+        res2 = await call_mcp_tool("compliance-kb", "get_clause_by_id", {"clause_id": "FIU-IND-RFI-BA-01"})
+        assert res1["clause_id"] == res2["clause_id"] == "FIU-IND-RFI-BA-01"
     finally:
         await close_mcp_client_pool()
 

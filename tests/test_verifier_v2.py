@@ -46,8 +46,8 @@ def _valid_fixture() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any
             "retention_pct": "8.00",
         },
         "CALC-FEE01": {"calc_id": "CALC-FEE01", "op": "diff", "result_inr": "72000.00", "amount_inr": "72000.00"},
-        "REG-FIU-RF-014": {"clause_id": "REG-FIU-RF-014", "category": "layering"},
-        "REG-RBI-KYC-P51": {"clause_id": "REG-RBI-KYC-P51", "category": "commercial_verification"},
+        "FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01", "category": "layering"},
+        "RBI-KYC-2016-P35-P04": {"clause_id": "RBI-KYC-2016-P35-P04", "category": "commercial_verification"},
     }
     calc_log = [
         {"calc_id": "CALC-FEE01", "result_inr": "72000.00"},
@@ -59,7 +59,7 @@ def _valid_fixture() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any
         "confidence_score": "0.8600",
         "recommendation_rationale": (
             "Path PATH-SG01 dispersed INR 9,00,000.00 (9 lakhs) and consolidated INR 8,28,000.00 "
-            "retaining INR 72,000.00 (8.00%) per CALC-FEE01 under REG-FIU-RF-014. "
+            "retaining INR 72,000.00 (8.00%) per CALC-FEE01 under FIU-IND-RFI-BA-01. "
             "Missing evidence: Destination beneficiary source-of-wealth statements."
         ),
         "candidate_paths": [
@@ -71,21 +71,21 @@ def _valid_fixture() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any
                 "retention_pct": "8.00",
             }
         ],
-        "regulatory_citations": ["REG-FIU-RF-014", "REG-RBI-KYC-P51"],
+        "regulatory_citations": ["FIU-IND-RFI-BA-01", "RBI-KYC-2016-P35-P04"],
         "hypotheses": [
             {
                 "label": "suspicious",
                 "explanation": "Multi-hop consolidation on PATH-SG01 from TXN-1001 with 8.00% retention.",
                 "confidence": "0.8600",
                 "evidence_ids": ["PATH-SG01", "TXN-1001", "CALC-FEE01"],
-                "regulatory_citations": ["REG-FIU-RF-014"],
+                "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             },
             {
                 "label": "benign",
                 "explanation": "Checked commercial status via KYC-ACC-IND-1042 and REGISTRY-NONE-ACC-IND-1042.",
                 "confidence": "0.1400",
                 "evidence_ids": ["KYC-ACC-IND-1042", "REGISTRY-NONE-ACC-IND-1042"],
-                "regulatory_citations": ["REG-RBI-KYC-P51"],
+                "regulatory_citations": ["RBI-KYC-2016-P35-P04"],
             },
         ],
         "missing_evidence": ["Destination beneficiary source-of-wealth statements"],
@@ -136,27 +136,27 @@ def test_verifier_correct_worksheet_and_cent_tolerance() -> None:
     ("mutated_rationale", "expected_code", "expected_err_count"),
     [
         (
-            "Path PATH-SG01 dispersed INR 900,500.00 under REG-FIU-RF-014. Missing evidence: invoices.",
+            "Path PATH-SG01 dispersed INR 900,500.00 under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
             "UNGROUNDED_AMOUNT",
             1,
         ),
         (
-            "Path PATH-SG01 consolidated 8.50 lakhs under REG-FIU-RF-014. Missing evidence: invoices.",
+            "Path PATH-SG01 consolidated 8.50 lakhs under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
             "UNGROUNDED_AMOUNT",
             1,
         ),
         (
-            "Path PATH-SG01 moved 1.25 crores under REG-FIU-RF-014. Missing evidence: invoices.",
+            "Path PATH-SG01 moved 1.25 crores under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
             "UNGROUNDED_AMOUNT",
             1,
         ),
         (
-            "Path PATH-SG01 retained 11.25% commission under REG-FIU-RF-014. Missing evidence: invoices.",
+            "Path PATH-SG01 retained 11.25% commission under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
             "UNGROUNDED_PERCENTAGE",
             1,
         ),
         (
-            "Path PATH-SG01 moved INR 999,999.00 with 14.50% skim under REG-FIU-RF-014. Missing evidence: invoices.",
+            "Path PATH-SG01 moved INR 999,999.00 with 14.50% skim under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
             "UNGROUNDED_AMOUNT",
             2,
         ),
@@ -215,7 +215,7 @@ def test_verifier_evidence_ids_registered_and_material_claims_require_ids() -> N
     for ghost_id in ("TXN-GHOST-1", "KYC-GHOST-1", "REGISTRY-GHOST-1", "CALC-GHOST-1"):
         ws_ghost = {
             **ws,
-            "recommendation_rationale": f"Verified {ghost_id} under REG-FIU-RF-014. Missing evidence: invoices.",
+            "recommendation_rationale": f"Verified {ghost_id} under FIU-IND-RFI-BA-01. Missing evidence: invoices.",
         }
         vr = verify_worksheet(ws_ghost, registry, None, calc_log)
         assert vr.passed is False
@@ -231,7 +231,7 @@ def test_verifier_evidence_ids_registered_and_material_claims_require_ids() -> N
                 "explanation": "Generic ungrounded suspicious claim without any ID.",
                 "confidence": "0.8600",
                 "evidence_ids": [],
-                "regulatory_citations": ["REG-FIU-RF-014"],
+                "regulatory_citations": ["FIU-IND-RFI-BA-01"],
             },
             ws["hypotheses"][1],
         ],
@@ -265,7 +265,7 @@ def test_verifier_guilt_paraphrases_caught_and_negations_pass(guilt_text: str) -
     ws_safe = {
         **ws,
         "recommendation_rationale": (
-            "Escalated PATH-SG01 under REG-FIU-RF-014 without asserting the customer is a criminal "
+            "Escalated PATH-SG01 under FIU-IND-RFI-BA-01 without asserting the customer is a criminal "
             "or that money laundering has occurred. Missing evidence: beneficiary invoices."
         ),
     }
@@ -283,7 +283,7 @@ def test_verifier_both_hypotheses_and_missing_evidence_required() -> None:
         **ws,
         "missing_evidence": [],
         "degraded_evidence": [],
-        "recommendation_rationale": "Path PATH-SG01 dispersed INR 900000.00 under REG-FIU-RF-014.",
+        "recommendation_rationale": "Path PATH-SG01 dispersed INR 900000.00 under FIU-IND-RFI-BA-01.",
     }
     vr_no_missing = verify_worksheet(ws_no_missing, registry, None, calc_log)
     assert vr_no_missing.passed is False and vr_no_missing.checks["missing_evidence_stated"] is False

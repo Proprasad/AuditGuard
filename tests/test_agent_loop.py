@@ -110,7 +110,7 @@ async def test_llm_client_replay_and_backoff(tmp_path: Path) -> None:
 
 def test_six_slot_prompt_and_decimal_calc_tool() -> None:
     spec = load_c1_prompt_spec()
-    assert spec.version == "2.0.0" and spec.agent == "c1_investigator"
+    assert spec.version == "2.1.0" and spec.agent == "c1_investigator"
     rendered = render_c1_system_prompt(get_policy(), lessons=["[L-1] IF delayed THEN widen window"])
     for marker in ("1. ROLE:", "2. CONTEXT:", "3. TASK:", "4. CONSTRAINTS:", "5. FORMAT:", "6. EXAMPLES:", "[L-1]"):
         assert marker in rendered
@@ -398,7 +398,7 @@ async def test_c2_multi_agent_parallel_specialists_and_replan() -> None:
         known = ctx_blob["known_evidence_ids"]
         path_id = next(x for x in known if x.startswith("PATH-"))
         kyc_id = next(x for x in known if x.startswith("KYC-"))
-        reg_id = next(x for x in known if x.startswith(("REG-", "SOP-")))
+        reg_id = next(x for x in known if x.startswith(("REG-", "SOP-", "PMLA-", "PMLR-", "RBI-", "FIU-", "FATF-", "CHIT-")))
         return make_tool_turn(
             (
                 "finish",

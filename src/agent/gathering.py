@@ -8,7 +8,7 @@ tool budgets (reserving headroom for bounded replans and worksheet drafting).
 
 from __future__ import annotations
 
-import asyncio
+import re
 import time
 from typing import Any
 
@@ -17,10 +17,92 @@ from src.agent.tooling import GuardedToolbox, is_error
 from src.core.adapters import flow_paths_from_result, graph_tx_payload
 from src.guardrails.guardrails import unwrap_untrusted_data
 from src.memory.store import trim_messages_with_summary
-from src.models import FundFlowPath, GraphParams, InvestigationState, SpecialistFinding
+from src.models import Alert, FundFlowPath, GraphParams, InvestigationState, SpecialistFinding
 
-DEFAULT_REG_QUERY = "scatter gather staggered layering fee skimming and commercial registry benign verification"
 _REPLAN_DRAFT_HEADROOM = 5
+
+
+def _clean_profile_blob(profiles: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for k in profiles:
+        for field in ("entity_name", "occupation", "entity_type", "kyc_notes"):
+            val = k.get(field)
+            if val:
+                parts.append(unwrap_untrusted_data(str(val)))
+        reg = k.get("registry_check")
+        if isinstance(reg, dict) and reg.get("registry_type"):
+            parts.append(str(reg["registry_type"]))
+    return " ".join(parts).lower()
+
+
+def _has_word(blob: str, words: tuple[str, ...]) -> bool:
+    return any(re.search(rf"\b{re.escape(w)}", blob) for w in words)
+
+
+def _typology_query(alert: Alert, paths: list[FundFlowPath], profiles: list[dict[str, Any]]) -> str:
+    """Formulate a case-specific typology query from reconstructed paths, amounts, and root KYC."""
+    multi = [p for p in paths if p.hop_count >= 2]
+    max_hops = max((p.hop_count for p in multi), default=0)
+    max_span = max((p.time_span_days for p in multi), default=0)
+    max_ret = max((float(p.retention_pct) for p in multi), default=0.0)
+    rule_low = alert.rule_name.lower()
+    prof_blob = _clean_profile_blob(profiles)
+
+    if max_hops >= 4 or "two_tier" in rule_low or "multi_tier" in rule_low:
+        return "multi-tier four to five hop shell layering consolidation FIU-IND red flag"
+    if max_ret >= 5.0 or "skim" in rule_low or "fee" in rule_low:
+        return "intermediary mule fee skimming 5 to 12 percent commission retention FIU-IND"
+    if max_span >= 10 or "stagger" in rule_low:
+        return "staggered delayed 14 to 30 day scatter-gather consolidation layering replanning"
+    if "structur" in rule_low or "smurf" in rule_low:
+        return "structuring smurfing cash transfers below INR 10 lakh CTR threshold PMLR Rule 3"
+    if _has_word(prof_blob, ("dormant", "inoperative")) or "dormant" in rule_low:
+        return "dormant newly opened savings account high-velocity IMPS reactivation red flag"
+    if _has_word(prof_blob, ("pep", "politically exposed")):
+        return "Politically Exposed Person PEP senior management approval source of wealth RBI Para 41"
+    return f"rapid pass-through scatter-gather layering PMLA Section 3 FIU-IND {alert.rule_name}"
+
+
+def _benign_hypothesis_query(profiles: list[dict[str, Any]]) -> str:
+    """Formulate a case-specific benign hypothesis query from customer entity & registry cues."""
+    blob = _clean_profile_blob(profiles)
+    if _has_word(blob, ("marketplace", "ecommerce", "aggregator", "escrow", "nodal", "seller")):
+        return "RBI Payment Aggregator escrow marketplace seller settlement cadence benign look-alike"
+    if _has_word(blob, ("payroll", "salary", "employer", "epfo")):
+        return "corporate salary payroll disbursement MCA EPFO employer verification benign"
+    if _has_word(blob, ("ngo", "trust", "charit", "foundation", "80g", "darpan", "relief")):
+        return "Non-Profit Organisation NPO charitable trust DARPAN Section 80G relief monitoring"
+    if _has_word(blob, ("chit",)):
+        return "Chit Funds Act Section 4 State Registrar sanctioned chit pool subscriber disbursements"
+    if _has_word(blob, ("wedding", "banquet", "cater", "hotel", "marriage", "event")):
+        return "family wedding social event banquet hotel catering GST merchant benign expenditure"
+    return "commercial registration GSTIN MCA counterparty history corroboration benign look-alike RBI Para 35"
+
+
+def _missing_evidence_query(paths: list[FundFlowPath], profiles: list[dict[str, Any]], degraded: list[str]) -> str:
+    """Formulate a case-specific query for missing/degraded evidence or incomplete legs."""
+    deg_blob = " ".join(degraded).lower()
+    if "kyc" in deg_blob or not profiles:
+        return "expired minimal KYC unavailable fresh CDD periodic updation RBI Para 46 request_info"
+    if any(w in deg_blob for w in ("external", "correspondent", "wire", "unavailable", "timeout")):
+        return "external correspondent bank visibility gap wire transfer originator metadata RBI Para 64 FATF R16"
+    if not any(p.hop_count >= 2 for p in paths):
+        return "outbound dispersal without consolidation bounded graph replanning external bank gap SOP-SG-001 SOP-SG-002"
+    return "missing external beneficiary bank statements STR seven working day timeline PMLR Rule 8"
+
+
+def build_case_regulatory_queries(
+    alert: Alert,
+    paths: list[FundFlowPath],
+    profiles: list[dict[str, Any]],
+    degraded: list[str],
+) -> list[str]:
+    """Build 3 case-specific regulatory queries: (1) typology, (2) benign hypothesis, (3) missing evidence."""
+    return [
+        _typology_query(alert, paths, profiles),
+        _benign_hypothesis_query(profiles),
+        _missing_evidence_query(paths, profiles, degraded),
+    ]
 
 
 def _candidate_accounts(
@@ -153,6 +235,9 @@ async def gather_regulatory(
     state: InvestigationState,
     registry: dict[str, Any],
     degraded: list[str],
+    *,
+    paths: list[FundFlowPath] | None = None,
+    profiles: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if not ctx.allow_rag:
         return [], []
@@ -162,12 +247,18 @@ async def gather_regulatory(
     plan = state.plan
 
     if (not clauses or state.refresh_regulations) and _can_spend_calls(ctx, 1):
-        queries = plan.regulatory_queries if (plan and plan.regulatory_queries) else [DEFAULT_REG_QUERY]
+        case_queries = build_case_regulatory_queries(
+            state.alert,
+            paths if paths is not None else state.fund_flow_paths,
+            profiles if profiles is not None else state.kyc_profiles,
+            degraded,
+        )
+        queries = plan.regulatory_queries if (plan and plan.regulatory_queries) else case_queries
         res = await reg_box.call(
             "compliance-kb",
             "search_regulations",
             {
-                "query": " ; ".join(queries[:2]),
+                "query": " ; ".join(queries[:3]),
                 "top_k": ctx.policy.retrieval.top_k_final,
                 "decompose": True,
             },
@@ -334,14 +425,8 @@ async def gather_evidence_node(state: InvestigationState, ctx: RunContext) -> di
         }
 
     t1 = time.perf_counter()
-    if ctx.parallel:
-        profiles, (clauses, snippets) = await asyncio.gather(
-            gather_identity(ctx, state, root, network, paths, registry, degraded),
-            gather_regulatory(ctx, state, registry, degraded),
-        )
-    else:
-        profiles = await gather_identity(ctx, state, root, network, paths, registry, degraded)
-        clauses, snippets = await gather_regulatory(ctx, state, registry, degraded)
+    profiles = await gather_identity(ctx, state, root, network, paths, registry, degraded)
+    clauses, snippets = await gather_regulatory(ctx, state, registry, degraded, paths=paths, profiles=profiles)
     if not is_error(graph_result):
         await enrich_graph_evidence(ctx, flow_box, graph_result, paths, params, registry)
     ctx.timings["evidence_ms"] = ctx.timings.get("evidence_ms", 0.0) + (time.perf_counter() - t1) * 1000
