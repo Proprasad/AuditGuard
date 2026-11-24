@@ -16,7 +16,7 @@ import json
 import time
 from typing import Any, Optional
 
-from src.agent.planning import RunContext, all_security_notes, sync_budget, tool_error_notes
+from src.agent.planning import RunContext, all_security_notes, resolve_model_for_role, sync_budget, tool_error_notes
 from src.agent.prompts import render_alert_user_message, render_c1_system_prompt
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
@@ -564,7 +564,7 @@ async def run_c1_agent_loop(
     """Execute the genuine C1 LLM ReAct / tool-calling loop and return LangGraph state update."""
     t0 = time.perf_counter()
     lessons = await retrieve_frozen_lessons(state, ctx)
-    model_id = ctx.model_override or ctx.policy.model_for("c1_investigator").model_id
+    model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c1_investigator")
     runtime = AgentToolRuntime(
         role="c1_single",
         box=ctx.box("primary"),

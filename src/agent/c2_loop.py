@@ -29,7 +29,7 @@ from src.agent.loop import (
     retrieve_frozen_lessons,
     tool_message,
 )
-from src.agent.planning import RunContext, c2_handoffs, sync_budget
+from src.agent.planning import RunContext, c2_handoffs, resolve_model_for_role, sync_budget
 from src.agent.prompts import render_c2_supervisor_prompt, render_specialist_prompt
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
@@ -97,7 +97,7 @@ async def _supervisor_plan(
         return fallback_steps, fallback_handoffs
 
     spec = ctx.policy.model_for("c2_supervisor")
-    model_id = ctx.strong_model_override or spec.model_id
+    model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
     user_prompt = (
         f"Plan investigation for Alert `{state.alert.alert_id}` (root=`{state.alert.root_account}`, "
         f"amount=`INR {state.alert.total_amount_inr}`, rule=`{state.alert.rule_name}`).\n"
@@ -144,7 +144,7 @@ async def _run_evidence_specialist(
     calls_before = runtime.box.calls
     keys_before = set(runtime.evidence_registry.keys())
     spec = ctx.policy.model_for("c2_specialists")
-    model_id = ctx.model_override or spec.model_id
+    model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_specialists")
     tools = build_openai_tools(role, include_finish=False, replanning_enabled=replanning_enabled)
     messages: list[dict[str, Any]] = [
         {
@@ -208,7 +208,7 @@ async def _supervisor_should_replan(
     ):
         return None
     spec = ctx.policy.model_for("c2_supervisor")
-    model_id = ctx.strong_model_override or spec.model_id
+    model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
     gb = ctx.policy.graph_bounds
     prompt = (
         f"Specialist findings:\n{json.dumps([f.model_dump(mode='json') for f in findings], indent=2)}\n"
@@ -286,7 +286,7 @@ async def _run_reporter_critic(
     merged_rt.box.set_sub_budget(merged_rt.box.calls + max(2, handoff.allowed_tool_budget))
     calls_before = merged_rt.box.calls
     spec = ctx.policy.model_for("c2_specialists")
-    model_id = ctx.model_override or spec.model_id
+    model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_specialists")
     tools = build_openai_tools("reporter_critic", include_finish=True, replanning_enabled=False)
     messages = _critic_initial_messages(handoff, merged_rt, state, findings)
 

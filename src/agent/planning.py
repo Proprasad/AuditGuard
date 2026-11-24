@@ -9,12 +9,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from math import ceil
+import os
 import re
 from typing import Any, Optional
 
 from src.agent import reasoning
 from src.agent.drafting import security_notes
-from src.agent.llm_client import LlmCallMeta
+from src.agent.llm_client import LlmCallMeta, get_model_for_role
 from src.agent.tooling import GuardedToolbox
 from src.core.canonical import to_ratio
 from src.core.policy import BudgetLedger, PolicyConfig
@@ -63,6 +64,19 @@ class RunContext:
 
     def box(self, name: str) -> GuardedToolbox:
         return self.boxes.get(name) or self.boxes["primary"]
+
+
+def resolve_model_for_role(ctx: RunContext, role: str, *, strong: bool = False) -> str:
+    """Resolve model slug: explicit override -> runtime DB flag (non-replay) -> policy default."""
+    explicit = ctx.strong_model_override if (strong or role == "c2_supervisor") else ctx.model_override
+    if explicit:
+        return explicit
+    raw_mode = (ctx.llm_mode or os.getenv("LLM_MODE") or "").strip().lower()
+    if raw_mode != "replay":
+        runtime_model = get_model_for_role(role, strong=strong)
+        if ctx.policy.is_allowed_model(runtime_model):
+            return runtime_model
+    return ctx.policy.model_for(role).model_id
 
 
 def all_tool_errors(ctx: RunContext) -> list[dict[str, Any]]:
