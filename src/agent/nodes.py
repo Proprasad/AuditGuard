@@ -28,6 +28,12 @@ from src.agent.specialists import flow_tracer_node, parallel_specialists_node
 from src.agent.telemetry import compute_network_flow_summary
 from src.core.adapters import is_registered, kyc_summaries
 from src.core.canonical import to_money
+from src.core.corroboration import (
+    CorroborationAssessment,
+    MissingDataReport,
+    assess_registration_corroboration,
+    detect_missing_data,
+)
 from src.core.policy import PolicyConfig
 from src.core.scoring import EvidenceFeatures, decide, rubric_scores
 from src.db.database import utc_now_iso
@@ -56,10 +62,41 @@ def _income(kyc: dict[str, Any]) -> Decimal:
     return to_money(raw) if raw not in (None, "") else Decimal("0.00")
 
 
-def _features(state: InvestigationState) -> tuple[EvidenceFeatures, list[str], list[str]]:
+def _assess_state_evidence(
+    state: InvestigationState, policy: PolicyConfig, degraded: list[str] | None = None
+) -> tuple[CorroborationAssessment, MissingDataReport]:
+    root = state.alert.root_account
+    root_kyc = state.kyc_profiles[0] if state.kyc_profiles else {}
+    recipients = state.kyc_profiles[1:]
+    corr = assess_registration_corroboration(
+        root, root_kyc, recipients, state.fund_flow_paths, state.transactions, state.evidence_registry
+    )
+    params = state.plan.graph_params if state.plan else GraphParams.policy_default()
+    gb = policy.graph_bounds
+    at_max = (
+        (params.time_window_days >= gb.time_window_days.max and params.max_hops >= gb.max_hops.max)
+        or state.replan_count >= policy.budgets.max_replans
+    )
+    missing = detect_missing_data(
+        root,
+        state.alert.network_accounts,
+        state.transactions,
+        state.fund_flow_paths,
+        state.kyc_profiles,
+        degraded if degraded is not None else state.degraded_evidence,
+        corr,
+        at_max_window=at_max,
+    )
+    return corr, missing
+
+
+def _features(
+    state: InvestigationState, policy: PolicyConfig
+) -> tuple[EvidenceFeatures, list[str], list[str]]:
     multi_hop = [p for p in state.fund_flow_paths if p.hop_count >= 2]
     root_kyc = state.kyc_profiles[0] if state.kyc_profiles else {}
-    root_reg = is_registered(root_kyc)
+    corr, missing = _assess_state_evidence(state, policy)
+    root_reg = corr.registry_active
     recipients = state.kyc_profiles[1:]
     merchants_verified = bool(recipients) and all(is_registered(k) for k in recipients)
     risk = str(root_kyc.get("risk_category", "")).lower()
@@ -78,32 +115,44 @@ def _features(state: InvestigationState) -> tuple[EvidenceFeatures, list[str], l
         susp.append(f"Alert INR {state.alert.total_amount_inr:,.2f} exceeds declared annual income INR {income:,.2f}")
     if risk == "high":
         susp.append("Seed account carries HIGH KYC risk rating")
-    if root_reg:
+    if root_reg and corr.corroborated_benign:
         benign.append(
-            f"Active commercial/NGO/chit registration verified "
-            f"({root_kyc.get('registry_type') or root_kyc.get('entity_type')})"
+            f"Corroborated commercial/NGO/chit registration ({root_kyc.get('registry_type') or root_kyc.get('entity_type')}; "
+            f"score={corr.corroboration_score})"
         )
-    verified_low = (not root_reg) and merchants_verified and risk == "low"
+    elif root_reg:
+        susp.append(
+            f"Commercial registration uncorroborated or contradicted by scatter-gather topology "
+            f"(score={corr.corroboration_score}, age_days={corr.registry_age_days}, cp_tx={corr.counterparty_tx_count})"
+        )
+    if corr.recurring_payroll_12m and not multi_hop:
+        benign.append(
+            f"Recurring 12-month counterparty cadence corroborated ({corr.counterparty_tx_count} tx over "
+            f"{corr.counterparty_span_days}d)"
+        )
+    verified_low = (not root_reg) and (not multi_hop) and merchants_verified and risk == "low"
     if verified_low:
         benign.append("Low-risk customer settling directly with GST-verified commercial merchants")
-    unregistered = bool(root_kyc) and not root_reg and not verified_low
+    unregistered = bool(root_kyc) and not root_reg and not verified_low and not corr.recurring_payroll_12m
     if unregistered:
         susp.append("No active GST/MCA/80G/Chit commercial registration found")
+    if missing.has_explicit_missing_data:
+        susp.append("Explicit missing data detected: " + "; ".join(missing.missing_evidence_items[:2]))
     feats = EvidenceFeatures(
         multi_hop_path=bool(multi_hop),
         flagged_path=any(p.is_suspicious for p in state.fund_flow_paths),
         income_mismatch=income_mismatch,
         high_kyc_risk=risk == "high",
-        unregistered_root=unregistered,
-        registered_root=root_reg,
-        verified_merchants_low_risk=verified_low,
-        low_kyc_risk=risk == "low",
+        unregistered_root=unregistered or (root_reg and corr.has_unexplained_multihop),
+        registered_root=corr.corroborated_benign and not missing.has_explicit_missing_data,
+        verified_merchants_low_risk=(verified_low or (corr.recurring_payroll_12m and not multi_hop)),
+        low_kyc_risk=risk == "low" and not corr.has_unexplained_multihop,
     )
     return feats, susp, benign
 
 
 async def hypothesis_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
-    feats, susp_ev, benign_ev = _features(state)
+    feats, susp_ev, benign_ev = _features(state, ctx.policy)
     citations = [c["clause_id"] for c in state.regulatory_clauses if c.get("clause_id")]
     path_ids = [p.path_id for p in state.fund_flow_paths if p.path_id in state.evidence_registry]
     fallback_ids = [
@@ -186,8 +235,9 @@ async def hypothesis_node(state: InvestigationState, ctx: RunContext) -> dict[st
 
 async def critique_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
     multi_hop = [p for p in state.fund_flow_paths if p.hop_count >= 2]
-    root_kyc = state.kyc_profiles[0] if state.kyc_profiles else {}
-    benign_cleared = is_registered(root_kyc) and str(root_kyc.get("risk_category", "")).lower() == "low"
+    corr, missing = _assess_state_evidence(state, ctx.policy)
+    # Never skip replanning on a single registry flag: require corroboration AND no explicit missing data.
+    benign_cleared = corr.corroborated_benign and not missing.has_explicit_missing_data and corr.cadence_regular
     critiques: list[str] = []
     proposed: Optional[GraphParams] = None
     refresh_kyc = False
@@ -317,7 +367,12 @@ async def replan_node(state: InvestigationState, ctx: RunContext) -> dict[str, A
     }
 
 
-def _has_critical_gap(state: InvestigationState, degraded: list[str], has_security_flag: bool) -> bool:
+def _has_critical_gap(
+    state: InvestigationState,
+    degraded: list[str],
+    has_security_flag: bool,
+    missing: MissingDataReport,
+) -> bool:
     if has_security_flag:
         return True
     if not state.transactions and degraded:
@@ -325,6 +380,10 @@ def _has_critical_gap(state: InvestigationState, degraded: list[str], has_securi
     if any(d.startswith("Graph analysis unavailable:") for d in degraded):
         return True
     if not state.kyc_profiles and any(d.startswith("KYC unavailable for") for d in degraded):
+        return True
+    if missing.missing_kyc_accounts or missing.stale_or_conflicting_registry or missing.external_bank_tx_ids:
+        return True
+    if missing.unconsolidated_outflows and not any(p.hop_count >= 2 for p in state.fund_flow_paths):
         return True
     return False
 
@@ -354,47 +413,24 @@ def _c2_runs(
 ) -> list[dict[str, Any]]:
     tw, mh = (state.plan.graph_params.time_window_days, state.plan.graph_params.max_hops) if state.plan else (0, 0)
     multi = sum(1 for p in state.fund_flow_paths if p.hop_count >= 2)
+    specs = (
+        ("flow_tracer", "Flow Tracing Agent", f"Graph traversal ({tw}d, {mh} hops) & Decimal conservation", flow_ms, f"Found {len(state.fund_flow_paths)} candidate paths ({multi} multi-hop)"),
+        ("benign_investigator", "Benign Context Agent", "Multi-bank KYC verification & GST/MCA/80G/Chit registry checks", ev_ms, f"Verified {len(state.kyc_profiles)} KYC/registry record(s)"),
+        ("regulatory_analyst", "Regulatory Research Agent", "Hybrid RAG (BM25 + Vector + RRF + Reranker) over Indian AML corpus", ev_ms, f"Retrieved {len(state.regulatory_clauses)} regulatory clauses"),
+        ("reporter_critic", "Reporting & Critique Agent", "Hypothesis reconciliation, deterministic verifier & SHA-256 worksheet draft", round(critic_ms, 1), summary),
+    )
     return [
         {
-            "agent_id": "flow_tracer",
-            "agent_name": "Flow Tracing Agent",
-            "task": f"Graph traversal ({tw}d, {mh} hops) & Decimal conservation",
+            "agent_id": aid,
+            "agent_name": name,
+            "task": task,
             "status": "completed",
             "started_at": now,
-            "duration_ms": flow_ms,
-            "tool_calls": ctx.box("flow_tracer").calls,
-            "summary": f"Found {len(state.fund_flow_paths)} candidate paths ({multi} multi-hop)",
-        },
-        {
-            "agent_id": "benign_investigator",
-            "agent_name": "Benign Context Agent",
-            "task": "Multi-bank KYC verification & GST/MCA/80G/Chit registry checks",
-            "status": "completed",
-            "started_at": now,
-            "duration_ms": ev_ms,
-            "tool_calls": ctx.box("benign_investigator").calls,
-            "summary": f"Verified {len(state.kyc_profiles)} KYC/registry record(s)",
-        },
-        {
-            "agent_id": "regulatory_analyst",
-            "agent_name": "Regulatory Research Agent",
-            "task": "Hybrid RAG (BM25 + Vector + RRF + Reranker) over Indian AML corpus",
-            "status": "completed",
-            "started_at": now,
-            "duration_ms": ev_ms,
-            "tool_calls": ctx.box("regulatory_analyst").calls,
-            "summary": f"Retrieved {len(state.regulatory_clauses)} regulatory clauses",
-        },
-        {
-            "agent_id": "reporter_critic",
-            "agent_name": "Reporting & Critique Agent",
-            "task": "Hypothesis reconciliation, deterministic verifier & SHA-256 worksheet draft",
-            "status": "completed",
-            "started_at": now,
-            "duration_ms": round(critic_ms, 1),
-            "tool_calls": ctx.box("reporter_critic").calls,
-            "summary": summary,
-        },
+            "duration_ms": dur,
+            "tool_calls": ctx.box(aid).calls,
+            "summary": summ,
+        }
+        for aid, name, task, dur, summ in specs
     ]
 
 
@@ -473,13 +509,15 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
 
     degraded = sorted({*state.degraded_evidence, *all_security_notes(ctx), *tool_error_notes(ctx)})
     has_security_flag = any(b.security_events for b in ctx.boxes.values())
-    critical_gap = _has_critical_gap(state, degraded, has_security_flag)
+    _, missing = _assess_state_evidence(state, ctx.policy, degraded=degraded)
+    critical_gap = _has_critical_gap(state, degraded, has_security_flag, missing)
     disposition, confidence = decide_disposition(
         state.active_hypotheses, degraded, ctx.policy, critical_missing=critical_gap
     )
     citations = sorted({c for h in state.active_hypotheses for c in h.regulatory_citations})
     summaries = kyc_summaries(state.kyc_profiles, limit=5)
     rationale = _build_node_rationale(state, ctx, disposition, confidence, citations, degraded)
+    missing_items = list(missing.missing_evidence_items) or None
     outcome = await draft_and_verify(
         box=box,
         ledger=ctx.ledger,
@@ -494,6 +532,7 @@ async def draft_worksheet_node(state: InvestigationState, ctx: RunContext) -> di
         summaries=summaries,
         registry=state.evidence_registry,
         calc_log=state.calc_log,
+        missing_evidence=missing_items,
         replan_count=state.replan_count,
         base_rationale=rationale,
         degraded=degraded,

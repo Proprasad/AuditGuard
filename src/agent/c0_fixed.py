@@ -129,12 +129,24 @@ async def scan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
         {"root_account": root, "transactions": graph_tx_payload(txs), **params.model_dump()},
     )
     paths: list[FundFlowPath] = []
+    calc_log = list(state.calc_log)
     if is_error(graph):
         degraded.append(f"Graph analysis unavailable: {_err(graph)}")
     else:
-        paths = flow_paths_from_result(graph, limit=3)
+        paths = flow_paths_from_result(graph, limit=10)
         registry[graph["calc_id"]] = graph.get("graph_stats", {})
         registry.update({p.path_id: p.model_dump(mode="json") for p in paths})
+        multi = [p for p in paths if p.hop_count >= 2]
+        if multi and ctx.ledger.calls_used + 2 <= ctx.policy.budgets.max_tool_calls - 1:
+            cons = await box.call(
+                "graph-engine",
+                "compute_flow_conservation",
+                {"paths": [p.model_dump(mode="json") for p in multi[:10]], "amount_tolerance": str(params.amount_tolerance)},
+            )
+            if not is_error(cons):
+                cons_key = f"{graph['calc_id']}-CONS"
+                registry[cons_key] = cons
+                calc_log.append({"calc_id": cons_key, **cons})
 
     targets = _select_c0_accounts(root, txs, paths, network)
     profiles = await _profile_c0_accounts(ctx, box, targets, registry, degraded)
@@ -163,6 +175,7 @@ async def scan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
         "regulatory_clauses": clauses,
         "regulatory_snippets": snippets,
         "evidence_registry": registry,
+        "calc_log": calc_log,
         "degraded_evidence": degraded,
         "current_node": "gather_evidence",
         "current_step": state.current_step + 1,

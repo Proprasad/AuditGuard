@@ -72,6 +72,12 @@ class FlowConservationOutput(_Strict):
     leakage_ratio: Ratio
     structuring_detected: bool
     structuring_reason: str
+    aggregate_outflow_inr: Money = Field(default=Money("0.00"))
+    aggregate_consolidated_inr: Money = Field(default=Money("0.00"))
+    aggregate_net_difference_inr: Money = Field(default=Money("0.00"))
+    aggregate_retention_pct: Money = Field(default=Money("0.00"))
+    aggregate_leakage_ratio: Ratio = Field(default=Ratio("0.0000"))
+    unique_edge_count: int = 0
 
 
 class CompareGraphRunsInput(_Strict):
@@ -184,6 +190,12 @@ async def compute_flow_conservation(params: FlowConservationInput) -> FlowConser
         leakage_ratio=result.leakage_ratio,
         structuring_detected=result.structuring_detected,
         structuring_reason=result.structuring_reason,
+        aggregate_outflow_inr=result.aggregate_outflow_inr,
+        aggregate_consolidated_inr=result.aggregate_consolidated_inr,
+        aggregate_net_difference_inr=result.aggregate_net_difference_inr,
+        aggregate_retention_pct=result.aggregate_retention_pct,
+        aggregate_leakage_ratio=result.aggregate_leakage_ratio,
+        unique_edge_count=result.unique_edge_count,
     )
 
 

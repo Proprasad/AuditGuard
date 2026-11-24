@@ -23,6 +23,7 @@ async def flow_tracer_node(state: InvestigationState, ctx: RunContext) -> dict[s
         flow_box.set_sub_budget(handoff.allowed_tool_budget)
 
     registry = dict(state.evidence_registry)
+    calc_log = list(state.calc_log)
     degraded = list(state.degraded_evidence)
     params = state.plan.graph_params if state.plan else GraphParams.policy_default()
 
@@ -37,7 +38,7 @@ async def flow_tracer_node(state: InvestigationState, ctx: RunContext) -> dict[s
             **sync_budget(ctx),
         }
     if not is_error(graph_result):
-        await enrich_graph_evidence(ctx, flow_box, graph_result, paths, params, registry)
+        await enrich_graph_evidence(ctx, flow_box, graph_result, paths, params, registry, calc_log)
     ctx.timings["flow_ms"] = ctx.timings.get("flow_ms", 0.0) + (time.perf_counter() - t0) * 1000
 
     multi = sum(1 for p in paths if p.hop_count >= 2)
@@ -55,6 +56,7 @@ async def flow_tracer_node(state: InvestigationState, ctx: RunContext) -> dict[s
         "transactions": txs,
         "fund_flow_paths": paths,
         "evidence_registry": registry,
+        "calc_log": calc_log,
         "degraded_evidence": sorted({*degraded, *all_security_notes(ctx)}),
         "specialist_findings": upsert_finding(state.specialist_findings, finding),
         "current_node": "flow_tracer",

@@ -174,6 +174,8 @@ async def gather_identity(
     paths: list[FundFlowPath],
     registry: dict[str, Any],
     degraded: list[str],
+    *,
+    txs: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     box = ctx.box("benign_investigator")
     existing = list(state.kyc_profiles)
@@ -181,9 +183,10 @@ async def gather_identity(
     candidates = _candidate_accounts(state, root, network, paths)
 
     if not existing or state.refresh_kyc:
+        # Reserve 1 extra slot for `get_counterparty_history(days_back=365)` corroboration.
         avail_pairs = max(
             1,
-            (ctx.policy.budgets.max_tool_calls - ctx.ledger.calls_used - _REPLAN_DRAFT_HEADROOM) // 2,
+            (ctx.policy.budgets.max_tool_calls - ctx.ledger.calls_used - _REPLAN_DRAFT_HEADROOM - 1) // 2,
         )
         targets = [a for a in candidates if a not in profiled_ids][:avail_pairs]
         await _profile_accounts_batch(ctx, box, targets, existing, profiled_ids, registry, degraded)
@@ -192,8 +195,9 @@ async def gather_identity(
         targets = list(dict.fromkeys(new_beneficiaries))[:1]
         await _profile_accounts_batch(ctx, box, targets, existing, profiled_ids, registry, degraded)
 
-    if state.replan_count > 0 and not any(p.hop_count >= 2 for p in paths):
-        await _record_counterparty_history(ctx, box, state, root, registry, degraded)
+    tx_source = txs if txs is not None else state.transactions
+    if not any(str(k).startswith("CP-") for k in registry):
+        await _record_counterparty_history(ctx, box, state, root, registry, degraded, txs=tx_source)
     return existing
 
 
@@ -204,21 +208,28 @@ async def _record_counterparty_history(
     root: str,
     registry: dict[str, Any],
     degraded: list[str],
+    *,
+    txs: list[dict[str, Any]] | None = None,
 ) -> None:
-    counterparties = list(
-        dict.fromkeys(
-            str(t["receiver_account"])
-            for t in state.transactions
-            if t.get("sender_account") == root and t.get("receiver_account")
-        )
-    )
+    tx_source = txs if txs is not None else state.transactions
+    outbound = [
+        str(t["receiver_account"])
+        for t in tx_source
+        if t.get("sender_account") == root and t.get("receiver_account")
+    ]
+    inbound = [
+        str(t["sender_account"])
+        for t in tx_source
+        if t.get("receiver_account") == root and t.get("sender_account")
+    ]
+    counterparties = list(dict.fromkeys([*outbound, *inbound]))
     if not counterparties or not _can_spend_calls(ctx, 1):
         return
     cp_id = counterparties[0]
     cp_key = f"CP-{root}-{cp_id}"
     if cp_key in registry:
         return
-    days_back = max(30, state.plan.graph_params.time_window_days) if state.plan else 90
+    days_back = max(365, state.plan.graph_params.time_window_days) if state.plan else 365
     cp_res = await box.call(
         "bank-records",
         "get_counterparty_history",
@@ -295,20 +306,25 @@ async def enrich_graph_evidence(
     paths: list[FundFlowPath],
     params: GraphParams,
     registry: dict[str, Any],
+    calc_log: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Invoke conservation & replan-comparison MCP tools when multi-hop paths exist and budget permits."""
+    """Invoke conservation & replan-comparison MCP tools across candidate paths and record to calc_log."""
     multi = [p for p in paths if p.hop_count >= 2]
-    if multi and _can_spend_calls(ctx, 1):
+    target_paths = multi if multi else paths
+    if target_paths and _can_spend_calls(ctx, 1):
         cons = await flow_box.call(
             "graph-engine",
             "compute_flow_conservation",
             {
-                "paths": [p.model_dump(mode="json") for p in multi[:3]],
+                "paths": [p.model_dump(mode="json") for p in target_paths[:10]],
                 "amount_tolerance": str(params.amount_tolerance),
             },
         )
         if not is_error(cons):
-            registry[f"{graph_result['calc_id']}-CONS"] = cons
+            cons_key = f"{graph_result['calc_id']}-CONS"
+            registry[cons_key] = cons
+            if calc_log is not None:
+                calc_log.append({"calc_id": cons_key, **cons})
     if multi and ctx.last_graph_output and _can_spend_calls(ctx, 1):
         diff = await flow_box.call(
             "graph-engine", "compare_graph_runs", {"run_a": ctx.last_graph_output, "run_b": graph_result}
@@ -409,6 +425,7 @@ def build_specialist_findings(
 
 async def gather_evidence_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
     registry = dict(state.evidence_registry)
+    calc_log = list(state.calc_log)
     degraded = list(state.degraded_evidence)
     params = state.plan.graph_params if state.plan else GraphParams.policy_default()
     flow_box = ctx.box("flow_tracer")
@@ -425,10 +442,10 @@ async def gather_evidence_node(state: InvestigationState, ctx: RunContext) -> di
         }
 
     t1 = time.perf_counter()
-    profiles = await gather_identity(ctx, state, root, network, paths, registry, degraded)
+    profiles = await gather_identity(ctx, state, root, network, paths, registry, degraded, txs=txs)
     clauses, snippets = await gather_regulatory(ctx, state, registry, degraded, paths=paths, profiles=profiles)
     if not is_error(graph_result):
-        await enrich_graph_evidence(ctx, flow_box, graph_result, paths, params, registry)
+        await enrich_graph_evidence(ctx, flow_box, graph_result, paths, params, registry, calc_log)
     ctx.timings["evidence_ms"] = ctx.timings.get("evidence_ms", 0.0) + (time.perf_counter() - t1) * 1000
 
     msgs, summary = trim_messages_with_summary(
@@ -443,6 +460,7 @@ async def gather_evidence_node(state: InvestigationState, ctx: RunContext) -> di
         "regulatory_clauses": clauses,
         "regulatory_snippets": snippets,
         "evidence_registry": registry,
+        "calc_log": calc_log,
         "degraded_evidence": sorted({*degraded, *all_security_notes(ctx)}),
         "specialist_findings": build_specialist_findings(ctx, paths, profiles, clauses),
         "refresh_kyc": False,

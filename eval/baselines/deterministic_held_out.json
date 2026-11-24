@@ -1,36 +1,36 @@
 {
   "modes": {
     "c0_fixed": {
-      "citation_validity_rate": 0.933333,
+      "citation_validity_rate": 0.925,
       "cost_usd": 0.0,
-      "disposition_accuracy": 0.308333,
+      "disposition_accuracy": 0.425,
       "evidence_precision": 0.450238,
       "evidence_recall": 0.082309,
       "false_close_rate": 0.576923,
       "inr_arithmetic_error_rate": 0.0,
-      "macro_f1": 0.26617,
+      "macro_f1": 0.36849,
       "needless_replan_rate": 0.0,
       "replan_recovery_rate": 0.0,
       "tokens": 0.0,
-      "tool_calls": 11.983333,
-      "tool_error_rate": 0.001391,
-      "weighted_error_cost": 4.45
+      "tool_calls": 11.991667,
+      "tool_error_rate": 0.00139,
+      "weighted_error_cost": 3.283333
     },
     "rule_engine": {
       "citation_validity_rate": 1.0,
       "cost_usd": 0.0,
-      "disposition_accuracy": 0.45,
-      "evidence_precision": 0.861368,
-      "evidence_recall": 0.202311,
-      "false_close_rate": 0.365385,
-      "inr_arithmetic_error_rate": 0.010974,
-      "macro_f1": 0.44802,
-      "needless_replan_rate": 0.75,
-      "replan_recovery_rate": 0.421053,
+      "disposition_accuracy": 0.666667,
+      "evidence_precision": 0.972817,
+      "evidence_recall": 0.253489,
+      "false_close_rate": 0.038462,
+      "inr_arithmetic_error_rate": 0.00994,
+      "macro_f1": 0.640043,
+      "needless_replan_rate": 0.954545,
+      "replan_recovery_rate": 0.802632,
       "tokens": 0.0,
-      "tool_calls": 14.1,
-      "tool_error_rate": 0.002955,
-      "weighted_error_cost": 2.775
+      "tool_calls": 14.808333,
+      "tool_error_rate": 0.002251,
+      "weighted_error_cost": 0.691667
     }
   },
   "n_cases": 120,

@@ -21,6 +21,7 @@ AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
     "c0_fixed": {
         "get_alert_context",
         "find_candidate_fund_flows",
+        "compute_flow_conservation",
         "get_kyc_profile",
         "check_commercial_registry",
         "search_regulations",

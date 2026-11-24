@@ -78,6 +78,36 @@ class GraphRun:
 
 
 @dataclass(frozen=True)
+class AggregateFlowMetrics:
+    """Second path metric aggregating unique edges across ALL candidate paths from root (no double-counting)."""
+
+    path_count: int
+    unique_edge_count: int
+    unique_intermediaries: int
+    unique_terminals: int
+    aggregate_outflow_inr: Decimal
+    aggregate_consolidated_inr: Decimal
+    aggregate_net_difference_inr: Decimal
+    aggregate_retention_pct: Decimal
+    aggregate_leakage_ratio: Decimal
+    conservation_satisfied: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "path_count": self.path_count,
+            "unique_edge_count": self.unique_edge_count,
+            "unique_intermediaries": self.unique_intermediaries,
+            "unique_terminals": self.unique_terminals,
+            "aggregate_outflow_inr": dec_str(self.aggregate_outflow_inr),
+            "aggregate_consolidated_inr": dec_str(self.aggregate_consolidated_inr),
+            "aggregate_net_difference_inr": dec_str(self.aggregate_net_difference_inr),
+            "aggregate_retention_pct": dec_str(self.aggregate_retention_pct),
+            "aggregate_leakage_ratio": dec_str(self.aggregate_leakage_ratio),
+            "conservation_satisfied": self.conservation_satisfied,
+        }
+
+
+@dataclass(frozen=True)
 class Conservation:
     conservation_satisfied: bool
     total_in: Decimal
@@ -86,6 +116,12 @@ class Conservation:
     leakage_ratio: Decimal
     structuring_detected: bool
     structuring_reason: str
+    aggregate_outflow_inr: Decimal = Decimal("0.00")
+    aggregate_consolidated_inr: Decimal = Decimal("0.00")
+    aggregate_net_difference_inr: Decimal = Decimal("0.00")
+    aggregate_retention_pct: Decimal = Decimal("0.00")
+    aggregate_leakage_ratio: Decimal = Decimal("0.0000")
+    unique_edge_count: int = 0
 
 
 # --------------------------------------------------------------------------------------------------
@@ -220,9 +256,60 @@ def find_candidate_paths(
             intermediaries[path[-1]].update(path[1:-1])
     metrics = [compute_path_metrics(graph, p, params, rules, len(intermediaries.get(p[-1], ()))) for p in raw_paths]
     metrics.sort(key=lambda m: (-int(m.is_suspicious), -m.hop_count, m.path_id))
+    agg = aggregate_root_flow_metrics(metrics, params.amount_tolerance)
     stats["total_paths_found"] = len(metrics)
     stats["suspicious_paths"] = sum(1 for m in metrics if m.is_suspicious)
+    stats["aggregate_root_flow"] = agg.as_dict()
     return GraphRun(calc_id, tuple(metrics[: limits.max_paths_returned]), stats, params_used)
+
+
+def aggregate_root_flow_metrics(
+    paths: Sequence[PathMetrics],
+    tolerance: Decimal,
+) -> AggregateFlowMetrics:
+    """Aggregate unique first-hop outflows and unique terminal inflows across ALL paths from root."""
+    if not paths:
+        zero = Decimal("0.00")
+        return AggregateFlowMetrics(0, 0, 0, 0, zero, zero, zero, zero, Decimal("0.0000"), True)
+    multi = [p for p in paths if p.hop_count >= 2]
+    candidates = multi if multi else list(paths)
+    # Exclude prefix sub-paths whose endpoint is merely an intermediary node of a deeper path.
+    intermediaries_all = {n for p in candidates if len(p.nodes) >= 3 for n in p.nodes[1:-1]}
+    selected = [p for p in candidates if p.nodes[-1] not in intermediaries_all] or candidates
+    first_hops: dict[tuple[str, str], Decimal] = {}
+    last_hops: dict[tuple[str, str], Decimal] = {}
+    unique_txs: set[str] = set()
+    inter_nodes: set[str] = set()
+    term_nodes: set[str] = set()
+    for p in selected:
+        unique_txs.update(p.edge_tx_ids)
+        if len(p.nodes) >= 2:
+            first_hops.setdefault((p.nodes[0], p.nodes[1]), p.total_outflow_inr)
+            last_hops.setdefault((p.nodes[-2], p.nodes[-1]), p.total_consolidated_inr)
+            term_nodes.add(p.nodes[-1])
+        if len(p.nodes) >= 3:
+            inter_nodes.update(p.nodes[1:-1])
+    agg_out = to_money(_dsum(first_hops.values()))
+    agg_cons = to_money(_dsum(last_hops.values()))
+    agg_net = (agg_out - agg_cons).quantize(CENT)
+    if agg_out > 0:
+        agg_leak = (abs(agg_net) / agg_out).quantize(RATIO_Q)
+        agg_ret = (agg_net / agg_out * _HUNDRED).quantize(CENT)
+    else:
+        agg_leak, agg_ret = Decimal("0.0000"), Decimal("0.00")
+    tol_q = to_decimal(tolerance, RATIO_Q)
+    return AggregateFlowMetrics(
+        path_count=len(selected),
+        unique_edge_count=len(unique_txs),
+        unique_intermediaries=len(inter_nodes),
+        unique_terminals=len(term_nodes),
+        aggregate_outflow_inr=agg_out,
+        aggregate_consolidated_inr=agg_cons,
+        aggregate_net_difference_inr=agg_net,
+        aggregate_retention_pct=agg_ret,
+        aggregate_leakage_ratio=agg_leak,
+        conservation_satisfied=agg_leak <= tol_q,
+    )
 
 
 def flow_conservation(paths: Sequence[PathMetrics], tolerance: Decimal, structuring: Structuring) -> Conservation:
@@ -233,6 +320,7 @@ def flow_conservation(paths: Sequence[PathMetrics], tolerance: Decimal, structur
     total_out = to_money(_dsum(p.total_consolidated_inr for p in paths))
     net = abs(total_in - total_out).quantize(CENT)
     leakage = (net / total_in).quantize(RATIO_Q) if total_in > 0 else Decimal("0.0000")
+    agg = aggregate_root_flow_metrics(paths, tolerance)
     near_threshold = [p for p in paths if structuring.floor_inr <= p.total_outflow_inr < structuring.threshold_inr]
     reason = (
         f"{len(near_threshold)} paths just below INR {structuring.threshold_inr:,.2f} threshold"
@@ -247,6 +335,12 @@ def flow_conservation(paths: Sequence[PathMetrics], tolerance: Decimal, structur
         leakage,
         bool(near_threshold),
         reason,
+        aggregate_outflow_inr=agg.aggregate_outflow_inr,
+        aggregate_consolidated_inr=agg.aggregate_consolidated_inr,
+        aggregate_net_difference_inr=agg.aggregate_net_difference_inr,
+        aggregate_retention_pct=agg.aggregate_retention_pct,
+        aggregate_leakage_ratio=agg.aggregate_leakage_ratio,
+        unique_edge_count=agg.unique_edge_count,
     )
 
 

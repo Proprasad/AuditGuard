@@ -53,8 +53,14 @@ def flow_paths_from_result(graph_result: Mapping[str, Any], limit: int) -> list[
 
 
 def is_registered(kyc: Mapping[str, Any]) -> bool:
-    check = kyc.get("registry_check") or {}
-    return bool(kyc.get("is_commercially_registered") or check.get("is_registered"))
+    """Return True when authoritative commercial registry check (or fallback KYC flag) confirms ACTIVE status."""
+    check = kyc.get("registry_check")
+    if isinstance(check, Mapping) and check:
+        status = str(check.get("registry_status") or "").upper()
+        if status and status != "ACTIVE":
+            return False
+        return bool(check.get("is_registered"))
+    return bool(kyc.get("is_commercially_registered"))
 
 
 def kyc_summary_line(kyc: Mapping[str, Any]) -> str:
