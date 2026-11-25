@@ -201,6 +201,13 @@ class SpecialistHandOff(StrictModel):
     target_agent: Literal["flow_tracer", "benign_investigator", "regulatory_analyst", "reporter_critic"]
     objective: str
     allowed_tool_budget: int = Field(ge=0)
+    selection_rationale: str = ""
+    dependencies: list[str] = Field(default_factory=list)
+    permitted_tools: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] = Field(default_factory=list)
+    completion_condition: str = ""
+    replan_triggers: list[str] = Field(default_factory=list)
+    parallel_group: str = ""
 
 
 class SpecialistFinding(StrictModel):
@@ -210,6 +217,17 @@ class SpecialistFinding(StrictModel):
     tool_calls: int = Field(ge=0)
     evidence_ids_added: list[str] = Field(default_factory=list)
     recommended_replan: Optional[dict[str, Any]] = None
+    objective: str = ""
+    findings: list[str] = Field(default_factory=list)
+    claims: list[dict[str, Any]] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    contradicting_evidence_ids: list[str] = Field(default_factory=list)
+    evidence_relevance: dict[str, str] = Field(default_factory=dict)
+    unresolved_contradictions: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    recommended_next_action: str = ""
+    limitations: list[str] = Field(default_factory=list)
+    execution_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class InvestigationState(StrictModel):
@@ -237,14 +255,22 @@ class InvestigationState(StrictModel):
     transactions: list[dict[str, Any]] = Field(default_factory=list)
     kyc_profiles: list[dict[str, Any]] = Field(default_factory=list)
     fund_flow_paths: list[FundFlowPath] = Field(default_factory=list)
+    initial_fund_flow_paths: list[FundFlowPath] = Field(default_factory=list)
     regulatory_snippets: list[str] = Field(default_factory=list)
     regulatory_clauses: list[dict[str, Any]] = Field(default_factory=list)
+    routing_plan: Optional[dict[str, Any]] = None
     specialist_handoffs: list[dict[str, Any]] = Field(default_factory=list)
     specialist_findings: list[dict[str, Any]] = Field(default_factory=list)
     degraded_evidence: list[str] = Field(default_factory=list)
 
     active_hypotheses: list[Hypothesis] = Field(default_factory=list)
+    hypothesis_assessment: Optional[dict[str, Any]] = None
+    evidence_claims: list[dict[str, Any]] = Field(default_factory=list)
+    replan_records: list[dict[str, Any]] = Field(default_factory=list)
+    critic_assessment: Optional[dict[str, Any]] = None
     critiques: list[str] = Field(default_factory=list)
+    tool_execution_log: list[dict[str, Any]] = Field(default_factory=list)
+    react_steps_completed: int = 0
 
     workflow_steps: list[dict[str, Any]] = Field(default_factory=list)
     agent_runs: list[dict[str, Any]] = Field(default_factory=list)

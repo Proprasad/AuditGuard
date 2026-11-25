@@ -12,6 +12,7 @@ from typing import Any, Optional
 from pydantic import ValidationError
 
 from src.agent.drafting import security_notes
+from src.agent.replanning import build_replan_comparison, build_replan_record, capture_replan_snapshot
 from src.agent.tool_schemas import (
     TOOL_SPECS,
     CalcInput,
@@ -96,6 +97,8 @@ def _on_flows(rt: AgentToolRuntime, res: dict[str, Any]) -> None:
         rt.evidence_registry[str(res["calc_id"])] = res.get("graph_stats", {})
         rt.calc_log.append({"calc_id": res["calc_id"], **dict(res.get("graph_stats") or {})})
     paths = flow_paths_from_result(res, limit=5)
+    if not rt.initial_fund_flow_paths and not rt.graph_runs:
+        rt.initial_fund_flow_paths = list(paths)
     rt.fund_flow_paths = paths
     for p in paths:
         rt.evidence_registry[p.path_id] = p.model_dump(mode="json")
@@ -153,6 +156,7 @@ class AgentToolRuntime:
         initial_transactions: Optional[list[dict[str, Any]]] = None,
         initial_paths: Optional[list[FundFlowPath]] = None,
         initial_registry: Optional[dict[str, Any]] = None,
+        initial_baseline_paths: Optional[list[FundFlowPath]] = None,
     ) -> None:
         self.role = role
         self.box = box
@@ -166,6 +170,7 @@ class AgentToolRuntime:
         self.network_accounts = list(alert.network_accounts)
         self.transactions: list[dict[str, Any]] = list(initial_transactions or [])
         self.fund_flow_paths: list[FundFlowPath] = list(initial_paths or [])
+        self.initial_fund_flow_paths: list[FundFlowPath] = list(initial_baseline_paths or initial_paths or [])
         self.kyc_profiles: list[dict[str, Any]] = []
         self.regulatory_clauses: list[dict[str, Any]] = []
         self.regulatory_snippets: list[str] = []
@@ -173,6 +178,8 @@ class AgentToolRuntime:
         self.calc_log: list[dict[str, Any]] = []
         self.degraded_evidence: list[str] = []
         self.graph_runs: list[dict[str, Any]] = []
+        self.replan_records: list[dict[str, Any]] = []
+        self.tool_execution_log: list[dict[str, Any]] = []
         self.replan_count = 0
         self.last_replan_reason: Optional[str] = None
         self.current_graph_params = GraphParams.policy_default()
@@ -218,19 +225,50 @@ class AgentToolRuntime:
         self.calc_log.append(sanitized)
         return sanitized
 
+    def _proposed_params_from_raw(self, args: dict[str, Any]) -> GraphParams:
+        try:
+            return GraphParams(
+                time_window_days=int(args.get("time_window_days", self.current_graph_params.time_window_days)),
+                max_hops=int(args.get("max_hops", self.current_graph_params.max_hops)),
+                amount_tolerance=to_ratio(args.get("amount_tolerance", self.current_graph_params.amount_tolerance)),
+                min_intermediaries=self.current_graph_params.min_intermediaries,
+            )
+        except (TypeError, ValueError, NumericError):
+            return self.current_graph_params
+
+    def _record_rejected_replan(
+        self, args: dict[str, Any], status: Any, detail: str
+    ) -> None:
+        before = capture_replan_snapshot(self.current_graph_params, self.fund_flow_paths, self.evidence_registry)
+        rec = build_replan_record(
+            seq=len(self.replan_records) + 1,
+            original_params=self.current_graph_params,
+            proposed_params=self._proposed_params_from_raw(args),
+            reason=str(args.get("reason") or detail),
+            evidence_ids=list(self.evidence_registry.keys())[:8],
+            before=before,
+            validation_result=status,
+            validation_detail=detail,
+            execution_status="skipped",
+        )
+        self.replan_records.append(rec.model_dump(mode="json"))
+
     async def _run_replan_tool(self, args: dict[str, Any]) -> dict[str, Any]:
         if not self.replanning_enabled:
+            self._record_rejected_replan(args, "rejected_disabled", "Replanning is disabled")
             return await self._record_local_error("replan_graph", "REPLAN_DISABLED", "Replanning is disabled")
         if self._sub_budget_exceeded():
-            return await self._record_local_error(
-                "replan_graph", "SPECIALIST_BUDGET_EXCEEDED", f"Specialist '{self.role}' exhausted handoff budget"
-            )
+            msg = f"Specialist '{self.role}' exhausted handoff budget"
+            self._record_rejected_replan(args, "rejected_budget", msg)
+            return await self._record_local_error("replan_graph", "SPECIALIST_BUDGET_EXCEEDED", msg)
         bounds_check = pre_tool_hook(self.role, "replan_graph", args, ledger=None)
         if not bounds_check.allowed:
+            self._record_rejected_replan(args, "rejected_bounds", bounds_check.message)
             return await self._record_local_error("replan_graph", bounds_check.error_code, bounds_check.message)
         try:
             parsed = ReplanGraphInput.model_validate(args)
         except ValidationError as exc:
+            self._record_rejected_replan(args, "rejected_bounds", str(exc)[:240])
             return await self._record_local_error("replan_graph", "INVALID_TOOL_ARGS", str(exc)[:240])
         if not self.transactions:
             return await self._record_local_error(
@@ -238,31 +276,65 @@ class AgentToolRuntime:
             )
         replan_verdict = self.box.ledger.try_replan()
         if not replan_verdict.allowed:
+            self._record_rejected_replan(args, "rejected_budget", replan_verdict.message)
             return await self._record_local_error("replan_graph", replan_verdict.error_code, replan_verdict.message)
         budget_hook = pre_tool_hook(self.role, "replan_graph", args, ledger=self.box.ledger)
         if not budget_hook.allowed:
+            self._record_rejected_replan(args, "rejected_budget", budget_hook.message)
             return await self._record_local_error("replan_graph", budget_hook.error_code, budget_hook.message)
 
-        self.box.calls += 1
-        self.replan_count += 1
-        self.last_replan_reason = parsed.reason
-        self.current_graph_params = GraphParams(
+        orig_params = self.current_graph_params
+        old_path_ids = {p.path_id for p in self.fund_flow_paths}
+        before_snap = capture_replan_snapshot(orig_params, self.fund_flow_paths, self.evidence_registry)
+        new_params = GraphParams(
             time_window_days=parsed.time_window_days,
             max_hops=parsed.max_hops,
             amount_tolerance=parsed.amount_tolerance,
-            min_intermediaries=self.current_graph_params.min_intermediaries,
+            min_intermediaries=orig_params.min_intermediaries,
         )
+        self.box.calls += 1
+        self.replan_count += 1
+        self.last_replan_reason = parsed.reason
+        self.current_graph_params = new_params
         mcp_params = {
             "root_account": self.root_account,
             "transactions": graph_tx_payload(self.transactions),
-            **self.current_graph_params.model_dump(mode="json"),
+            **new_params.model_dump(mode="json"),
         }
         raw = await call_mcp_tool("graph-engine", "find_candidate_fund_flows", mcp_params)
         if is_error(raw):
             code = str(raw.get("error_code") or "MCP_TOOL_ERROR")
-            return await self._record_local_error("replan_graph", code, str(raw.get("message") or "failed"))
+            msg = str(raw.get("message") or "failed")
+            rec_fail = build_replan_record(
+                seq=len(self.replan_records) + 1,
+                original_params=orig_params,
+                proposed_params=new_params,
+                reason=parsed.reason,
+                evidence_ids=list(self.evidence_registry.keys())[:8],
+                before=before_snap,
+                validation_result="approved",
+                validation_detail=f"MCP error: {code}",
+                execution_status="failed",
+            )
+            self.replan_records.append(rec_fail.model_dump(mode="json"))
+            return await self._record_local_error("replan_graph", code, msg)
         sanitized = dict(post_tool_hook("replan_graph", raw))
         _on_flows(self, sanitized)
+        after_snap = capture_replan_snapshot(new_params, self.fund_flow_paths, self.evidence_registry)
+        comp = build_replan_comparison(before_snap, after_snap, old_path_ids, self.fund_flow_paths)
+        rec = build_replan_record(
+            seq=len(self.replan_records) + 1,
+            original_params=orig_params,
+            proposed_params=new_params,
+            reason=parsed.reason,
+            evidence_ids=list(self.evidence_registry.keys())[:8],
+            before=before_snap,
+            validation_result="approved",
+            validation_detail="Within policy bounds and budget",
+            execution_status="executed",
+            comparison=comp,
+        )
+        self.replan_records.append(rec.model_dump(mode="json"))
         return {**sanitized, "replan_count": self.replan_count, "replan_reason": parsed.reason}
 
     async def _run_finish_tool(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -325,45 +397,64 @@ class AgentToolRuntime:
             return "RAG retrieval disabled"
         return None
 
+    def _log_tool_call(self, tool_name: str, res: dict[str, Any]) -> dict[str, Any]:
+        self.tool_execution_log.append(
+            {
+                "role": self.role,
+                "tool": tool_name,
+                "status": "error" if is_error(res) else "ok",
+                "error_code": res.get("error_code") if is_error(res) else None,
+            }
+        )
+        return res
+
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Dispatch a single tool call through RBAC, bounds, BudgetLedger, MCP, and `post_tool_hook`."""
         if "_invalid_json" in arguments:
-            return await self._record_local_error(
-                tool_name, "INVALID_TOOL_JSON", f"Tool arguments were not valid JSON: {arguments['_invalid_json']!r}"
-            )
+            msg = f"Tool arguments were not valid JSON: {arguments['_invalid_json']!r}"
+            return self._log_tool_call(tool_name, await self._record_local_error(tool_name, "INVALID_TOOL_JSON", msg))
         if tool_name not in AGENT_TOOL_ALLOWLIST.get(self.role, set()):
-            return await self._record_local_error(
-                tool_name, "RBAC_DENIED", f"Agent '{self.role}' is not permitted to invoke '{tool_name}'"
+            return self._log_tool_call(
+                tool_name,
+                await self._record_local_error(
+                    tool_name, "RBAC_DENIED", f"Agent '{self.role}' is not permitted to invoke '{tool_name}'"
+                ),
             )
         local_res = await self._dispatch_local_tool(tool_name, arguments)
         if local_res is not None:
-            return local_res
+            return self._log_tool_call(tool_name, local_res)
         if tool_name not in TOOL_SPECS:
-            return await self._record_local_error(tool_name, "UNKNOWN_TOOL", f"Tool {tool_name!r} is not callable")
+            err = await self._record_local_error(tool_name, "UNKNOWN_TOOL", f"Tool {tool_name!r} is not callable")
+            return self._log_tool_call(tool_name, err)
         if abl_msg := self._ablation_reason(tool_name):
-            return await self._record_local_error(tool_name, "ABLATION_DISABLED", abl_msg)
+            err = await self._record_local_error(tool_name, "ABLATION_DISABLED", abl_msg)
+            return self._log_tool_call(tool_name, err)
         server, model_cls, _ = TOOL_SPECS[tool_name]
         if tool_name == "find_candidate_fund_flows":
             pre_bounds = pre_tool_hook(self.role, tool_name, arguments, ledger=None)
             if not pre_bounds.allowed:
-                return await self._record_local_error(tool_name, pre_bounds.error_code, pre_bounds.message)
+                return self._log_tool_call(
+                    tool_name, await self._record_local_error(tool_name, pre_bounds.error_code, pre_bounds.message)
+                )
 
         try:
             validated = model_cls.model_validate(arguments)
         except ValidationError as exc:
-            return await self._record_local_error(tool_name, "INVALID_TOOL_ARGS", str(exc)[:300])
+            return self._log_tool_call(
+                tool_name, await self._record_local_error(tool_name, "INVALID_TOOL_ARGS", str(exc)[:300])
+            )
 
         hydrated, err_code, err_msg = self._hydrate_graph_args(
             tool_name, validated.model_dump(mode="json", exclude_none=True)
         )
         if hydrated is None:
-            return await self._record_local_error(tool_name, err_code, err_msg)
+            return self._log_tool_call(tool_name, await self._record_local_error(tool_name, err_code, err_msg))
 
         res = await self.box.call(server, tool_name, hydrated)
         if is_error(res):
             self.degraded_evidence.append(f"Tool error [{server}.{tool_name}]: {res.get('error_code')}")
-            return res
+            return self._log_tool_call(tool_name, res)
         if handler := _INGEST_HANDLERS.get(tool_name):
             handler(self, res)
         self.degraded_evidence = sorted({*self.degraded_evidence, *security_notes(self.box)})
-        return res
+        return self._log_tool_call(tool_name, res)

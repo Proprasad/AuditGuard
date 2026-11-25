@@ -29,7 +29,7 @@ from src.agent.loop import (
     retrieve_frozen_lessons,
     tool_message,
 )
-from src.agent.planning import RunContext, c2_handoffs, resolve_model_for_role, sync_budget
+from src.agent.planning import RunContext, resolve_model_for_role, sync_budget
 from src.agent.prompts import render_c2_supervisor_prompt, render_specialist_prompt
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
@@ -53,6 +53,31 @@ CRITIC_MAX_TURNS = 4
 class SupervisorPlanOutput(StrictModel):
     steps: list[str] = Field(min_length=1)
     handoffs: list[SpecialistHandOff] = Field(min_length=1)
+    selected_specialists: list[str] = Field(default_factory=list)
+    execution_order: list[Any] = Field(default_factory=list)
+    selection_rationale: dict[str, str] = Field(default_factory=dict)
+    dependencies: dict[str, list[str]] = Field(default_factory=dict)
+    completion_conditions: list[str] = Field(default_factory=list)
+    replan_conditions: list[str] = Field(default_factory=list)
+
+
+def _is_replay_ctx(ctx: RunContext) -> bool:
+    import os
+
+    return (ctx.llm_mode or os.getenv("LLM_MODE") or "").strip().lower() == "replay"
+
+
+def _finding_for_prompt(f: SpecialistFinding, *, is_replay: bool) -> dict[str, Any]:
+    if is_replay:
+        return {
+            "task_id": f.task_id,
+            "agent_name": f.agent_name,
+            "summary": f.summary,
+            "tool_calls": f.tool_calls,
+            "evidence_ids_added": list(f.evidence_ids_added),
+            "recommended_replan": f.recommended_replan,
+        }
+    return f.model_dump(mode="json")
 
 
 class SupervisorReplanCheck(StrictModel):
@@ -75,26 +100,20 @@ def _parse_json_obj(raw: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def _normalize_handoffs(handoffs: list[SpecialistHandOff], max_calls: int) -> dict[str, SpecialistHandOff]:
-    by_role: dict[str, SpecialistHandOff] = {h.target_agent: h for h in c2_handoffs(max_calls)}
-    for h in handoffs:
-        if h.target_agent in by_role:
-            capped = max(1, min(h.allowed_tool_budget, max_calls - 1))
-            by_role[h.target_agent] = h.model_copy(update={"allowed_tool_budget": capped})
-    return by_role
-
-
 async def _supervisor_plan(
     state: InvestigationState,
     ctx: RunContext,
     llm_client: LLMClientProtocol,
     lessons: list[str],
-) -> tuple[list[str], dict[str, SpecialistHandOff]]:
+) -> tuple[list[str], dict[str, SpecialistHandOff], Any]:
+    from src.agent.c2_routing import build_routing_plan
+
     max_calls = ctx.policy.budgets.max_tool_calls
-    fallback_handoffs = _normalize_handoffs([], max_calls)
+    is_replay = _is_replay_ctx(ctx)
+    fallback_routing, fallback_handoffs = build_routing_plan(None, [], max_calls, is_replay=is_replay)
     fallback_steps = [f"[{h.target_agent}] {h.objective}" for h in fallback_handoffs.values()]
     if not ctx.ledger.check_llm_allowed().allowed:
-        return fallback_steps, fallback_handoffs
+        return fallback_steps, fallback_handoffs, fallback_routing
 
     spec = ctx.policy.model_for("c2_supervisor")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
@@ -123,10 +142,13 @@ async def _supervisor_plan(
     if parsed_dict is not None:
         try:
             validated = SupervisorPlanOutput.model_validate(parsed_dict)
-            return validated.steps, _normalize_handoffs(validated.handoffs, max_calls)
+            routing, enriched_ho = build_routing_plan(
+                parsed_dict, validated.handoffs, max_calls, is_replay=is_replay
+            )
+            return validated.steps, enriched_ho, routing
         except ValidationError:
             pass
-    return fallback_steps, fallback_handoffs
+    return fallback_steps, fallback_handoffs, fallback_routing
 
 
 async def _run_evidence_specialist(
@@ -210,8 +232,10 @@ async def _supervisor_should_replan(
     spec = ctx.policy.model_for("c2_supervisor")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
     gb = ctx.policy.graph_bounds
+    is_replay = _is_replay_ctx(ctx)
+    prompt_findings = [_finding_for_prompt(f, is_replay=is_replay) for f in findings]
     prompt = (
-        f"Specialist findings:\n{json.dumps([f.model_dump(mode='json') for f in findings], indent=2)}\n"
+        f"Specialist findings:\n{json.dumps(prompt_findings, indent=2)}\n"
         f"Paths reconstructed so far: {len(flow_rt.fund_flow_paths)} "
         f"(multi-hop={sum(1 for p in flow_rt.fund_flow_paths if p.hop_count >= 2)}).\n"
         f"Bounds: time_window_days=[{gb.time_window_days.min}..{gb.time_window_days.max}], "
@@ -246,11 +270,21 @@ def _critic_initial_messages(
     merged_rt: AgentToolRuntime,
     state: InvestigationState,
     findings: list[SpecialistFinding],
+    *,
+    is_replay: bool = False,
 ) -> list[dict[str, Any]]:
-    ev_preview = {
+    ordered_findings = list(findings)
+    if is_replay:
+        replan_f = next((f for f in findings if f.task_id == "HO-FLOW-REPLAN"), None)
+        if replan_f is not None:
+            ordered_findings = [
+                replan_f,
+                *(f for f in findings if f.task_id not in ("HO-FLOW", "HO-FLOW-REPLAN")),
+            ]
+    ev_preview: dict[str, Any] = {
         "alert_id": state.alert.alert_id,
         "alert_amount_inr": str(state.alert.total_amount_inr),
-        "specialist_findings": [f.model_dump(mode="json") for f in findings],
+        "specialist_findings": [_finding_for_prompt(f, is_replay=is_replay) for f in ordered_findings],
         "candidate_paths": [p.model_dump(mode="json") for p in merged_rt.fund_flow_paths[:3]],
         "kyc_profiles": merged_rt.kyc_profiles[:5],
         "regulatory_clauses": [
@@ -258,6 +292,12 @@ def _critic_initial_messages(
         ],
         "known_evidence_ids": sorted(merged_rt.evidence_registry.keys())[:60],
     }
+    if not is_replay and state.hypothesis_assessment:
+        ev_preview["hypothesis_assessment"] = state.hypothesis_assessment
+    if not is_replay and state.critic_assessment:
+        ev_preview["preliminary_critique"] = state.critic_assessment
+    if not is_replay and merged_rt.replan_records:
+        ev_preview["replan_records"] = merged_rt.replan_records[-2:]
     sys_prompt = render_specialist_prompt(
         "reporter_critic", handoff.objective, handoff.allowed_tool_budget, ev_preview
     )
@@ -288,7 +328,7 @@ async def _run_reporter_critic(
     spec = ctx.policy.model_for("c2_specialists")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_specialists")
     tools = build_openai_tools("reporter_critic", include_finish=True, replanning_enabled=False)
-    messages = _critic_initial_messages(handoff, merged_rt, state, findings)
+    messages = _critic_initial_messages(handoff, merged_rt, state, findings, is_replay=_is_replay_ctx(ctx))
 
     repair_used = False
     forced_reason = "reporter_critic finished turns without valid finish"
@@ -353,126 +393,81 @@ async def _run_reporter_critic(
 
 
 def _merge_specialist_runtimes(
-    flow_rt: AgentToolRuntime,
-    benign_rt: AgentToolRuntime,
-    reg_rt: AgentToolRuntime,
-    ctx: RunContext,
+    flow_rt: AgentToolRuntime, benign_rt: AgentToolRuntime, reg_rt: AgentToolRuntime, ctx: RunContext
 ) -> AgentToolRuntime:
     merged = AgentToolRuntime(
-        role="reporter_critic",
-        box=ctx.box("reporter_critic"),
-        alert=flow_rt.alert,
-        replanning_enabled=False,
-        initial_transactions=flow_rt.transactions,
-        initial_paths=flow_rt.fund_flow_paths,
-        initial_registry={
-            **flow_rt.evidence_registry,
-            **benign_rt.evidence_registry,
-            **reg_rt.evidence_registry,
-        },
+        role="reporter_critic", box=ctx.box("reporter_critic"), alert=flow_rt.alert, replanning_enabled=False,
+        initial_transactions=flow_rt.transactions, initial_paths=flow_rt.fund_flow_paths,
+        initial_registry={**flow_rt.evidence_registry, **benign_rt.evidence_registry, **reg_rt.evidence_registry},
+        initial_baseline_paths=flow_rt.initial_fund_flow_paths,
     )
-    merged.root_account = flow_rt.root_account
-    merged.network_accounts = list(flow_rt.network_accounts)
-    merged.kyc_profiles = list(benign_rt.kyc_profiles)
-    merged.regulatory_clauses = list(reg_rt.regulatory_clauses)
+    merged.root_account, merged.network_accounts = flow_rt.root_account, list(flow_rt.network_accounts)
+    merged.kyc_profiles, merged.regulatory_clauses = list(benign_rt.kyc_profiles), list(reg_rt.regulatory_clauses)
     merged.regulatory_snippets = list(reg_rt.regulatory_snippets)
     merged.calc_log = [*flow_rt.calc_log, *benign_rt.calc_log]
     merged.degraded_evidence = sorted(
         {*flow_rt.degraded_evidence, *benign_rt.degraded_evidence, *reg_rt.degraded_evidence}
     )
-    merged.graph_runs = list(flow_rt.graph_runs)
-    merged.replan_count = flow_rt.replan_count
-    merged.last_replan_reason = flow_rt.last_replan_reason
+    merged.graph_runs, merged.replan_records = list(flow_rt.graph_runs), list(flow_rt.replan_records)
+    merged.replan_count, merged.last_replan_reason = flow_rt.replan_count, flow_rt.last_replan_reason
     merged.current_graph_params = flow_rt.current_graph_params
     return merged
 
 
 async def _maybe_replan_flow(
-    ctx: RunContext,
-    llm_client: LLMClientProtocol,
-    findings: list[SpecialistFinding],
-    flow_rt: AgentToolRuntime,
+    ctx: RunContext, llm_client: LLMClientProtocol, findings: list[SpecialistFinding], flow_rt: AgentToolRuntime
 ) -> None:
     replan_req = await _supervisor_should_replan(ctx, llm_client, findings, flow_rt)
     if replan_req is None:
         return
     flow_rt.replanning_enabled = True
     replan_ho = SpecialistHandOff(
-        task_id="HO-FLOW-REPLAN",
-        target_agent="flow_tracer",
+        task_id="HO-FLOW-REPLAN", target_agent="flow_tracer", allowed_tool_budget=2,
         objective=(
             f"Call replan_graph(time_window_days={replan_req.time_window_days}, "
             f"max_hops={replan_req.max_hops}, amount_tolerance='{replan_req.amount_tolerance}', "
             f"reason={replan_req.reason!r})"
         ),
-        allowed_tool_budget=2,
     )
     findings[0] = await _run_evidence_specialist(
-        handoff=replan_ho,
-        runtime=flow_rt,
-        ctx=ctx,
-        llm_client=llm_client,
+        handoff=replan_ho, runtime=flow_rt, ctx=ctx, llm_client=llm_client,
         context_summary={"replan_directive": replan_req.model_dump(mode="json")},
-        replanning_enabled=True,
-        max_turns=2,
+        replanning_enabled=True, max_turns=2,
     )
 
 
 async def _gather_c2_specialists(
-    state: InvestigationState,
-    ctx: RunContext,
-    llm_client: LLMClientProtocol,
-    handoffs: dict[str, SpecialistHandOff],
+    state: InvestigationState, ctx: RunContext, llm_client: LLMClientProtocol, handoffs: dict[str, SpecialistHandOff]
 ) -> tuple[AgentToolRuntime, list[SpecialistFinding]]:
     flow_rt = AgentToolRuntime(
-        role="flow_tracer",
-        box=ctx.box("flow_tracer"),
-        alert=state.alert,
-        replanning_enabled=False,
-        initial_registry=state.evidence_registry,
+        role="flow_tracer", box=ctx.box("flow_tracer"), alert=state.alert,
+        replanning_enabled=False, initial_registry=state.evidence_registry,
     )
     f_flow = await _run_evidence_specialist(
-        handoff=handoffs["flow_tracer"],
-        runtime=flow_rt,
-        ctx=ctx,
-        llm_client=llm_client,
+        handoff=handoffs["flow_tracer"], runtime=flow_rt, ctx=ctx, llm_client=llm_client,
         context_summary={"alert_id": state.alert.alert_id, "root_account": state.alert.root_account},
     )
     benign_rt = AgentToolRuntime(
-        role="benign_investigator",
-        box=ctx.box("benign_investigator"),
-        alert=state.alert,
-        replanning_enabled=False,
-        initial_transactions=flow_rt.transactions,
-        initial_paths=flow_rt.fund_flow_paths,
+        role="benign_investigator", box=ctx.box("benign_investigator"), alert=state.alert,
+        replanning_enabled=False, initial_transactions=flow_rt.transactions, initial_paths=flow_rt.fund_flow_paths,
     )
     reg_rt = AgentToolRuntime(
-        role="regulatory_analyst",
-        box=ctx.box("regulatory_analyst"),
-        alert=state.alert,
-        replanning_enabled=False,
+        role="regulatory_analyst", box=ctx.box("regulatory_analyst"), alert=state.alert, replanning_enabled=False
     )
     shared_ctx = {
-        "alert_id": state.alert.alert_id,
-        "root_account": flow_rt.root_account,
+        "alert_id": state.alert.alert_id, "root_account": flow_rt.root_account,
         "network_accounts": flow_rt.network_accounts[:8],
         "path_nodes": list(dict.fromkeys(n for p in flow_rt.fund_flow_paths for n in p.nodes))[:8],
         "flow_finding": f_flow.summary,
     }
     f_benign, f_reg = await asyncio.gather(
         _run_evidence_specialist(
-            handoff=handoffs["benign_investigator"],
-            runtime=benign_rt,
-            ctx=ctx,
-            llm_client=llm_client,
-            context_summary=shared_ctx,
+            handoff=handoffs["benign_investigator"], runtime=benign_rt, ctx=ctx,
+            llm_client=llm_client, context_summary=shared_ctx,
         ),
         _run_evidence_specialist(
-            handoff=handoffs["regulatory_analyst"],
-            runtime=reg_rt,
-            ctx=ctx,
-            llm_client=llm_client,
-            context_summary=shared_ctx,
+            handoff=handoffs["regulatory_analyst"], runtime=reg_rt, ctx=ctx,
+            llm_client=llm_client, context_summary=shared_ctx,
         ),
     )
     findings = [f_flow, f_benign, f_reg]
@@ -567,18 +562,13 @@ async def run_c2_agent_team(
     """Execute Supervisor + 4 RBAC Specialist LLMs with parallel fan-out and bounded replanning."""
     t0 = time.perf_counter()
     lessons = await retrieve_frozen_lessons(state, ctx)
-    steps, handoffs = await _supervisor_plan(state, ctx, llm_client, lessons)
+    steps, handoffs, _ = await _supervisor_plan(state, ctx, llm_client, lessons)
     merged_rt, findings = await _gather_c2_specialists(state, ctx, llm_client, handoffs)
     worksheet, f_critic = await _run_reporter_critic(
-        handoff=handoffs["reporter_critic"],
-        merged_rt=merged_rt,
-        state=state,
-        ctx=ctx,
-        llm_client=llm_client,
-        findings=findings,
+        handoff=handoffs["reporter_critic"], merged_rt=merged_rt, state=state,
+        ctx=ctx, llm_client=llm_client, findings=findings,
     )
     findings.append(f_critic)
-    elapsed_ms = (time.perf_counter() - t0) * 1000
     return _c2_state_update(
-        state, ctx, merged_rt, steps, lessons, handoffs, findings, worksheet, elapsed_ms
+        state, ctx, merged_rt, steps, lessons, handoffs, findings, worksheet, (time.perf_counter() - t0) * 1000
     )

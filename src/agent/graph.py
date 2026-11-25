@@ -32,7 +32,8 @@ from langgraph.types import Command, interrupt
 from pydantic_core import to_jsonable_python
 
 from src.agent import c0_fixed, nodes
-from src.agent.c2_loop import run_c2_agent_team
+from src.agent.c2_stages import make_c2_stage_nodes, route_c2_after_replan_check
+from src.agent.hypothesis_eval import hypothesis_evaluation_node
 from src.agent.llm_client import is_live_llm_active
 from src.agent.loop import run_c1_agent_loop
 from src.agent.nodes import RunContext
@@ -81,6 +82,11 @@ def _merge_field(old: dict[str, Any], key: str, value: Any) -> Any:
     if key == "specialist_findings" and isinstance(value, list):
         by_task = {f["task_id"]: f for f in [*old.get(key, []), *value] if isinstance(f, dict) and f.get("task_id")}
         return list(by_task.values())
+    if key == "replan_records" and isinstance(value, list):
+        by_rpl = {r["replan_id"]: r for r in [*old.get(key, []), *value] if isinstance(r, dict) and r.get("replan_id")}
+        return list(by_rpl.values())
+    if key == "initial_fund_flow_paths" and isinstance(value, list):
+        return old.get(key) or value
     if key == "tool_errors" and isinstance(value, list):
         seen: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         for item in [*old.get(key, []), *value]:
@@ -135,51 +141,29 @@ def make_context(mode: str, thread_id: str, **flags: Any) -> RunContext:
         boxes = {role: GuardedToolbox(role, ledger, thread_id, defenses_enabled=def_on) for role in C2_ROLES}
         boxes["primary"] = boxes["reporter_critic"]
         return RunContext(
-            mode=mode,
-            policy=policy,
-            ledger=ledger,
-            boxes=boxes,
-            label="auditguard-c2",
-            role="c2_supervisor",
-            strong=True,
-            parallel=True,
-            **flags,
+            mode=mode, policy=policy, ledger=ledger, boxes=boxes,
+            label="auditguard-c2", role="c2_supervisor", strong=True, parallel=True, **flags,
         )
     if mode == "c0_fixed":
         box = GuardedToolbox("c0_fixed", ledger, thread_id, defenses_enabled=def_on)
         flags.setdefault("allow_llm", False)
         flags.setdefault("llm_mode", "offline")
         return RunContext(
-            mode=mode,
-            policy=policy,
-            ledger=ledger,
-            boxes={"primary": box},
-            label="auditguard-c0-fixed",
-            role="c1_investigator",
-            **flags,
+            mode=mode, policy=policy, ledger=ledger, boxes={"primary": box},
+            label="auditguard-c0-fixed", role="c1_investigator", **flags,
         )
     if mode == "rule_engine":
         box = GuardedToolbox("rule_engine", ledger, thread_id, defenses_enabled=def_on)
         flags["allow_llm"] = False
         flags["llm_mode"] = "offline"
         return RunContext(
-            mode=mode,
-            policy=policy,
-            ledger=ledger,
-            boxes={"primary": box},
-            label="auditguard-rule-engine",
-            role="c1_investigator",
-            **flags,
+            mode=mode, policy=policy, ledger=ledger, boxes={"primary": box},
+            label="auditguard-rule-engine", role="c1_investigator", **flags,
         )
     box = GuardedToolbox("c1_single", ledger, thread_id, defenses_enabled=def_on)
     return RunContext(
-        mode=mode,
-        policy=policy,
-        ledger=ledger,
-        boxes={"primary": box},
-        label="auditguard-c1",
-        role="c1_investigator",
-        **flags,
+        mode=mode, policy=policy, ledger=ledger, boxes={"primary": box},
+        label="auditguard-c1", role="c1_investigator", **flags,
     )
 
 
@@ -438,30 +422,42 @@ def _resolve_llm_client(ctx: RunContext) -> Optional[LLMClientProtocol]:
 def build_llm_c1_graph(
     ctx: RunContext, thread_id: str, llm_client: LLMClientProtocol
 ) -> StateGraph[Any, Any, Any, Any]:
-    """Single-agent LLM ReAct tool-calling loop wrapped with `human_gate(interrupt)` and `commit_disposition`."""
+    """Single-agent LLM ReAct loop + hypothesis/claim evaluation + `human_gate(interrupt)` + commit."""
     graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
 
     async def _loop_node(state: InvestigationState, c: RunContext) -> dict[str, Any]:
         return await run_c1_agent_loop(state, c, llm_client)
 
     graph.add_node("agent_loop", _wrap("agent_loop", _loop_node, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_node(
+        "hypothesis_evaluation", _wrap("hypothesis_evaluation", hypothesis_evaluation_node, ctx, thread_id)
+    )  # type: ignore[call-overload]
     graph.add_edge(START, "agent_loop")
-    _attach_gate_and_commit(graph, ctx, "agent_loop")
+    graph.add_edge("agent_loop", "hypothesis_evaluation")
+    _attach_gate_and_commit(graph, ctx, "hypothesis_evaluation")
     return graph
 
 
 def build_llm_c2_graph(
     ctx: RunContext, thread_id: str, llm_client: LLMClientProtocol
 ) -> StateGraph[Any, Any, Any, Any]:
-    """Supervisor + 4 RBAC Specialist LLMs wrapped with `human_gate(interrupt)` and `commit_disposition`."""
+    """Multi-stage durably checkpointed C2 Supervisor + 4 RBAC Specialist LLMs with `human_gate(interrupt)`."""
     graph: StateGraph[Any, Any, Any, Any] = StateGraph(GState)
-
-    async def _team_node(state: InvestigationState, c: RunContext) -> dict[str, Any]:
-        return await run_c2_agent_team(state, c, llm_client)
-
-    graph.add_node("c2_agent_team", _wrap("c2_agent_team", _team_node, ctx, thread_id))  # type: ignore[call-overload]
-    graph.add_edge(START, "c2_agent_team")
-    _attach_gate_and_commit(graph, ctx, "c2_agent_team")
+    stages = make_c2_stage_nodes(llm_client)
+    for name, fn in stages.items():
+        graph.add_node(name, _wrap(name, fn, ctx, thread_id))  # type: ignore[call-overload]
+    graph.add_edge(START, "supervisor_plan")
+    graph.add_edge("supervisor_plan", "flow_tracer")
+    graph.add_edge("flow_tracer", "parallel_specialists")
+    graph.add_edge("parallel_specialists", "hypothesis_evaluation")
+    graph.add_edge("hypothesis_evaluation", "supervisor_replan_check")
+    graph.add_conditional_edges(
+        "supervisor_replan_check",
+        lambda gs: route_c2_after_replan_check(as_state(gs["inv"])),
+        {"flow_replan": "flow_replan", "reporter_critic": "reporter_critic"},
+    )
+    graph.add_edge("flow_replan", "hypothesis_evaluation")
+    _attach_gate_and_commit(graph, ctx, "reporter_critic")
     return graph
 
 
@@ -489,23 +485,11 @@ def _is_paused(snapshot: Any) -> bool:
     return bool(snapshot.values) and any(getattr(t, "interrupts", None) for t in snapshot.tasks)
 
 
-_MULTI_NODE_STAGES = frozenset(
-    {
-        "plan",
-        "gather_evidence",
-        "form_hypotheses",
-        "critique",
-        "replan",
-        "draft",
-        "supervisor_plan",
-        "flow_tracer",
-        "parallel_specialists",
-        "supervisor_hypotheses",
-        "supervisor_critique",
-        "supervisor_replan",
-        "reporter_critic",
-    }
-)
+_MULTI_NODE_STAGES = frozenset({
+    "plan", "gather_evidence", "form_hypotheses", "critique", "replan", "draft",
+    "supervisor_plan", "flow_tracer", "parallel_specialists", "supervisor_hypotheses",
+    "supervisor_critique", "supervisor_replan", "reporter_critic",
+})
 
 
 async def run_graph(

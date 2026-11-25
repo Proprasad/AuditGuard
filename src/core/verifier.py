@@ -23,6 +23,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict
 
 from src.core.canonical import CENT, NumericError, canonical_sha256, to_confidence, to_decimal, to_money
+from src.core.claims import check_evidence_case_ownership
 from src.core.verifier_patterns import (
     CITATION_FORMAT,
     CLAUSE_ID_PREFIXES,
@@ -342,11 +343,59 @@ def _referenced_ids(ws: Mapping[str, Any]) -> Iterable[tuple[str, str]]:
                 yield f"hypotheses[{i}]", str(ref)
 
 
+def _verifier_known_accounts(ws: Mapping[str, Any], registry: Mapping[str, Any], alert_id: str) -> set[str]:
+    known: set[str] = set()
+    for path in ws.get("candidate_paths", []):
+        if isinstance(path, Mapping):
+            known.update(str(n) for n in (path.get("nodes") or []) if n)
+    for k, rec in registry.items():
+        if not isinstance(rec, Mapping):
+            continue
+        rec_alert = str(rec.get("alert_id") or "").strip()
+        if alert_id and rec_alert and rec_alert != alert_id:
+            continue
+        for ak in ("account_id", "sender_account", "receiver_account"):
+            if rec.get(ak):
+                known.add(str(rec[ak]))
+        if str(k).startswith("PATH-"):
+            known.update(str(n) for n in (rec.get("nodes") or []) if n)
+    return known
+
+
+def _check_claims_grounding(
+    ws: Mapping[str, Any], registry: Mapping[str, Any], alert_id: str, known: set[str], fail: _FailFn
+) -> None:
+    for i, claim in enumerate(ws.get("claims") or []):
+        if not isinstance(claim, Mapping):
+            continue
+        c_ids = [str(x) for x in (claim.get("evidence_ids") or []) if x]
+        if not c_ids:
+            fail("claims_grounded", "UNGROUNDED_CLAIM", f"claims[{i}]", "material claim carries zero evidence IDs")
+            continue
+        for cid in c_ids:
+            if cid not in registry:
+                fail("claims_grounded", "UNGROUNDED_CLAIM", f"claims[{i}]", f"{cid!r} not in evidence_registry")
+                continue
+            owned, reason = check_evidence_case_ownership(cid, registry[cid], alert_id=alert_id, known_accounts=known)
+            if not owned:
+                fail("evidence_case_ownership", "WRONG_CASE_EVIDENCE", f"claims[{i}]", reason)
+                fail("claims_grounded", "WRONG_CASE_EVIDENCE", f"claims[{i}]", reason)
+
+
 def _check_evidence_registration(ws: Mapping[str, Any], registry: Mapping[str, Any], fail: _FailFn) -> None:
+    alert_id = str(ws.get("alert_id") or "").strip()
+    known_accounts = _verifier_known_accounts(ws, registry, alert_id)
     for field, ref in _referenced_ids(ws):
         if ref not in registry:
             fail("evidence_ids_registered", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
             fail("evidence_ids_resolved", "UNRESOLVED_EVIDENCE_ID", field, f"{ref!r} not in evidence_registry")
+            continue
+        owned, reason = check_evidence_case_ownership(
+            ref, registry[ref], alert_id=alert_id, known_accounts=known_accounts
+        )
+        if not owned:
+            fail("evidence_case_ownership", "WRONG_CASE_EVIDENCE", field, reason)
+    _check_claims_grounding(ws, registry, alert_id, known_accounts, fail)
 
     non_clause_ids = [k for k in registry if not str(k).startswith(CLAUSE_ID_PREFIXES)]
     exempt_degraded = bool(ws.get("degraded_evidence")) and str(ws.get("recommended_disposition")) == "request_info"
@@ -440,6 +489,8 @@ def verify_worksheet(
         "citations_relevant",
         "evidence_ids_registered",
         "evidence_ids_resolved",
+        "evidence_case_ownership",
+        "claims_grounded",
         "both_hypotheses_present",
         "missing_evidence_stated",
     ):

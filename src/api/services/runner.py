@@ -113,8 +113,9 @@ def _node_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, An
                 },
             )
         ]
-    if node in ("form_hypotheses", "supervisor_hypotheses"):
+    if node in ("form_hypotheses", "supervisor_hypotheses", "hypothesis_evaluation"):
         hyps = [{"label": h["label"], "confidence": h["confidence"]} for h in inv.get("active_hypotheses", [])]
+        ha = inv.get("hypothesis_assessment") or {}
         return [
             (
                 "hypotheses_scored",
@@ -122,11 +123,12 @@ def _node_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, An
                     "category": "reasoning",
                     "reasoning_mode": inv.get("reasoning_mode"),
                     "hypotheses": hyps,
-                    "message": f"Scored competing hypotheses ({inv.get('reasoning_mode')})",
+                    "overall_outcome": ha.get("overall_outcome"),
+                    "message": f"Evaluated competing hypotheses ({inv.get('reasoning_mode')})",
                 },
             )
         ]
-    if node in ("replan", "supervisor_replan"):
+    if node in ("replan", "supervisor_replan", "flow_replan"):
         return [
             (
                 "replan_triggered",
