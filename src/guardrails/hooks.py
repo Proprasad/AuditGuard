@@ -2,11 +2,13 @@
 Pre-Tool & Post-Tool Enforcement Hooks
 - Pre-tool: RBAC allow-list, policy-bound validation (from PolicyConfig), BudgetLedger enforcement
 - Post-tool: PII scrubber, <untrusted_data> tagging, structured audit logging
+- LLM boundary: every non-internal tool result reaches an LLM inside one escaped <untrusted_data> envelope
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -14,7 +16,12 @@ from pydantic import BaseModel
 
 from src.config import get_policy
 from src.core.policy import BudgetLedger
-from src.guardrails.guardrails import mask_pii, matched_injection_patterns, wrap_untrusted_data
+from src.guardrails.guardrails import (
+    mask_pii,
+    matched_injection_patterns,
+    unwrap_untrusted_data,
+    wrap_untrusted_data,
+)
 
 # Per-agent RBAC tool allow-lists (enforced at the execution layer, never by prompt text)
 AGENT_TOOL_ALLOWLIST: dict[str, set[str]] = {
@@ -104,6 +111,14 @@ UNTRUSTED_TEXT_FIELDS = {
 # Curated internal regulatory corpus: still escaped/wrapped, but not injection-screened (SOP text quotes the attack
 # phrases).
 TRUSTED_CORPUS_TOOLS = {"search_regulations", "get_clause_by_id"}
+# Echoes of the agent's own drafted worksheet (not external data): never screened, or a legitimate rationale such as
+# "close as benign" would be withheld from the persisted worksheet.
+OWN_OUTPUT_TOOLS = {"draft_disposition_report", "submit_case_disposition"}
+# Agent-internal tools whose results AuditGuard computes itself (Decimal `calc`, `finish` validation feedback).
+# Every other tool result (MCP data, graph outputs, retrieved corpus text, error envelopes, and any tool added later)
+# reaches the LLM inside one escaped <untrusted_data> envelope: deny-by-default (audit AG-15).
+INTERNAL_RESULT_TOOLS = frozenset({"calc", "finish"})
+_ENVELOPE_PREFIX = '<untrusted_data source="tool:'
 
 
 class HookDecision(BaseModel):
@@ -183,33 +198,30 @@ def post_tool_hook(
        the enclosing record is flagged (`injection_flagged`) and the detection is appended to `flags`
     """
     detections = flags if flags is not None else []
-    trusted_corpus = tool_name in TRUSTED_CORPUS_TOOLS
+    screen_external = tool_name not in TRUSTED_CORPUS_TOOLS and tool_name not in OWN_OUTPUT_TOOLS
+
+    def withhold(value: str, ident: str, key: str, patterns: list[str]) -> str:
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+        source = f"{ident}.{key}"
+        detections.append(
+            {"tool": tool_name, "source": source, "field": key, "patterns": patterns, "content_sha256": digest}
+        )
+        return wrap_untrusted_data(f"[WITHHELD: possible prompt-injection sha256:{digest}]", f"{ident}.{key}")
 
     def sanitize_dict(container: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
         ident = _identifier(container, tool_name)
         flagged = False
         for key, value in container.items():
-            if isinstance(value, str) and key in UNTRUSTED_TEXT_FIELDS:
-                patterns = [] if trusted_corpus else matched_injection_patterns(value, external=True)
-                if patterns:
-                    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
-                    detections.append(
-                        {
-                            "tool": tool_name,
-                            "source": f"{ident}.{key}",
-                            "field": key,
-                            "patterns": patterns,
-                            "content_sha256": digest,
-                        }
-                    )
-                    out[key] = wrap_untrusted_data(
-                        f"[WITHHELD: possible prompt-injection sha256:{digest}]", f"{ident}.{key}"
-                    )
-                    flagged = True
-                else:
-                    scrubbed, _ = mask_pii(value)
-                    out[key] = wrap_untrusted_data(scrubbed, f"{ident}.{key}")
+            # Every external string is screened; only the listed free-text fields are wrapped. Clean unlisted
+            # values stay byte-identical (PII-masked only), so deny-by-default wrapping can follow separately.
+            screen = screen_external and isinstance(value, str)
+            patterns = matched_injection_patterns(value, external=True) if screen else []
+            if patterns:
+                out[key] = withhold(value, ident, key, patterns)
+                flagged = True
+            elif isinstance(value, str) and key in UNTRUSTED_TEXT_FIELDS:
+                out[key] = wrap_untrusted_data(mask_pii(value)[0], f"{ident}.{key}")
             else:
                 out[key] = sanitize(value)
         if flagged:
@@ -222,7 +234,8 @@ def post_tool_hook(
         if isinstance(obj, list):
             return [sanitize(item) for item in obj]
         if isinstance(obj, str):
-            return mask_pii(obj)[0]
+            patterns = matched_injection_patterns(obj, external=True) if screen_external else []
+            return withhold(obj, tool_name, "list_item", patterns) if patterns else mask_pii(obj)[0]
         return obj
 
     sanitized = sanitize(result)
@@ -235,3 +248,35 @@ def post_tool_hook(
             }
         )
     return sanitized
+
+
+def _flatten_field_wrappers(obj: Any) -> Any:
+    """Drop field-level wrappers (and their escaping) so the single envelope escapes each value exactly once."""
+    if isinstance(obj, dict):
+        return {key: _flatten_field_wrappers(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_flatten_field_wrappers(item) for item in obj]
+    if isinstance(obj, str):
+        return unwrap_untrusted_data(obj)
+    return obj
+
+
+def llm_tool_content(tool_name: str, result: Any, *, defenses_enabled: bool = True) -> str:
+    """
+    Serialise a tool result for an LLM `tool` message.
+
+    With defences on, everything except `INTERNAL_RESULT_TOOLS` is wrapped as one
+    `<untrusted_data source="tool:<name>">` envelope whose payload is XML-escaped, so no field (listed or not)
+    can close the envelope or smuggle tags. Agent state keeps its structured values; only the LLM copy changes.
+    """
+    if not defenses_enabled or tool_name in INTERNAL_RESULT_TOOLS:
+        return json.dumps(result, sort_keys=True, default=str)
+    payload = json.dumps(_flatten_field_wrappers(result), sort_keys=True, default=str)
+    return wrap_untrusted_data(payload, f"tool:{tool_name}")
+
+
+def decode_llm_tool_content(content: str) -> Any:
+    """Inverse of `llm_tool_content`, for tests and transcript tooling."""
+    if content.startswith(_ENVELOPE_PREFIX):
+        return json.loads(unwrap_untrusted_data(content))
+    return json.loads(content)

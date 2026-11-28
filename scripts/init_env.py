@@ -25,6 +25,7 @@ GENERATED = {
     "ANALYST_PASSWORD": lambda: secrets.token_urlsafe(18),
     "REVIEWER_PASSWORD": lambda: secrets.token_urlsafe(18),
     "ADMIN_PASSWORD": lambda: secrets.token_urlsafe(18),
+    "CHAINLIT_AUTH_SECRET": lambda: secrets.token_urlsafe(48),
 }
 DEFAULTS = {"APP_ENV": "development"}
 PLACEHOLDER = re.compile(r"(change[-_]?me|placeholder|^$)", re.IGNORECASE)

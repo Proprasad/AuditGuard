@@ -8,11 +8,11 @@ Every quantitative value in this report was generated programmatically by `pytho
 
 | Artifact | Path | SHA-256 (prefix) |
 |---|---|---|
-| E1 Deterministic Held-Out (120 + 30 challenge) | `eval/replay_bundle/e1_held_out_det_summary.json` | `e5f6386cda183736` |
-| E1 Offline Replay Smoke (10 dev, all 4 modes) | `eval/replay_bundle/e1_smoke_summary.json` | `e89db7992bc38c34` |
-| E2 Red-Team v2 Security Suite | `eval/replay_bundle/e2_security_summary.json` | `157cbd8ca29bcb87` |
-| Retrieval v2 Benchmark (110 queries) | `eval/replay_bundle/retrieval_v2_summary.json` | `befd75d3d6199a10` |
-| Phase 4 Judge Calibration Status | `eval/replay_bundle/calibration_status.json` | `08199f5feef41c23` |
+| E1 Deterministic Held-Out (120 + 30 challenge) | `eval/replay_bundle/e1_held_out_det_summary.json` | `e48532e5d9517ee6` |
+| E1 Offline Replay Smoke (10 dev, all 4 modes) | `eval/replay_bundle/e1_smoke_summary.json` | `a0731d99c8cd5ee3` |
+| E2 Red-Team v2 Security Suite | `eval/replay_bundle/e2_security_summary.json` | `1abd2d9d9c514a5b` |
+| Retrieval v2 Benchmark (110 queries) | `eval/replay_bundle/retrieval_v2_summary.json` | `8c03f05f23c58c52` |
+| Phase 4 Judge Calibration Status | `eval/replay_bundle/calibration_status.json` | `300e12d909b14420` |
 
 ## AuditGuard Experiment `E1_HELD_OUT_DET` Report
 
@@ -31,8 +31,8 @@ Every quantitative value in this report was generated programmatically by `pytho
 
 | Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
 |---|---:|---:|---:|---:|---|---|---|---:|
-| `c0_fixed` | 0.0% | 0.0% | 0.00% | 92.5% | \$0.0000 / \$0.0000 | 2.05s / 3.11s | 12.0 / 12.0 | 0.14% |
-| `rule_engine` | 80.3% | 95.5% | 0.99% | 100.0% | \$0.0000 / \$0.0000 | 3.61s / 4.38s | 15.0 / 15.0 | 0.23% |
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 92.5% | \$0.0000 / \$0.0000 | 0.23s / 0.27s | 12.0 / 12.0 | 0.14% |
+| `rule_engine` | 80.3% | 95.5% | 0.99% | 100.0% | \$0.0000 / \$0.0000 | 0.43s / 0.50s | 15.0 / 15.0 | 0.23% |
 
 ### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
 
@@ -77,18 +77,18 @@ Every quantitative value in this report was generated programmatically by `pytho
 | Configuration | Type | Accuracy (95% CI) | Macro-F1 | Weighted Error Cost (95% CI) | False-Close Rate (95% CI) | Evidence Recall | Evidence Precision |
 |---|---|---|---:|---|---|---:|---:|
 | `c0_fixed` | `deterministic` | 30.0% [10.8%, 60.3%] | 0.262 | 3.8000 [0.9091, 7.0000] | 60.0% [23.1%, 88.2%] | 8.9% | 45.0% |
-| `c1_single` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 19.3% | 56.1% |
-| `c2_multi` | `replay` | 30.0% [10.8%, 60.3%] | 0.229 | 1.2000 [0.5455, 1.8182] | 0.0% [0.0%, 43.4%] | 11.7% | 46.3% |
+| `c1_single` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 25.2% | 57.9% |
+| `c2_multi` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 6.7% | 44.3% |
 | `rule_engine` | `deterministic` | 80.0% [49.0%, 94.3%] | 0.785 | 0.4000 [0.0000, 1.0000] | 0.0% [0.0%, 43.4%] | 21.4% | 98.6% |
 
 ### 2. Replanning, Verification & Resource Percentiles (`p50` / `p95`)
 
 | Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
 |---|---:|---:|---:|---:|---|---|---|---:|
-| `c0_fixed` | 0.0% | 0.0% | 0.00% | 90.0% | \$0.0000 / \$0.0000 | 5.02s / 16.35s | 12.0 / 12.0 | 0.00% |
-| `c1_single` | 20.0% | 0.0% | 0.00% | 70.0% | \$0.0317 / \$0.0472 | 3.65s / 4.33s | 15.0 / 15.0 | 10.74% |
-| `c2_multi` | 20.0% | 100.0% | 0.00% | 100.0% | \$0.0308 / \$0.0354 | 2.81s / 4.26s | 12.5 / 14.6 | 20.47% |
-| `rule_engine` | 80.0% | 80.0% | 0.00% | 100.0% | \$0.0000 / \$0.0000 | 4.06s / 4.78s | 15.0 / 15.0 | 0.00% |
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 90.0% | \$0.0000 / \$0.0000 | 0.25s / 1.02s | 12.0 / 12.0 | 0.00% |
+| `c1_single` | 20.0% | 0.0% | 2.90% | 40.0% | \$0.0259 / \$0.0407 | 0.29s / 0.34s | 15.0 / 15.0 | 13.77% |
+| `c2_multi` | 20.0% | 100.0% | 0.00% | 100.0% | \$0.0349 / \$0.0381 | 0.40s / 0.50s | 12.0 / 13.0 | 35.29% |
+| `rule_engine` | 80.0% | 80.0% | 0.00% | 100.0% | \$0.0000 / \$0.0000 | 0.42s / 0.48s | 15.0 / 15.0 | 0.00% |
 
 ### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
 
@@ -98,10 +98,10 @@ Every quantitative value in this report was generated programmatically by `pytho
 |---|---|---|---:|---|---|---:|
 | `c0_fixed vs rule_engine` | -0.5000 [-0.8750, -0.1250] | `b_outperforms_a` | 0.0625 | +3.4000 [+0.4000, +6.7273] | `b_outperforms_a` | +0.735 |
 | `c0_fixed vs c1_single` | +0.0000 [-0.3000, +0.3000] | `inconclusive_ci_includes_zero` | 1.0000 | +2.4000 [-0.4444, +5.2727] | `inconclusive_ci_includes_zero` | +0.545 |
-| `c0_fixed vs c2_multi` | +0.0000 [-0.3000, +0.3000] | `inconclusive_ci_includes_zero` | 1.0000 | +2.6000 [-0.1111, +5.4545] | `inconclusive_ci_includes_zero` | +0.612 |
+| `c0_fixed vs c2_multi` | +0.0000 [-0.3000, +0.3000] | `inconclusive_ci_includes_zero` | 1.0000 | +2.4000 [-0.4444, +5.2727] | `inconclusive_ci_includes_zero` | +0.545 |
 | `rule_engine vs c1_single` | +0.5000 [+0.1250, +0.8750] | `a_outperforms_b` | 0.0625 | -1.0000 [-1.7500, -0.2500] | `a_outperforms_b` | -0.949 |
-| `rule_engine vs c2_multi` | +0.5000 [+0.1250, +0.8750] | `a_outperforms_b` | 0.0625 | -0.8000 [-1.4545, -0.1818] | `a_outperforms_b` | -0.871 |
-| `c1_single vs c2_multi` | +0.0000 [+0.0000, +0.0000] | `inconclusive_ci_includes_zero` | 1.0000 | +0.2000 [+0.0000, +0.5000] | `inconclusive_ci_includes_zero` | +0.474 |
+| `rule_engine vs c2_multi` | +0.5000 [+0.1250, +0.8750] | `a_outperforms_b` | 0.0625 | -1.0000 [-1.7500, -0.2500] | `a_outperforms_b` | -0.949 |
+| `c1_single vs c2_multi` | +0.0000 [+0.0000, +0.0000] | `inconclusive_ci_includes_zero` | 1.0000 | +0.0000 [+0.0000, +0.0000] | `inconclusive_ci_includes_zero` | +0.000 |
 
 ### 4. Anti-Shortcut Reference Baselines (`eval/shortcuts.py`)
 
@@ -116,7 +116,7 @@ Every quantitative value in this report was generated programmatically by `pytho
 | Family | `c0_fixed` | `c1_single` | `c2_multi` | `rule_engine` |
 |---|---:|---:|---:|---:|
 | `ambiguous` | 66.7% / 3.33 | 100.0% / 0.00 | 100.0% / 0.00 | 100.0% / 0.00 |
-| `benign_lookalike` | 33.3% / 1.33 | 0.0% / 2.00 | 0.0% / 1.33 | 66.7% / 0.67 |
+| `benign_lookalike` | 33.3% / 1.33 | 0.0% / 2.00 | 0.0% / 2.00 | 66.7% / 0.67 |
 | `layering` | 0.0% / 2.00 | 0.0% / 2.00 | 0.0% / 2.00 | 100.0% / 0.00 |
 | `layering_benign_cover` | 0.0% / 7.33 | 0.0% / 2.00 | 0.0% / 2.00 | 66.7% / 0.67 |
 ## AuditGuard Experiment `E2` — Security Defenses Report
@@ -132,7 +132,7 @@ Every quantitative value in this report was generated programmatically by `pytho
 | `defenses_on` | 2.3% [0.8%, 6.5%] | 97.7% (129/132) | 0.0% [0.0%, 1.2%] (0/320) | 0 | 0 | 0.0% |
 ## Retrieval v2 Benchmark (All 4 Pipelines)
 
-- **Benchmark:** `eval\retrieval_bench_v2.jsonl` (`110` queries: `88` answerable, `22` unanswerable = `20.0%`)
+- **Benchmark:** `eval/retrieval_bench_v2.jsonl` (`110` queries: `88` answerable, `22` unanswerable = `20.0%`)
 - **Configured Default Pipeline:** `hybrid_rrf_rerank`
 - **Empirical Best Pipeline:** `hybrid_rrf_rerank`
 - **Default >= BM25 on Recall@1:** `True`

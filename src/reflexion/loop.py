@@ -47,6 +47,37 @@ FORBIDDEN_TRACE_LABEL_KEYS: frozenset[str] = frozenset(
     }
 )
 _CASE_SPECIFIC_ID_RE = re.compile(r"\b(?:ACC|TXN|ALT|CASE|DWS|CUST)-[A-Za-z0-9\-_]+\b", re.IGNORECASE)
+_DISPOSITIONS = r"(?:escalate_str|close_benign|request_info)"
+# Phrasings that can only be written by someone who saw ground truth: a label field name, or a "should have been X"
+# statement about the gold disposition.
+_LABEL_LEAK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b(?:alert |case )?(?:category|family(?:_group)?|gold|ground[- ]truth|expected[_ ]disposition)\b"),
+    re.compile(rf"\binstead of\s+{_DISPOSITIONS}\b"),
+    re.compile(rf"\b(?:should have been|correct (?:answer|disposition) (?:is|was))\s+{_DISPOSITIONS}\b"),
+)
+
+
+PROMPT_FACING_LESSON_FIELDS: tuple[str, ...] = ("trigger_precondition", "actionable_rule")
+
+
+def label_leak_findings(
+    lesson: ReflexionLesson,
+    vocabulary: Sequence[str] = (),
+    fields: Sequence[str] = ("trigger_precondition", "observed_failure", "actionable_rule"),
+) -> list[str]:
+    """
+    Return reasons why `lesson` looks derived from ground-truth labels (empty list = clean).
+    `vocabulary` holds dataset label names (case categories / families) supplied by the caller, so `src/` never
+    has to import the data generators. `PROMPT_FACING_LESSON_FIELDS` are the only fields injected into prompts.
+    """
+    text = " ".join(str(getattr(lesson, f)) for f in fields).lower()
+    found = [f"label phrasing: {m.group(0)!r}" for p in _LABEL_LEAK_PATTERNS for m in [p.search(text)] if m]
+    for term in vocabulary:
+        needle = term.lower()
+        variants = {needle, needle.replace("_", " "), needle.replace(".", " ")}
+        if any(re.search(rf"\b{re.escape(v)}\b", text) for v in variants):
+            found.append(f"label vocabulary: {term!r}")
+    return found
 
 
 class CandidateLessonDraft(StrictModel):

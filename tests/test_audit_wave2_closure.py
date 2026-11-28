@@ -46,7 +46,7 @@ from src.cli import app as cli_app
 from src.config import get_hmac_secret, get_policy, settings
 from src.core.verifier import verify_worksheet
 from src.db import case_repo
-from src.db.database import save_checkpoint
+from src.db.database import append_audit_log, save_checkpoint
 from src.db.postgres_backend import CompatRow, enforce_write_scope, translate_sql
 from src.guardrails.guardrails import GuardrailResult
 from src.guardrails.hooks import HookDecision
@@ -161,6 +161,8 @@ async def test_w2_01_case_actions_http_hmac_auth_server_verifier_and_interrupt_g
         thread_id="thr-no-interrupt",
     )
     tok = case_repo.issue_approval_token("thr-no-interrupt", draft["worksheet_id"])
+    # Maker-checker (AG-02) needs a recorded requester distinct from the approver to reach the interrupt check.
+    append_audit_log("thr-no-interrupt", case_repo.REQUESTED_EVENT, "analyst", {"alert_id": "ALT-2026-0412"})
     state_dict = {"evidence_registry": {"FIU-IND-RFI-BA-01": {"clause_id": "FIU-IND-RFI-BA-01"}}}
     save_checkpoint(
         thread_id="thr-no-interrupt",
@@ -461,6 +463,8 @@ async def test_w2_09_chainlit_ui_handlers(monkeypatch: pytest.MonkeyPatch) -> No
     stub_cl.Action = FakeAction
     stub_cl.on_chat_start = lambda fn: fn
     stub_cl.on_message = lambda fn: fn
+    stub_cl.password_auth_callback = lambda fn: fn
+    stub_cl.User = types.SimpleNamespace
     stub_cl.action_callback = lambda _name: (lambda fn: fn)
     monkeypatch.setitem(sys.modules, "chainlit", stub_cl)
     sys.modules.pop("src.ui.app", None)

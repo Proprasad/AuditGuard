@@ -24,8 +24,8 @@
       "trigger_precondition": "Alert category 'marketplace_payout' with ambiguous scatter-gather structure",
       "observed_failure": "Predicted request_info instead of close_benign",
       "actionable_rule": "Verify commercial registry (GST/80G/MCA) and counterparty history before escalating.",
-      "status": "approved",
-      "reviewer_rationale": "APPROVED via dev-split review: generalizable bounded parameter heuristic within PolicyConfig.",
+      "status": "rejected",
+      "reviewer_rationale": "REJECTED (audit AG-03, 2026-11-28): derived from ground-truth labels. The precondition cites the gold case category 'marketplace_payout' and the observed failure states the gold disposition ('instead of close_benign'); neither is observable to an investigator at run time.",
       "created_at": "2026-11-23T11:05:03.296354+00:00"
     },
     {

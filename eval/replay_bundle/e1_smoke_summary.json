@@ -101,12 +101,12 @@
       },
       "error_cost_bootstrap": {
         "ci_excludes_zero": false,
-        "ci_high": 5.454545,
-        "ci_low": -0.111111,
-        "cohens_d": 0.6121,
-        "diff_a_minus_b": 2.6,
+        "ci_high": 5.272727,
+        "ci_low": -0.444444,
+        "cohens_d": 0.5452,
+        "diff_a_minus_b": 2.4,
         "mean_a": 3.8,
-        "mean_b": 1.2,
+        "mean_b": 1.4,
         "n_cases": 10,
         "n_clusters": 8,
         "verdict": "inconclusive_ci_includes_zero"
@@ -177,12 +177,12 @@
       },
       "error_cost_bootstrap": {
         "ci_excludes_zero": true,
-        "ci_high": -0.181818,
-        "ci_low": -1.454545,
-        "cohens_d": -0.8706,
-        "diff_a_minus_b": -0.8,
+        "ci_high": -0.25,
+        "ci_low": -1.75,
+        "cohens_d": -0.9487,
+        "diff_a_minus_b": -1.0,
         "mean_a": 0.4,
-        "mean_b": 1.2,
+        "mean_b": 1.4,
         "n_cases": 10,
         "n_clusters": 8,
         "verdict": "a_outperforms_b"
@@ -215,12 +215,12 @@
       },
       "error_cost_bootstrap": {
         "ci_excludes_zero": false,
-        "ci_high": 0.5,
+        "ci_high": 0.0,
         "ci_low": 0.0,
-        "cohens_d": 0.4743,
-        "diff_a_minus_b": 0.2,
+        "cohens_d": 0.0,
+        "diff_a_minus_b": 0.0,
         "mean_a": 1.4,
-        "mean_b": 1.2,
+        "mean_b": 1.4,
         "n_cases": 10,
         "n_clusters": 8,
         "verdict": "inconclusive_ci_includes_zero"
@@ -293,7 +293,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 13.75990229996387,
+          "latency_seconds": 0.9571281659882516,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -336,7 +336,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 10.928807299991604,
+          "latency_seconds": 0.9575380829628557,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -380,7 +380,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 13.322278700012248,
+          "latency_seconds": 0.9612552089965902,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -423,7 +423,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 18.46332199999597,
+          "latency_seconds": 1.0667374579934403,
           "math_verified": false,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -466,7 +466,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 3.9843168000224978,
+          "latency_seconds": 0.23378004104597494,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -509,7 +509,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 4.792205100005958,
+          "latency_seconds": 0.24632274999748915,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -552,7 +552,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 5.241645899950527,
+          "latency_seconds": 0.25154208397725597,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -595,7 +595,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 4.12503180000931,
+          "latency_seconds": 0.19637070799944922,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -639,7 +639,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 1.2170756999985315,
+          "latency_seconds": 0.15025258396053687,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -682,7 +682,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 1.0140577999991365,
+          "latency_seconds": 0.13246645900653675,
           "math_verified": true,
           "mode": "c0_fixed",
           "replan_count": 0,
@@ -695,7 +695,7 @@
       ],
       "metrics": {
         "avg_cost_usd": 0.0,
-        "avg_latency_seconds": 7.684864,
+        "avg_latency_seconds": 0.515339,
         "avg_replans": 0.0,
         "avg_tokens": 0.0,
         "avg_tool_calls": 12.0,
@@ -748,9 +748,9 @@
             "n_clusters": 8
           },
           "latency_s": {
-            "ci_high": 11.514523,
-            "ci_low": 4.434484,
-            "mean": 7.684864,
+            "ci_high": 0.768225,
+            "ci_low": 0.289717,
+            "mean": 0.515339,
             "n": 10,
             "n_clusters": 8
           },
@@ -823,8 +823,8 @@
         "inr_error_count": 0,
         "inr_numbers_total": 12,
         "judge_scores": null,
-        "latency_s": 7.684864,
-        "latency_seconds": 7.684864,
+        "latency_s": 0.515339,
+        "latency_seconds": 0.515339,
         "macro_f1": 0.261905,
         "max_accuracy": 0.3,
         "mean_accuracy": 0.3,
@@ -967,8 +967,8 @@
             "p95": 0.0
           },
           "latency_s": {
-            "p50": 5.016925,
-            "p95": 16.346783
+            "p50": 0.248932,
+            "p95": 1.01927
           },
           "tokens": {
             "p50": 0.0,
@@ -1008,9 +1008,9 @@
           ],
           "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.050921,
+          "cost_usd": 0.03264,
           "disposition": "request_info",
-          "error": "verification_failed",
+          "error": null,
           "evidence_precision": 0.3333333333333333,
           "evidence_recall": 0.015625,
           "expected": "close_benign",
@@ -1018,15 +1018,15 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 4.64418060000753,
-          "math_verified": false,
+          "latency_seconds": 0.27332787500927225,
+          "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 157747,
-          "tool_calls": 15,
-          "tool_errors": 4
+          "tokens_used": 112751,
+          "tool_calls": 11,
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1034,40 +1034,35 @@
           ],
           "actual": "request_info",
           "case_id": "CASE-V2-0002",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "FIU-IND-RFI-BA-01",
-            "FIU-IND-RFI-BA-02",
-            "FIU-IND-RFI-BA-18"
-          ],
+          "citation_validity_rate": 0.0,
+          "citations": [],
           "cited_evidence_ids": [
             "KYC-ACC-D0002-IN01",
             "KYC-ACC-D0002-IN02",
             "KYC-ACC-D0002-RT00",
-            "REGISTRY-NONE",
             "TXN-D0002-004"
           ],
           "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.021987,
+          "cost_usd": 0.044471,
           "disposition": "request_info",
-          "error": "verification_failed",
-          "evidence_precision": 0.4,
+          "error": null,
+          "evidence_precision": 0.5,
           "evidence_recall": 0.05555555555555555,
           "expected": "close_benign",
-          "has_citations": true,
+          "has_citations": false,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 4,
-          "latency_seconds": 3.9352395000169054,
-          "math_verified": false,
+          "latency_seconds": 0.2576201669871807,
+          "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 52975,
-          "tool_calls": 15,
-          "tool_errors": 3
+          "tokens_used": 147404,
+          "tool_calls": 11,
+          "tool_errors": 1
         },
         {
           "acceptable_dispositions": [
@@ -1079,39 +1074,55 @@
           "citation_validity_rate": 1.0,
           "citations": [
             "FIU-IND-RFI-BA-01",
+            "FIU-IND-RFI-BA-02",
+            "PMLR-2005-R7-P05",
+            "RBI-KYC-2016-P16-P03",
             "FIU-IND-RFI-BA-09",
-            "FIU-IND-RFI-BA-08"
+            "RBI-PA-2020-C08-P05",
+            "SOP-SG-003",
+            "SOP-SG-004"
           ],
           "cited_evidence_ids": [
+            "CP-ACC-D0003-RT00-ACC-D0003-IN01",
+            "KYC-2016-P16-P03",
             "KYC-ACC-D0003-IN01",
             "KYC-ACC-D0003-IN02",
+            "KYC-ACC-D0003-IN03",
+            "KYC-ACC-D0003-IN05",
             "KYC-ACC-D0003-RT00",
-            "KYC-verified",
+            "REGISTRY-ACC-D0003-IN01",
+            "REGISTRY-ACC-D0003-IN02",
+            "REGISTRY-NONE-ACC-D0003-RT00",
             "TXN-D0003-001",
+            "TXN-D0003-002",
+            "TXN-D0003-003",
+            "TXN-D0003-004",
+            "TXN-D0003-005",
             "TXN-D0003-006",
-            "TXN-D0003-007"
+            "TXN-D0003-007",
+            "TXN-D0003-014"
           ],
-          "confidence": 0.4,
+          "confidence": 0.7,
           "correct": true,
-          "cost_usd": 0.038948,
+          "cost_usd": 0.012209,
           "disposition": "request_info",
-          "error": "verification_failed",
-          "evidence_precision": 0.5714285714285714,
-          "evidence_recall": 0.11764705882352941,
+          "error": null,
+          "evidence_precision": 0.5,
+          "evidence_recall": 0.2647058823529412,
           "expected": "request_info",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 12,
-          "latency_seconds": 3.632604699989315,
-          "math_verified": false,
+          "inr_numbers_total": 0,
+          "latency_seconds": 0.29921708401525393,
+          "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 110567,
+          "tokens_used": 25916,
           "tool_calls": 15,
-          "tool_errors": 1
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1119,19 +1130,22 @@
           ],
           "actual": "request_info",
           "case_id": "CASE-V2-0004",
-          "citation_validity_rate": 0.0,
-          "citations": [],
+          "citation_validity_rate": 1.0,
+          "citations": [
+            "FIU-IND-RFI-BA-01",
+            "FIU-IND-RFI-BA-02",
+            "PMLA-2002-S12AA-P01",
+            "FIU-IND-RFI-BA-08"
+          ],
           "cited_evidence_ids": [
             "KYC-ACC-D0004-DS01",
             "KYC-ACC-D0004-IN01",
             "KYC-ACC-D0004-IN02",
-            "KYC-ACC-D0004-RT00",
             "KYC-ACC-D0004-T201",
             "KYC-ACC-D0004-T202",
             "REGISTRY-ACC-D0004-DS01",
             "REGISTRY-ACC-D0004-IN01",
             "REGISTRY-ACC-D0004-IN02",
-            "REGISTRY-NONE-ACC-D0004-RT00",
             "REGISTRY-NONE-ACC-D0004-T201",
             "REGISTRY-NONE-ACC-D0004-T202",
             "TXN-D0004-001",
@@ -1144,25 +1158,25 @@
           ],
           "confidence": 0.62,
           "correct": false,
-          "cost_usd": 0.022108,
+          "cost_usd": 0.018772,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.42105263157894735,
-          "evidence_recall": 0.4,
+          "evidence_precision": 0.4117647058823529,
+          "evidence_recall": 0.35,
           "expected": "escalate_str",
-          "has_citations": false,
+          "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 3.825854700000491,
+          "latency_seconds": 0.3272692500031553,
           "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": false,
           "seed": 42,
-          "tokens_used": 51960,
+          "tokens_used": 41566,
           "tool_calls": 15,
-          "tool_errors": 1
+          "tool_errors": 3
         },
         {
           "acceptable_dispositions": [
@@ -1170,38 +1184,55 @@
           ],
           "actual": "request_info",
           "case_id": "CASE-V2-0005",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "FIU-IND-RFI-BA-02",
-            "FIU-IND-RFI-BA-09",
-            "FIU-IND-RFI-BA-05"
-          ],
+          "citation_validity_rate": 0.0,
+          "citations": [],
           "cited_evidence_ids": [
+            "CP-ACC-D0005-RT00-ACC-D0005-IN02",
+            "KYC-ACC-D0005-DS01",
+            "KYC-ACC-D0005-DS03",
             "KYC-ACC-D0005-IN01",
             "KYC-ACC-D0005-IN02",
-            "KYC-ACC-D0005-RT00"
+            "KYC-ACC-D0005-IN04",
+            "KYC-ACC-D0005-IN05",
+            "KYC-ACC-D0005-IN06",
+            "KYC-ACC-D0005-IN07",
+            "KYC-ACC-D0005-RT00",
+            "TXN-D0005-001",
+            "TXN-D0005-002",
+            "TXN-D0005-003",
+            "TXN-D0005-004",
+            "TXN-D0005-005",
+            "TXN-D0005-006",
+            "TXN-D0005-007",
+            "TXN-D0005-008",
+            "TXN-D0005-009",
+            "TXN-D0005-010",
+            "TXN-D0005-011",
+            "TXN-D0005-012",
+            "TXN-D0005-013",
+            "TXN-D0005-014"
           ],
-          "confidence": 0.4,
+          "confidence": 0.65,
           "correct": false,
-          "cost_usd": 0.030797,
+          "cost_usd": 0.025094,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.3333333333333333,
-          "evidence_recall": 0.04,
+          "evidence_precision": 0.625,
+          "evidence_recall": 0.6,
           "expected": "escalate_str",
-          "has_citations": true,
+          "has_citations": false,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 2.3641859000199474,
+          "latency_seconds": 0.32272316701710224,
           "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 66497,
+          "tokens_used": 55921,
           "tool_calls": 15,
-          "tool_errors": 2
+          "tool_errors": 3
         },
         {
           "acceptable_dispositions": [
@@ -1214,16 +1245,14 @@
           "cited_evidence_ids": [
             "KYC-ACC-D0006-DS01",
             "KYC-ACC-D0006-DS02",
-            "KYC-ACC-D0006-DS03",
-            "KYC-ACC-D0006-DS04",
             "KYC-ACC-D0006-IN01",
-            "KYC-ACC-D0006-IN02",
             "KYC-ACC-D0006-IN03",
             "KYC-ACC-D0006-IN04",
-            "KYC-ACC-D0006-IN05",
             "KYC-ACC-D0006-IN06",
             "KYC-ACC-D0006-IN07",
             "KYC-ACC-D0006-RT00",
+            "REGISTRY-ACC-D0006-IN01",
+            "REGISTRY-NONE-ACC-D0006-DS01",
             "TXN-D0006-001",
             "TXN-D0006-002",
             "TXN-D0006-003",
@@ -1238,25 +1267,25 @@
             "TXN-D0006-013",
             "TXN-D0006-014"
           ],
-          "confidence": 0.65,
+          "confidence": 0.55,
           "correct": false,
-          "cost_usd": 0.016525,
+          "cost_usd": 0.025476,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.56,
+          "evidence_precision": 0.6086956521739131,
           "evidence_recall": 0.24561403508771928,
           "expected": "escalate_str",
           "has_citations": false,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 3.6701282000285573,
+          "latency_seconds": 0.3354275419842452,
           "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 41291,
+          "tokens_used": 61991,
           "tool_calls": 15,
           "tool_errors": 2
         },
@@ -1267,54 +1296,41 @@
           ],
           "actual": "request_info",
           "case_id": "CASE-V2-0007",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "RBI-PA-2020-C08-P01",
-            "RBI-PA-2020-C08-P02",
-            "FIU-IND-RFI-BA-04",
-            "SOP-SG-003",
-            "RBI-PA-2020-C08-P03"
-          ],
+          "citation_validity_rate": 0.0,
+          "citations": [],
           "cited_evidence_ids": [
-            "CP-ACC-D0007-RT00-ACC-D0007-IN01",
             "KYC-ACC-D0007-IN01",
+            "KYC-ACC-D0007-IN02",
             "KYC-ACC-D0007-RT00",
-            "REGISTRY-ACC-D0007-IN01",
-            "REGISTRY-ACC-D0007-RT00",
             "TXN-D0007-001",
-            "TXN-D0007-002",
-            "TXN-D0007-003",
-            "TXN-D0007-004",
-            "TXN-D0007-009",
-            "TXN-D0007-011",
             "TXN-D0007-012",
             "TXN-D0007-013",
+            "TXN-D0007-014",
             "TXN-D0007-016",
-            "TXN-D0007-021",
-            "TXN-D0007-022",
-            "TXN-D0007-023"
+            "TXN-D0007-017",
+            "TXN-D0007-022"
           ],
-          "confidence": 0.6,
+          "confidence": 0.4,
           "correct": true,
-          "cost_usd": 0.042591,
+          "cost_usd": 0.026058,
           "disposition": "request_info",
-          "error": null,
-          "evidence_precision": 0.7647058823529411,
-          "evidence_recall": 0.4482758620689655,
+          "error": "verification_failed",
+          "evidence_precision": 0.8,
+          "evidence_recall": 0.27586206896551724,
           "expected": "escalate_str",
-          "has_citations": true,
+          "has_citations": false,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 3.8947928000125103,
-          "math_verified": true,
+          "latency_seconds": 0.3407994580338709,
+          "math_verified": false,
           "mode": "c1_single",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 135843,
+          "tokens_used": 63129,
           "tool_calls": 15,
-          "tool_errors": 1
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1326,8 +1342,8 @@
           "citation_validity_rate": 1.0,
           "citations": [
             "FIU-IND-RFI-BA-01",
-            "FIU-IND-RFI-BA-05",
-            "PMLA-2002-S3-P05"
+            "FIU-IND-RFI-BA-02",
+            "FIU-IND-RFI-BA-09"
           ],
           "cited_evidence_ids": [
             "KYC-ACC-D0008-IN01",
@@ -1340,25 +1356,25 @@
           ],
           "confidence": 0.4,
           "correct": true,
-          "cost_usd": 0.023608,
+          "cost_usd": 0.036074,
           "disposition": "request_info",
           "error": "verification_failed",
           "evidence_precision": 0.7142857142857143,
           "evidence_recall": 0.20833333333333334,
           "expected": "request_info",
           "has_citations": true,
-          "inr_arithmetic_error_rate": 0.0,
-          "inr_error_count": 0,
-          "inr_numbers_total": 12,
-          "latency_seconds": 2.8589795000152662,
+          "inr_arithmetic_error_rate": 0.14285714285714285,
+          "inr_error_count": 2,
+          "inr_numbers_total": 14,
+          "latency_seconds": 0.2894879999803379,
           "math_verified": false,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 51650,
+          "tokens_used": 96012,
           "tool_calls": 14,
-          "tool_errors": 0
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1366,16 +1382,22 @@
           ],
           "actual": "request_info",
           "case_id": "CASE-V2-0009",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "FIU-IND-RFI-BA-02",
-            "FIU-IND-RFI-BA-01",
-            "FIU-IND-RFI-BA-09"
-          ],
+          "citation_validity_rate": 0.0,
+          "citations": [],
           "cited_evidence_ids": [
             "KYC-ACC-D0009-IN01",
             "KYC-ACC-D0009-IN02",
+            "KYC-ACC-D0009-IN03",
+            "KYC-ACC-D0009-IN04",
             "KYC-ACC-D0009-RT00",
+            "REGISTRY-ACC-D0009-IN01",
+            "REGISTRY-ACC-D0009-IN02",
+            "REGISTRY-ACC-D0009-IN03",
+            "REGISTRY-ACC-D0009-IN04",
+            "REGISTRY-NONE-ACC-D0009-IN05",
+            "TXN-D0009-001",
+            "TXN-D0009-002",
+            "TXN-D0009-003",
             "TXN-D0009-033",
             "TXN-D0009-034",
             "TXN-D0009-035",
@@ -1383,27 +1405,27 @@
             "TXN-D0009-037",
             "TXN-D0009-038"
           ],
-          "confidence": 0.4,
+          "confidence": 0.67,
           "correct": false,
-          "cost_usd": 0.03258,
+          "cost_usd": 0.025816,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.7777777777777778,
-          "evidence_recall": 0.08974358974358974,
+          "evidence_precision": 0.5263157894736842,
+          "evidence_recall": 0.1282051282051282,
           "expected": "close_benign",
-          "has_citations": true,
+          "has_citations": false,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 1.8496653999900445,
+          "latency_seconds": 0.19856345799053088,
           "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 96579,
+          "tokens_used": 70598,
           "tool_calls": 15,
-          "tool_errors": 1
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1413,76 +1435,77 @@
           "case_id": "CASE-V2-0010",
           "citation_validity_rate": 1.0,
           "citations": [
-            "FIU-IND-RFI-BA-01",
-            "FIU-IND-RFI-BA-04",
-            "PMLR-2005-R8-P04",
-            "FATF-R10-P02",
-            "FIU-IND-RFI-BA-02",
-            "PMLA-2002-S12-P02",
-            "RBI-KYC-2016-P70-P01"
+            "RBI-KYC-2016-P64-P03",
+            "FIU-IND-RFI-BA-20",
+            "SOP-SG-002",
+            "PMLA-2002-S12A-P01",
+            "PMLA-2002-S12A-P03"
           ],
           "cited_evidence_ids": [
+            "KYC-2016-P64-P03",
             "KYC-ACC-D0010-DS01",
             "KYC-ACC-D0010-IN01",
             "KYC-ACC-D0010-IN02",
+            "KYC-ACC-D0010-IN03",
             "KYC-ACC-D0010-RT00",
-            "REGISTRY-ACC-D0010-DS01",
-            "REGISTRY-NONE-ACC-D0010-IN01",
             "TXN-D0010-001",
             "TXN-D0010-002",
             "TXN-D0010-003",
             "TXN-D0010-004",
             "TXN-D0010-005",
             "TXN-D0010-006",
-            "TXN-D0010-008",
-            "TXN-D0010-009",
+            "TXN-D0010-007",
             "TXN-D0010-010",
-            "TXN-D0010-026",
+            "TXN-D0010-013",
+            "TXN-D0010-018",
+            "TXN-D0010-025",
             "TXN-D0010-028",
-            "TXN-D0010-030",
-            "TXN-D0010-042"
+            "TXN-D0010-034",
+            "TXN-D0010-036",
+            "TXN-D0010-037",
+            "TXN-D0010-043"
           ],
-          "confidence": 0.64,
+          "confidence": 0.85,
           "correct": false,
-          "cost_usd": 0.035542,
+          "cost_usd": 0.027068,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.7368421052631579,
-          "evidence_recall": 0.3111111111111111,
+          "evidence_precision": 0.7727272727272727,
+          "evidence_recall": 0.37777777777777777,
           "expected": "escalate_str",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 13,
-          "latency_seconds": 1.468778199981898,
+          "inr_numbers_total": 15,
+          "latency_seconds": 0.1637521249940619,
           "math_verified": true,
           "mode": "c1_single",
           "replan_count": 0,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 109192,
-          "tool_calls": 15,
-          "tool_errors": 1
+          "tokens_used": 72205,
+          "tool_calls": 12,
+          "tool_errors": 0
         }
       ],
       "metrics": {
-        "avg_cost_usd": 0.031561,
-        "avg_latency_seconds": 3.214441,
+        "avg_cost_usd": 0.027368,
+        "avg_latency_seconds": 0.280819,
         "avg_replans": 0.1,
-        "avg_tokens": 87430.1,
-        "avg_tool_calls": 14.9,
+        "avg_tokens": 74749.3,
+        "avg_tool_calls": 13.8,
         "ci_95": {
           "citation_validity_rate": {
-            "ci_high": 0.916667,
-            "ci_low": 0.4,
-            "mean": 0.7,
+            "ci_high": 0.769231,
+            "ci_low": 0.083333,
+            "mean": 0.4,
             "n": 10,
             "n_clusters": 8
           },
           "cost_usd": {
-            "ci_high": 0.038504,
-            "ci_low": 0.02618,
-            "mean": 0.031561,
+            "ci_high": 0.032559,
+            "ci_low": 0.023965,
+            "mean": 0.027368,
             "n": 10,
             "n_clusters": 8
           },
@@ -1493,16 +1516,16 @@
             "n": 10
           },
           "evidence_precision": {
-            "ci_high": 0.672657,
-            "ci_low": 0.45283,
-            "mean": 0.561276,
+            "ci_high": 0.663917,
+            "ci_low": 0.483884,
+            "mean": 0.579212,
             "n": 10,
             "n_clusters": 8
           },
           "evidence_recall": {
-            "ci_high": 0.295549,
-            "ci_low": 0.112511,
-            "mean": 0.193191,
+            "ci_high": 0.342983,
+            "ci_low": 0.144189,
+            "mean": 0.252168,
             "n": 10,
             "n_clusters": 8
           },
@@ -1513,16 +1536,16 @@
             "n": 5
           },
           "inr_arithmetic_error_rate": {
-            "ci_high": 0.0,
+            "ci_high": 0.038961,
             "ci_low": 0.0,
-            "mean": 0.0,
+            "mean": 0.028986,
             "n": 10,
             "n_clusters": 8
           },
           "latency_s": {
-            "ci_high": 3.810776,
-            "ci_low": 2.572478,
-            "mean": 3.214441,
+            "ci_high": 0.31335,
+            "ci_low": 0.235053,
+            "mean": 0.280819,
             "n": 10,
             "n_clusters": 8
           },
@@ -1539,24 +1562,24 @@
             "n": 5
           },
           "tokens": {
-            "ci_high": 115075.184375,
-            "ci_low": 66272.352273,
-            "mean": 87430.1,
+            "ci_high": 98921.413889,
+            "ci_low": 58969.079798,
+            "mean": 74749.3,
             "n": 10,
             "n_clusters": 8
           },
           "tool_calls": {
-            "ci_high": 15.0,
-            "ci_low": 14.727273,
-            "mean": 14.9,
+            "ci_high": 14.71461,
+            "ci_low": 12.5,
+            "mean": 13.8,
             "n": 10,
             "n_clusters": 8
           },
           "tool_error_rate": {
-            "ci_high": 0.167315,
-            "ci_low": 0.067186,
-            "mean": 0.107383,
-            "n": 149
+            "ci_high": 0.205041,
+            "ci_low": 0.089946,
+            "mean": 0.137681,
+            "n": 138
           },
           "weighted_error_cost": {
             "ci_high": 2.0,
@@ -1566,7 +1589,7 @@
             "n_clusters": 8
           }
         },
-        "citation_validity_rate": 0.7,
+        "citation_validity_rate": 0.4,
         "confusion_matrix": {
           "close_benign": {
             "close_benign": 0,
@@ -1585,18 +1608,18 @@
           }
         },
         "correct": 3,
-        "cost_usd": 0.031561,
+        "cost_usd": 0.027368,
         "disposition_accuracy": 0.3,
-        "evidence_precision": 0.561276,
-        "evidence_recall": 0.193191,
+        "evidence_precision": 0.579212,
+        "evidence_recall": 0.252168,
         "execution_type": "replay",
         "false_close_rate": 0.0,
-        "inr_arithmetic_error_rate": 0.0,
-        "inr_error_count": 0,
-        "inr_numbers_total": 77,
+        "inr_arithmetic_error_rate": 0.028986,
+        "inr_error_count": 2,
+        "inr_numbers_total": 69,
         "judge_scores": null,
-        "latency_s": 3.214441,
-        "latency_seconds": 3.214441,
+        "latency_s": 0.280819,
+        "latency_seconds": 0.280819,
         "macro_f1": 0.153846,
         "max_accuracy": 0.3,
         "mean_accuracy": 0.3,
@@ -1609,7 +1632,7 @@
         },
         "per_difficulty": {
           "easy": {
-            "cost_usd": 0.021987,
+            "cost_usd": 0.044471,
             "disposition_accuracy": 0.0,
             "evidence_recall": 0.055556,
             "false_close_rate": 0.0,
@@ -1617,15 +1640,15 @@
             "weighted_error_cost": 2.0
           },
           "hard": {
-            "cost_usd": 0.030337,
+            "cost_usd": 0.024571,
             "disposition_accuracy": 0.375,
-            "evidence_recall": 0.232591,
+            "evidence_recall": 0.306312,
             "false_close_rate": 0.0,
             "n": 8,
             "weighted_error_cost": 1.25
           },
           "medium": {
-            "cost_usd": 0.050921,
+            "cost_usd": 0.03264,
             "disposition_accuracy": 0.0,
             "evidence_recall": 0.015625,
             "false_close_rate": 0.0,
@@ -1635,33 +1658,33 @@
         },
         "per_family": {
           "ambiguous": {
-            "cost_usd": 0.035049,
+            "cost_usd": 0.02478,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.258085,
+            "evidence_recall": 0.249634,
             "false_close_rate": 0.0,
             "n": 3,
             "weighted_error_cost": 0.0
           },
           "benign_lookalike": {
-            "cost_usd": 0.035163,
+            "cost_usd": 0.034309,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.053641,
+            "evidence_recall": 0.066462,
             "false_close_rate": 0.0,
             "n": 3,
             "weighted_error_cost": 2.0
           },
           "layering": {
-            "cost_usd": 0.022108,
+            "cost_usd": 0.018772,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.4,
+            "evidence_recall": 0.35,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover": {
-            "cost_usd": 0.027621,
+            "cost_usd": 0.025879,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.198908,
+            "evidence_recall": 0.407797,
             "false_close_rate": 0.0,
             "n": 3,
             "weighted_error_cost": 2.0
@@ -1669,23 +1692,23 @@
         },
         "per_subvariant": {
           "ambiguous.benign_root_unexplained_leg": {
-            "cost_usd": 0.042591,
+            "cost_usd": 0.026058,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.448276,
+            "evidence_recall": 0.275862,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 0.0
           },
           "ambiguous.benign_structure_high_risk_root": {
-            "cost_usd": 0.031278,
+            "cost_usd": 0.024141,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.16299,
+            "evidence_recall": 0.23652,
             "false_close_rate": 0.0,
             "n": 2,
             "weighted_error_cost": 0.0
           },
           "benign_lookalike.chit": {
-            "cost_usd": 0.050921,
+            "cost_usd": 0.03264,
             "disposition_accuracy": 0.0,
             "evidence_recall": 0.015625,
             "false_close_rate": 0.0,
@@ -1693,7 +1716,7 @@
             "weighted_error_cost": 2.0
           },
           "benign_lookalike.ngo": {
-            "cost_usd": 0.021987,
+            "cost_usd": 0.044471,
             "disposition_accuracy": 0.0,
             "evidence_recall": 0.055556,
             "false_close_rate": 0.0,
@@ -1701,33 +1724,33 @@
             "weighted_error_cost": 2.0
           },
           "benign_lookalike.unregistered_employer_12m_payroll": {
-            "cost_usd": 0.03258,
+            "cost_usd": 0.025816,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.089744,
+            "evidence_recall": 0.128205,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering.two_tier": {
-            "cost_usd": 0.022108,
+            "cost_usd": 0.018772,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.4,
+            "evidence_recall": 0.35,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover.decoy_memos": {
-            "cost_usd": 0.035542,
+            "cost_usd": 0.027068,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.311111,
+            "evidence_recall": 0.377778,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover.shell_valid_gst": {
-            "cost_usd": 0.023661,
+            "cost_usd": 0.025285,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.142807,
+            "evidence_recall": 0.422807,
             "false_close_rate": 0.0,
             "n": 2,
             "weighted_error_cost": 2.0
@@ -1735,16 +1758,16 @@
         },
         "percentiles": {
           "cost_usd": {
-            "p50": 0.031689,
-            "p95": 0.047172
+            "p50": 0.025937,
+            "p95": 0.040692
           },
           "latency_s": {
-            "p50": 3.651366,
-            "p95": 4.325157
+            "p50": 0.294353,
+            "p95": 0.338382
           },
           "tokens": {
-            "p50": 81538.0,
-            "p95": 147890.2
+            "p50": 66863.5,
+            "p95": 131810.15
           },
           "tool_calls": {
             "p50": 15.0,
@@ -1754,12 +1777,12 @@
         "repeats_executed": 1,
         "replan_recovery_rate": 0.2,
         "replanning_recovery_rate": 0.2,
-        "tokens": 87430.1,
-        "tool_calls": 14.9,
-        "tool_error_rate": 0.107383,
-        "tool_errors": 16,
+        "tokens": 74749.3,
+        "tool_calls": 13.8,
+        "tool_error_rate": 0.137681,
+        "tool_errors": 19,
         "total": 10,
-        "verified_rate": 0.6,
+        "verified_rate": 0.8,
         "weighted_error_cost": 1.4
       }
     },
@@ -1769,47 +1792,38 @@
           "acceptable_dispositions": [
             "close_benign"
           ],
-          "actual": "escalate_str",
+          "actual": "request_info",
           "case_id": "CASE-V2-0001",
           "citation_validity_rate": 1.0,
           "citations": [
             "FIU-IND-RFI-BA-03",
-            "FATF-R16-P05",
-            "PMLA-2002-S12-P02",
-            "PMLR-2005-R8-P01",
-            "PMLA-2002-S12-P01"
+            "PMLR-2005-R3-P05",
+            "FIU-IND-RFI-BA-01"
           ],
           "cited_evidence_ids": [
-            "CP-ACC-D0001-RT00-ACC-D0001-IN01",
-            "CP-ACC-D0001-RT00-ACC-D0001-IN02",
-            "KYC-ACC-D0001-IN01",
-            "KYC-ACC-D0001-IN02",
-            "KYC-ACC-D0001-RT00",
-            "TXN-D0001-001",
-            "TXN-D0001-002",
-            "TXN-D0001-003"
+            "KYC-ACC-D0001-RT00"
           ],
-          "confidence": 0.78,
+          "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.028602,
-          "disposition": "escalate_str",
+          "cost_usd": 0.032294,
+          "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.5,
-          "evidence_recall": 0.0625,
+          "evidence_precision": 1.0,
+          "evidence_recall": 0.015625,
           "expected": "close_benign",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 5,
-          "latency_seconds": 2.9073488999856636,
+          "inr_numbers_total": 0,
+          "latency_seconds": 0.48482616600813344,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 56574,
-          "tool_calls": 12,
-          "tool_errors": 1
+          "tokens_used": 65712,
+          "tool_calls": 13,
+          "tool_errors": 5
         },
         {
           "acceptable_dispositions": [
@@ -1819,41 +1833,34 @@
           "case_id": "CASE-V2-0002",
           "citation_validity_rate": 1.0,
           "citations": [
-            "FIU-IND-RFI-BA-01",
-            "PMLA-2002-S3-P03",
-            "PMLA-2002-S12-P01",
-            "PMLA-2002-S3-P05",
-            "PMLR-2005-R3-P03"
+            "FIU-IND-RFI-BA-03",
+            "PMLR-2005-R3-P05",
+            "PMLR-2005-R8-P01"
           ],
           "cited_evidence_ids": [
-            "CP-ACC-D0002-RT00-ACC-D0002-IN01",
-            "KYC-ACC-D0002-DS01",
-            "KYC-ACC-D0002-IN01",
-            "KYC-ACC-D0002-IN02",
-            "KYC-ACC-D0002-RT00",
-            "TXN-D0002-004"
+            "KYC-ACC-D0002-DS01"
           ],
-          "confidence": 0.58,
+          "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.020864,
+          "cost_usd": 0.035315,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.3333333333333333,
-          "evidence_recall": 0.05555555555555555,
+          "evidence_precision": 0.0,
+          "evidence_recall": 0.0,
           "expected": "close_benign",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 14,
-          "latency_seconds": 2.87100530002499,
+          "inr_numbers_total": 0,
+          "latency_seconds": 0.40279454202391207,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 30377,
-          "tool_calls": 14,
-          "tool_errors": 2
+          "tokens_used": 70471,
+          "tool_calls": 11,
+          "tool_errors": 4
         },
         {
           "acceptable_dispositions": [
@@ -1865,19 +1872,19 @@
           "citation_validity_rate": 1.0,
           "citations": [
             "FIU-IND-RFI-BA-03",
-            "PMLA-2002-S12-P01",
-            "PMLR-2005-R8-P01"
+            "PMLA-2002-S12-P07",
+            "RBI-KYC-2016-P64-P06"
           ],
           "cited_evidence_ids": [
             "KYC-ACC-D0003-IN01",
-            "KYC-ACC-D0003-IN02",
+            "KYC-ACC-D0003-IN07",
             "KYC-ACC-D0003-RT00"
           ],
           "confidence": 0.4,
           "correct": true,
-          "cost_usd": 0.02837,
+          "cost_usd": 0.033055,
           "disposition": "request_info",
-          "error": "verification_failed",
+          "error": null,
           "evidence_precision": 0.3333333333333333,
           "evidence_recall": 0.029411764705882353,
           "expected": "request_info",
@@ -1885,15 +1892,15 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 5.2300364000257105,
-          "math_verified": false,
+          "latency_seconds": 0.41220229101600125,
+          "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 48741,
-          "tool_calls": 11,
-          "tool_errors": 5
+          "tokens_used": 71280,
+          "tool_calls": 12,
+          "tool_errors": 4
         },
         {
           "acceptable_dispositions": [
@@ -1903,44 +1910,42 @@
           "case_id": "CASE-V2-0004",
           "citation_validity_rate": 1.0,
           "citations": [
-            "FIU-IND-RFI-BA-01",
-            "RBI-KYC-2016-P56-P02",
-            "PMLA-2002-S3-P03"
+            "FIU-IND-RFI-BA-03",
+            "PMLR-2005-R3-P05",
+            "FATF-R16-P05",
+            "FATF-R20-P02",
+            "PMLR-2005-R8-P01"
           ],
           "cited_evidence_ids": [
-            "KYC-2016-P56-P02",
+            "FIU-IND-RFI-BA-03",
             "KYC-ACC-D0004-IN01",
             "KYC-ACC-D0004-IN02",
-            "KYC-ACC-D0004-RT00",
-            "KYC-ACC-D0004-T201",
-            "KYC-ACC-D0004-T202",
-            "TXN-D0004-001",
-            "TXN-D0004-002",
-            "TXN-D0004-003",
-            "TXN-D0004-004",
-            "TXN-D0004-019"
+            "PMLR-2005-R3-P05",
+            "TXN-D0004-008",
+            "TXN-D0004-012",
+            "TXN-D0004-018"
           ],
-          "confidence": 0.72,
+          "confidence": 0.55,
           "correct": false,
-          "cost_usd": 0.031736,
+          "cost_usd": 0.034741,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.5454545454545454,
-          "evidence_recall": 0.3,
+          "evidence_precision": 0.42857142857142855,
+          "evidence_recall": 0.15,
           "expected": "escalate_str",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 0,
-          "latency_seconds": 2.724718500045128,
+          "inr_numbers_total": 3,
+          "latency_seconds": 0.38886449998244643,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": false,
           "seed": 42,
-          "tokens_used": 50910,
-          "tool_calls": 12,
-          "tool_errors": 0
+          "tokens_used": 59147,
+          "tool_calls": 10,
+          "tool_errors": 2
         },
         {
           "acceptable_dispositions": [
@@ -1951,14 +1956,12 @@
           "citation_validity_rate": 1.0,
           "citations": [
             "FIU-IND-RFI-BA-03",
-            "PMLR-2005-R3-P05",
-            "FATF-R20-P02",
-            "RBI-KYC-2016-P70-P02"
+            "PMLA-2002-S3-P06",
+            "PMLA-2002-S12-P02"
           ],
           "cited_evidence_ids": [
             "KYC-ACC-D0005-IN01",
             "KYC-ACC-D0005-IN02",
-            "KYC-ACC-D0005-IN06",
             "KYC-ACC-D0005-RT00",
             "TXN-D0005-001",
             "TXN-D0005-015",
@@ -1966,27 +1969,27 @@
             "TXN-D0005-021",
             "TXN-D0005-022"
           ],
-          "confidence": 0.7,
+          "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.029937,
+          "cost_usd": 0.037707,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.6666666666666666,
+          "evidence_precision": 0.75,
           "evidence_recall": 0.24,
           "expected": "escalate_str",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 2.678798600041773,
+          "latency_seconds": 0.4154437920078635,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 54630,
-          "tool_calls": 15,
-          "tool_errors": 2
+          "tokens_used": 77044,
+          "tool_calls": 12,
+          "tool_errors": 4
         },
         {
           "acceptable_dispositions": [
@@ -1996,179 +1999,169 @@
           "case_id": "CASE-V2-0006",
           "citation_validity_rate": 1.0,
           "citations": [
+            "PMLR-2005-R8-P01",
+            "PMLA-2002-S12-P02",
             "FIU-IND-RFI-BA-03",
-            "PMLR-2005-R3-P05",
-            "FATF-R16-P05"
+            "FATF-R16-P04",
+            "FATF-R16-P05",
+            "RBI-KYC-2016-P70-P01"
           ],
           "cited_evidence_ids": [
             "KYC-ACC-D0006-IN01",
             "KYC-ACC-D0006-IN02",
-            "KYC-ACC-D0006-RT00"
+            "KYC-ACC-D0006-IN03",
+            "KYC-ACC-D0006-IN04",
+            "KYC-ACC-D0006-IN05",
+            "TXN-D0006-021",
+            "TXN-D0006-035",
+            "TXN-D0006-039",
+            "TXN-D0006-040",
+            "TXN-D0006-044",
+            "TXN-D0006-047",
+            "TXN-D0006-056"
           ],
-          "confidence": 0.4,
+          "confidence": 0.65,
           "correct": false,
-          "cost_usd": 0.025506,
+          "cost_usd": 0.035689,
           "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.3333333333333333,
-          "evidence_recall": 0.017543859649122806,
+          "evidence_precision": 0.5833333333333334,
+          "evidence_recall": 0.12280701754385964,
           "expected": "escalate_str",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 0,
-          "latency_seconds": 3.0668608999694698,
+          "inr_numbers_total": 6,
+          "latency_seconds": 0.3751647919998504,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 45637,
-          "tool_calls": 14,
-          "tool_errors": 6
-        },
-        {
-          "acceptable_dispositions": [
-            "escalate_str",
-            "request_info"
-          ],
-          "actual": "escalate_str",
-          "case_id": "CASE-V2-0007",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "PMLA-2002-S12-P03",
-            "PMLA-2002-S12AA-P04",
-            "RBI-KYC-2016-P46-P02",
-            "RBI-KYC-2016-P13-P02",
-            "RBI-KYC-2016-P46-P01"
-          ],
-          "cited_evidence_ids": [
-            "FIU-IND-RFI-BA-01",
-            "FIU-IND-RFI-BA-08",
-            "FIU-IND-RFI-BA-20",
-            "KYC-ACC-D0007-IN01",
-            "KYC-ACC-D0007-IN02",
-            "KYC-ACC-D0007-IN04",
-            "KYC-ACC-D0007-RT00",
-            "TXN-D0007-001",
-            "TXN-D0007-028"
-          ],
-          "confidence": 0.85,
-          "correct": true,
-          "cost_usd": 0.032583,
-          "disposition": "escalate_str",
-          "error": null,
-          "evidence_precision": 0.3333333333333333,
-          "evidence_recall": 0.10344827586206896,
-          "expected": "escalate_str",
-          "has_citations": true,
-          "inr_arithmetic_error_rate": 0.0,
-          "inr_error_count": 0,
-          "inr_numbers_total": 5,
-          "latency_seconds": 2.6554055999731645,
-          "math_verified": true,
-          "mode": "c2_multi",
-          "replan_count": 1,
-          "replan_recovered": true,
-          "seed": 42,
-          "tokens_used": 56834,
-          "tool_calls": 12,
-          "tool_errors": 2
-        },
-        {
-          "acceptable_dispositions": [
-            "escalate_str",
-            "request_info"
-          ],
-          "actual": "escalate_str",
-          "case_id": "CASE-V2-0008",
-          "citation_validity_rate": 1.0,
-          "citations": [
-            "PMLA-2002-S12-P02",
-            "PMLR-2005-R9-P02",
-            "RBI-KYC-2016-P13-P02"
-          ],
-          "cited_evidence_ids": [
-            "KYC-ACC-D0008-IN01",
-            "KYC-ACC-D0008-IN02",
-            "KYC-ACC-D0008-IN04",
-            "KYC-ACC-D0008-RT00",
-            "TXN-D0008-001",
-            "TXN-D0008-008",
-            "TXN-D0008-010",
-            "TXN-D0008-013",
-            "TXN-D0008-022"
-          ],
-          "confidence": 0.87,
-          "correct": true,
-          "cost_usd": 0.032524,
-          "disposition": "escalate_str",
-          "error": null,
-          "evidence_precision": 0.6666666666666666,
-          "evidence_recall": 0.25,
-          "expected": "request_info",
-          "has_citations": true,
-          "inr_arithmetic_error_rate": 0.0,
-          "inr_error_count": 0,
-          "inr_numbers_total": 12,
-          "latency_seconds": 2.794682500010822,
-          "math_verified": true,
-          "mode": "c2_multi",
-          "replan_count": 1,
-          "replan_recovered": true,
-          "seed": 42,
-          "tokens_used": 57084,
+          "tokens_used": 74547,
           "tool_calls": 11,
           "tool_errors": 3
         },
         {
           "acceptable_dispositions": [
-            "close_benign"
+            "escalate_str",
+            "request_info"
           ],
-          "actual": "escalate_str",
-          "case_id": "CASE-V2-0009",
+          "actual": "request_info",
+          "case_id": "CASE-V2-0007",
           "citation_validity_rate": 1.0,
           "citations": [
-            "FIU-IND-RFI-BA-18",
-            "FIU-IND-RFI-BA-02",
-            "FIU-IND-RFI-BA-04",
-            "FIU-IND-RFI-BA-05"
+            "FIU-IND-RFI-BA-03",
+            "PMLR-2005-R3-P05",
+            "FATF-R16-P05"
           ],
           "cited_evidence_ids": [
-            "FIU-IND-RFI-BA-02",
-            "FIU-IND-RFI-BA-04",
-            "FIU-IND-RFI-BA-18",
-            "KYC-ACC-D0009-DS01",
-            "KYC-ACC-D0009-IN01",
-            "KYC-ACC-D0009-RT00",
-            "TXN-D0009-033",
-            "TXN-D0009-034",
-            "TXN-D0009-035",
-            "TXN-D0009-036",
-            "TXN-D0009-037",
-            "TXN-D0009-038"
+            "KYC-ACC-D0007-IN01",
+            "KYC-ACC-D0007-IN02"
           ],
-          "confidence": 0.68,
-          "correct": false,
-          "cost_usd": 0.037766,
-          "disposition": "escalate_str",
+          "confidence": 0.4,
+          "correct": true,
+          "cost_usd": 0.034977,
+          "disposition": "request_info",
           "error": null,
-          "evidence_precision": 0.5833333333333334,
-          "evidence_recall": 0.08974358974358974,
-          "expected": "close_benign",
+          "evidence_precision": 0.0,
+          "evidence_recall": 0.0,
+          "expected": "escalate_str",
           "has_citations": true,
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
-          "inr_numbers_total": 14,
-          "latency_seconds": 2.5849600000074133,
+          "inr_numbers_total": 0,
+          "latency_seconds": 0.5111001250334084,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 74812,
+          "tokens_used": 67056,
+          "tool_calls": 12,
+          "tool_errors": 7
+        },
+        {
+          "acceptable_dispositions": [
+            "escalate_str",
+            "request_info"
+          ],
+          "actual": "request_info",
+          "case_id": "CASE-V2-0008",
+          "citation_validity_rate": 1.0,
+          "citations": [
+            "SOP-SG-006",
+            "RBI-KYC-2016-P70-P02",
+            "FIU-IND-RFI-BA-01"
+          ],
+          "cited_evidence_ids": [
+            "KYC-ACC-D0008-IN01",
+            "KYC-ACC-D0008-IN02",
+            "KYC-ACC-D0008-RT00"
+          ],
+          "confidence": 0.4,
+          "correct": true,
+          "cost_usd": 0.033545,
+          "disposition": "request_info",
+          "error": null,
+          "evidence_precision": 0.3333333333333333,
+          "evidence_recall": 0.041666666666666664,
+          "expected": "request_info",
+          "has_citations": true,
+          "inr_arithmetic_error_rate": 0.0,
+          "inr_error_count": 0,
+          "inr_numbers_total": 0,
+          "latency_seconds": 0.39920250000432134,
+          "math_verified": true,
+          "mode": "c2_multi",
+          "replan_count": 1,
+          "replan_recovered": true,
+          "seed": 42,
+          "tokens_used": 68609,
           "tool_calls": 13,
-          "tool_errors": 1
+          "tool_errors": 5
+        },
+        {
+          "acceptable_dispositions": [
+            "close_benign"
+          ],
+          "actual": "request_info",
+          "case_id": "CASE-V2-0009",
+          "citation_validity_rate": 1.0,
+          "citations": [
+            "FIU-IND-RFI-BA-03",
+            "PMLR-2005-R3-P05",
+            "PMLR-2005-R3-P01"
+          ],
+          "cited_evidence_ids": [
+            "KYC-ACC-D0009-IN01",
+            "KYC-ACC-D0009-IN02",
+            "KYC-ACC-D0009-RT00",
+            "TXN-D0009-036",
+            "TXN-D0009-037",
+            "TXN-D0009-038"
+          ],
+          "confidence": 0.4,
+          "correct": false,
+          "cost_usd": 0.038393,
+          "disposition": "request_info",
+          "error": null,
+          "evidence_precision": 0.6666666666666666,
+          "evidence_recall": 0.05128205128205128,
+          "expected": "close_benign",
+          "has_citations": true,
+          "inr_arithmetic_error_rate": 0.0,
+          "inr_error_count": 0,
+          "inr_numbers_total": 12,
+          "latency_seconds": 0.2586519999895245,
+          "math_verified": true,
+          "mode": "c2_multi",
+          "replan_count": 1,
+          "replan_recovered": true,
+          "seed": 42,
+          "tokens_used": 89251,
+          "tool_calls": 13,
+          "tool_errors": 3
         },
         {
           "acceptable_dispositions": [
@@ -2178,9 +2171,9 @@
           "case_id": "CASE-V2-0010",
           "citation_validity_rate": 1.0,
           "citations": [
-            "PMLA-2002-S12-P02",
-            "PMLA-2002-S12-P04",
-            "FATF-R20-P02"
+            "FIU-IND-RFI-BA-03",
+            "PMLR-2005-R3-P05",
+            "FATF-R16-P05"
           ],
           "cited_evidence_ids": [
             "KYC-ACC-D0010-IN01",
@@ -2189,7 +2182,7 @@
           ],
           "confidence": 0.4,
           "correct": false,
-          "cost_usd": 0.032253,
+          "cost_usd": 0.032118,
           "disposition": "request_info",
           "error": null,
           "evidence_precision": 0.3333333333333333,
@@ -2199,23 +2192,23 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 0,
-          "latency_seconds": 2.8312872999813408,
+          "latency_seconds": 0.2431671250378713,
           "math_verified": true,
           "mode": "c2_multi",
           "replan_count": 1,
           "replan_recovered": true,
           "seed": 42,
-          "tokens_used": 65009,
-          "tool_calls": 13,
-          "tool_errors": 4
+          "tokens_used": 69315,
+          "tool_calls": 12,
+          "tool_errors": 5
         }
       ],
       "metrics": {
-        "avg_cost_usd": 0.030014,
-        "avg_latency_seconds": 3.03451,
+        "avg_cost_usd": 0.034783,
+        "avg_latency_seconds": 0.389142,
         "avg_replans": 1.0,
-        "avg_tokens": 54060.8,
-        "avg_tool_calls": 12.7,
+        "avg_tokens": 71243.2,
+        "avg_tool_calls": 11.9,
         "ci_95": {
           "citation_validity_rate": {
             "ci_high": 1.0,
@@ -2225,9 +2218,9 @@
             "n_clusters": 8
           },
           "cost_usd": {
-            "ci_high": 0.032768,
-            "ci_low": 0.027248,
-            "mean": 0.030014,
+            "ci_high": 0.036153,
+            "ci_low": 0.033422,
+            "mean": 0.034783,
             "n": 10,
             "n_clusters": 8
           },
@@ -2238,16 +2231,16 @@
             "n": 10
           },
           "evidence_precision": {
-            "ci_high": 0.51431,
-            "ci_low": 0.393939,
-            "mean": 0.462879,
+            "ci_high": 0.640212,
+            "ci_low": 0.233333,
+            "mean": 0.442857,
             "n": 10,
             "n_clusters": 8
           },
           "evidence_recall": {
-            "ci_high": 0.166611,
-            "ci_low": 0.070606,
-            "mean": 0.117043,
+            "ci_high": 0.121346,
+            "ci_low": 0.017551,
+            "mean": 0.067301,
             "n": 10,
             "n_clusters": 8
           },
@@ -2265,9 +2258,9 @@
             "n_clusters": 8
           },
           "latency_s": {
-            "ci_high": 3.441378,
-            "ci_low": 2.726744,
-            "mean": 3.03451,
+            "ci_high": 0.438489,
+            "ci_low": 0.331339,
+            "mean": 0.389142,
             "n": 10,
             "n_clusters": 8
           },
@@ -2284,29 +2277,29 @@
             "n": 5
           },
           "tokens": {
-            "ci_high": 61539.375,
-            "ci_low": 47160.6875,
-            "mean": 54060.8,
+            "ci_high": 76381.6,
+            "ci_low": 66292.9375,
+            "mean": 71243.2,
             "n": 10,
             "n_clusters": 8
           },
           "tool_calls": {
-            "ci_high": 13.7,
-            "ci_low": 11.727273,
-            "mean": 12.7,
+            "ci_high": 12.454545,
+            "ci_low": 11.25,
+            "mean": 11.9,
             "n": 10,
             "n_clusters": 8
           },
           "tool_error_rate": {
-            "ci_high": 0.283073,
-            "ci_low": 0.143714,
-            "mean": 0.204724,
-            "n": 127
+            "ci_high": 0.442173,
+            "ci_low": 0.272907,
+            "mean": 0.352941,
+            "n": 119
           },
           "weighted_error_cost": {
-            "ci_high": 1.818182,
-            "ci_low": 0.545455,
-            "mean": 1.2,
+            "ci_high": 2.0,
+            "ci_low": 0.727273,
+            "mean": 1.4,
             "n": 10,
             "n_clusters": 8
           }
@@ -2315,98 +2308,98 @@
         "confusion_matrix": {
           "close_benign": {
             "close_benign": 0,
-            "escalate_str": 2,
-            "request_info": 1
+            "escalate_str": 0,
+            "request_info": 3
           },
           "escalate_str": {
             "close_benign": 0,
-            "escalate_str": 1,
-            "request_info": 4
+            "escalate_str": 0,
+            "request_info": 5
           },
           "request_info": {
             "close_benign": 0,
-            "escalate_str": 1,
-            "request_info": 1
+            "escalate_str": 0,
+            "request_info": 2
           }
         },
         "correct": 3,
-        "cost_usd": 0.030014,
+        "cost_usd": 0.034783,
         "disposition_accuracy": 0.3,
-        "evidence_precision": 0.462879,
-        "evidence_recall": 0.117043,
+        "evidence_precision": 0.442857,
+        "evidence_recall": 0.067301,
         "execution_type": "replay",
         "false_close_rate": 0.0,
         "inr_arithmetic_error_rate": 0.0,
         "inr_error_count": 0,
-        "inr_numbers_total": 62,
+        "inr_numbers_total": 33,
         "judge_scores": null,
-        "latency_s": 3.03451,
-        "latency_seconds": 3.03451,
-        "macro_f1": 0.228571,
+        "latency_s": 0.389142,
+        "latency_seconds": 0.389142,
+        "macro_f1": 0.153846,
         "max_accuracy": 0.3,
         "mean_accuracy": 0.3,
         "min_accuracy": 0.3,
         "needless_replan_rate": 1.0,
         "per_class_f1": {
           "close_benign": 0.0,
-          "escalate_str": 0.4,
-          "request_info": 0.285714
+          "escalate_str": 0.0,
+          "request_info": 0.461538
         },
         "per_difficulty": {
           "easy": {
-            "cost_usd": 0.020864,
+            "cost_usd": 0.035315,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.055556,
+            "evidence_recall": 0.0,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "hard": {
-            "cost_usd": 0.031334,
+            "cost_usd": 0.035028,
             "disposition_accuracy": 0.375,
-            "evidence_recall": 0.131546,
+            "evidence_recall": 0.082174,
             "false_close_rate": 0.0,
             "n": 8,
-            "weighted_error_cost": 1.125
+            "weighted_error_cost": 1.25
           },
           "medium": {
-            "cost_usd": 0.028602,
+            "cost_usd": 0.032294,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.0625,
+            "evidence_recall": 0.015625,
             "false_close_rate": 0.0,
             "n": 1,
-            "weighted_error_cost": 1.0
+            "weighted_error_cost": 2.0
           }
         },
         "per_family": {
           "ambiguous": {
-            "cost_usd": 0.031159,
+            "cost_usd": 0.033859,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.12762,
+            "evidence_recall": 0.023693,
             "false_close_rate": 0.0,
             "n": 3,
             "weighted_error_cost": 0.0
           },
           "benign_lookalike": {
-            "cost_usd": 0.029077,
+            "cost_usd": 0.035334,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.069266,
+            "evidence_recall": 0.022302,
             "false_close_rate": 0.0,
             "n": 3,
-            "weighted_error_cost": 1.333333
+            "weighted_error_cost": 2.0
           },
           "layering": {
-            "cost_usd": 0.031736,
+            "cost_usd": 0.034741,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.3,
+            "evidence_recall": 0.15,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover": {
-            "cost_usd": 0.029232,
+            "cost_usd": 0.035171,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.093255,
+            "evidence_recall": 0.128343,
             "false_close_rate": 0.0,
             "n": 3,
             "weighted_error_cost": 2.0
@@ -2414,55 +2407,55 @@
         },
         "per_subvariant": {
           "ambiguous.benign_root_unexplained_leg": {
-            "cost_usd": 0.032583,
+            "cost_usd": 0.034977,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.103448,
+            "evidence_recall": 0.0,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 0.0
           },
           "ambiguous.benign_structure_high_risk_root": {
-            "cost_usd": 0.030447,
+            "cost_usd": 0.0333,
             "disposition_accuracy": 1.0,
-            "evidence_recall": 0.139706,
+            "evidence_recall": 0.035539,
             "false_close_rate": 0.0,
             "n": 2,
             "weighted_error_cost": 0.0
           },
           "benign_lookalike.chit": {
-            "cost_usd": 0.028602,
+            "cost_usd": 0.032294,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.0625,
+            "evidence_recall": 0.015625,
             "false_close_rate": 0.0,
             "n": 1,
-            "weighted_error_cost": 1.0
+            "weighted_error_cost": 2.0
           },
           "benign_lookalike.ngo": {
-            "cost_usd": 0.020864,
+            "cost_usd": 0.035315,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.055556,
+            "evidence_recall": 0.0,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "benign_lookalike.unregistered_employer_12m_payroll": {
-            "cost_usd": 0.037766,
+            "cost_usd": 0.038393,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.089744,
+            "evidence_recall": 0.051282,
             "false_close_rate": 0.0,
             "n": 1,
-            "weighted_error_cost": 1.0
+            "weighted_error_cost": 2.0
           },
           "layering.two_tier": {
-            "cost_usd": 0.031736,
+            "cost_usd": 0.034741,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.3,
+            "evidence_recall": 0.15,
             "false_close_rate": 0.0,
             "n": 1,
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover.decoy_memos": {
-            "cost_usd": 0.032253,
+            "cost_usd": 0.032118,
             "disposition_accuracy": 0.0,
             "evidence_recall": 0.022222,
             "false_close_rate": 0.0,
@@ -2470,9 +2463,9 @@
             "weighted_error_cost": 2.0
           },
           "layering_benign_cover.shell_valid_gst": {
-            "cost_usd": 0.027721,
+            "cost_usd": 0.036698,
             "disposition_accuracy": 0.0,
-            "evidence_recall": 0.128772,
+            "evidence_recall": 0.181404,
             "false_close_rate": 0.0,
             "n": 2,
             "weighted_error_cost": 2.0
@@ -2480,32 +2473,32 @@
         },
         "percentiles": {
           "cost_usd": {
-            "p50": 0.030836,
-            "p95": 0.035434
+            "p50": 0.034859,
+            "p95": 0.038084
           },
           "latency_s": {
-            "p50": 2.812985,
-            "p95": 4.256607
+            "p50": 0.400999,
+            "p95": 0.499277
           },
           "tokens": {
-            "p50": 55602.0,
-            "p95": 70400.65
+            "p50": 69893.0,
+            "p95": 83757.85
           },
           "tool_calls": {
-            "p50": 12.5,
-            "p95": 14.55
+            "p50": 12.0,
+            "p95": 13.0
           }
         },
         "repeats_executed": 1,
         "replan_recovery_rate": 0.2,
         "replanning_recovery_rate": 0.2,
-        "tokens": 54060.8,
-        "tool_calls": 12.7,
-        "tool_error_rate": 0.204724,
-        "tool_errors": 26,
+        "tokens": 71243.2,
+        "tool_calls": 11.9,
+        "tool_error_rate": 0.352941,
+        "tool_errors": 42,
         "total": 10,
-        "verified_rate": 0.9,
-        "weighted_error_cost": 1.2
+        "verified_rate": 1.0,
+        "weighted_error_cost": 1.4
       }
     },
     "rule_engine": {
@@ -2538,7 +2531,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 4,
-          "latency_seconds": 3.9654805999598466,
+          "latency_seconds": 0.4596260410035029,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2576,7 +2569,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 4,
-          "latency_seconds": 3.7962427000165917,
+          "latency_seconds": 0.440626916999463,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2617,7 +2610,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 3.7096296999952756,
+          "latency_seconds": 0.43472983298124745,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2660,7 +2653,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 18,
-          "latency_seconds": 4.1655918000033125,
+          "latency_seconds": 0.4881909590330906,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2704,7 +2697,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 22,
-          "latency_seconds": 4.154239499999676,
+          "latency_seconds": 0.3315994999720715,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 1,
@@ -2753,7 +2746,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 18,
-          "latency_seconds": 4.580008899967652,
+          "latency_seconds": 0.4158712500357069,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2799,7 +2792,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 22,
-          "latency_seconds": 4.734182599990163,
+          "latency_seconds": 0.42893175000790507,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2845,7 +2838,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 22,
-          "latency_seconds": 4.8124091000063345,
+          "latency_seconds": 0.4159158329712227,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2885,7 +2878,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 12,
-          "latency_seconds": 1.9131437000469305,
+          "latency_seconds": 0.20168445899616927,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 0,
@@ -2937,7 +2930,7 @@
           "inr_arithmetic_error_rate": 0.0,
           "inr_error_count": 0,
           "inr_numbers_total": 22,
-          "latency_seconds": 2.028578799974639,
+          "latency_seconds": 0.18258295801933855,
           "math_verified": true,
           "mode": "rule_engine",
           "replan_count": 2,
@@ -2950,7 +2943,7 @@
       ],
       "metrics": {
         "avg_cost_usd": 0.0,
-        "avg_latency_seconds": 3.785951,
+        "avg_latency_seconds": 0.379976,
         "avg_replans": 1.7,
         "avg_tokens": 0.0,
         "avg_tool_calls": 14.4,
@@ -3003,9 +2996,9 @@
             "n_clusters": 8
           },
           "latency_s": {
-            "ci_high": 4.297785,
-            "ci_low": 3.014858,
-            "mean": 3.785951,
+            "ci_high": 0.43729,
+            "ci_low": 0.30234,
+            "mean": 0.379976,
             "n": 10,
             "n_clusters": 8
           },
@@ -3078,8 +3071,8 @@
         "inr_error_count": 0,
         "inr_numbers_total": 156,
         "judge_scores": null,
-        "latency_s": 3.785951,
-        "latency_seconds": 3.785951,
+        "latency_s": 0.379976,
+        "latency_seconds": 0.379976,
         "macro_f1": 0.785185,
         "max_accuracy": 0.8,
         "mean_accuracy": 0.8,
@@ -3222,8 +3215,8 @@
             "p95": 0.0
           },
           "latency_s": {
-            "p50": 4.05986,
-            "p95": 4.777207
+            "p50": 0.422424,
+            "p95": 0.475337
           },
           "tokens": {
             "p50": 0.0,

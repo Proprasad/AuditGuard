@@ -146,8 +146,9 @@ async def test_04_concurrent_double_approval_atomic_single_winner():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
         h = await _async_login(ac, username="reviewer", env_key="REVIEWER_PASSWORD")
+        requester = await _async_login(ac)  # maker-checker (AG-02): the approver must not be the requester
         run = await ac.post(
-            "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c1_single"}, headers=h
+            "/api/v1/investigations/run", json={"alert_id": "ALT-2026-0412", "mode": "c1_single"}, headers=requester
         )
         assert run.status_code == 200
         tid = run.json()["thread_id"]

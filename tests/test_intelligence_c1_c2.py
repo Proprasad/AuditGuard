@@ -16,7 +16,7 @@ from src.agent.c2_stages import enrich_specialist_finding
 from src.agent.c2_multi import run_multi_agent
 from src.agent.graph import resume_gate
 from src.db.database import get_db, load_checkpoint
-from src.guardrails.hooks import AGENT_TOOL_ALLOWLIST
+from src.guardrails.hooks import AGENT_TOOL_ALLOWLIST, decode_llm_tool_content
 from src.models import Alert, DispositionDecision, RiskLevel, SpecialistFinding, SpecialistHandOff
 from tests.fakes import FakeLLM, make_text_turn, make_tool_turn
 
@@ -33,7 +33,7 @@ def _tool_outputs(messages: list[dict[str, Any]]) -> dict[str, list[dict[str, An
     out: dict[str, list[dict[str, Any]]] = {}
     for m in messages:
         if m.get("role") == "tool" and m.get("name"):
-            out.setdefault(str(m["name"]), []).append(json.loads(str(m["content"])))
+            out.setdefault(str(m["name"]), []).append(decode_llm_tool_content(str(m["content"])))
     return out
 
 

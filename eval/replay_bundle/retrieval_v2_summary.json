@@ -1,5 +1,5 @@
 {
-  "benchmark_path": "eval\\retrieval_bench_v2.jsonl",
+  "benchmark_path": "eval/retrieval_bench_v2.jsonl",
   "default_beats_or_ties_bm25_r1": true,
   "default_mode": "hybrid_rrf_rerank",
   "empirical_best_mode": "hybrid_rrf_rerank",

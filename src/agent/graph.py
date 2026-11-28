@@ -39,6 +39,7 @@ from src.agent.loop import run_c1_agent_loop
 from src.agent.nodes import RunContext
 from src.agent.tooling import GuardedToolbox
 from src.config import get_policy, settings
+from src.core.canonical import canonical_json
 from src.core.policy import PolicyConfig
 from src.db.database import get_sqlite_path, load_checkpoint, save_checkpoint
 from src.llm.client import LLMClient, LLMClientProtocol
@@ -50,6 +51,7 @@ logger = logging.getLogger("auditguard.graph")
 
 DICT_MERGE_KEYS = frozenset({"evidence_registry"})
 LIST_UNION_KEYS = frozenset({"degraded_evidence", "regulatory_snippets", "retrieved_lessons"})
+APPEND_LOG_KEYS = frozenset({"calc_log", "tool_execution_log"})  # append-only: never drop, never duplicate
 C2_ROLES = ("flow_tracer", "benign_investigator", "regulatory_analyst", "reporter_critic")
 _THREAD_LOCKS: dict[str, asyncio.Lock] = {}
 _SAVER_INIT_LOCKS: dict[int, asyncio.Lock] = {}
@@ -101,7 +103,19 @@ def _merge_field(old: dict[str, Any], key: str, value: Any) -> Any:
         return list(seen.values())
     if key in LIST_UNION_KEYS and isinstance(value, list):
         return list(dict.fromkeys([*old.get(key, []), *value]))
+    if key in APPEND_LOG_KEYS and isinstance(value, list):
+        return _append_unique(old.get(key) or [], value)
     return value
+
+
+def _append_unique(old: list[Any], new: list[Any]) -> list[Any]:
+    """Accept a cumulative list or a delta: keep every prior entry, append only unseen ones (canonical JSON)."""
+    seen, out = {canonical_json(item) for item in old}, list(old)
+    for item in new:
+        if (marker := canonical_json(item)) not in seen:
+            seen.add(marker)
+            out.append(item)
+    return out
 
 
 def merge_investigation(old: Optional[dict[str, Any]], new: Optional[dict[str, Any]]) -> dict[str, Any]:
@@ -120,6 +134,9 @@ class GState(TypedDict, total=False):
 
 
 def as_state(raw: dict[str, Any]) -> InvestigationState:
+    unknown = sorted(k for k in raw if k not in InvestigationState.model_fields)
+    if unknown:
+        logger.warning("as_state dropped keys not in InvestigationState: %s", unknown)
     return InvestigationState(**{k: v for k, v in raw.items() if k in InvestigationState.model_fields})
 
 
@@ -263,9 +280,12 @@ async def _human_gate(gs: GState, config: RunnableConfig) -> GState:
     payload = decision if isinstance(decision, dict) else {}
     approved = payload.get("action") == "approve"
     has_token = bool(payload.get("approval_token"))
+    if approved and not has_token:
+        # Fail closed: an approval without a token commits nothing and must never be reported as committed.
+        return {"inv": {"current_node": "approval_missing_token", "human_decision": None}, "gate": payload}
     return {
         "inv": {
-            "current_node": "committing" if (approved and has_token) else ("committed" if approved else "rejected"),
+            "current_node": "committing" if approved else "rejected",
             "human_decision": payload.get("disposition") if approved else None,
         },
         "gate": payload,
@@ -288,12 +308,13 @@ def _make_commit_node(ctx: RunContext) -> Callable[[GState], Awaitable[GState]]:
             has_human_approval_token=True,
         )
         ok = bool(res.get("success"))
+        scrubbed = {k: v for k, v in gate.items() if k != "approval_token"}  # bearer token never kept in state
         return {
             "inv": {
                 "current_node": "committed" if ok else "interrupt_required",
                 "human_decision": res.get("final_disposition") if ok else None,
             },
-            "gate": {**gate, "commit_result": res},
+            "gate": {**scrubbed, "commit_result": res},
         }
 
     return _commit_disposition

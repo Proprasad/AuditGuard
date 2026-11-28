@@ -20,6 +20,8 @@ python scripts/init_env.py
 - **Compliance Analyst Web Workbench:** `http://127.0.0.1:8000/`
 - **Swagger OpenAPI Docs:** `http://127.0.0.1:8000/api/docs`
 - **Health & Prometheus Metrics:** `http://127.0.0.1:8000/health` | `http://127.0.0.1:8000/metrics`
+- **Optional Chainlit chat UI:** `chainlit run src/ui/app.py --port 8001`. Each person signs in with their own account (`analyst` / `reviewer` / `admin`); it needs `CHAINLIT_AUTH_SECRET`, which `python scripts/init_env.py` adds to an existing `.env`.
+- **Four-eyes approval:** the user who started an investigation, and whoever last edited its worksheet, can never approve it (`403 SELF_APPROVAL_FORBIDDEN`). Start as `analyst`, approve as `reviewer` or `admin`.
 
 ---
 

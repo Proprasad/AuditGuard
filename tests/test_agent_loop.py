@@ -31,6 +31,7 @@ from src.agent.rule_engine import run_rule_engine
 from src.agent.tooling import GuardedToolbox
 from src.agent.tools import AgentToolRuntime, CalcInput, build_openai_tools, execute_decimal_calc
 from src.config import get_policy
+from src.guardrails.hooks import decode_llm_tool_content
 from src.llm import CassetteMissError, LLMClient, compute_call_cost_usd
 from src.mcp_servers import bank_records
 from src.models import Alert, DispositionDecision, InvestigationState, RiskLevel
@@ -49,7 +50,7 @@ def _extract_tool_outputs(messages: list[dict[str, Any]]) -> dict[str, list[dict
     by_name: dict[str, list[dict[str, Any]]] = {}
     for m in messages:
         if m.get("role") == "tool" and m.get("name"):
-            by_name.setdefault(str(m["name"]), []).append(json.loads(str(m["content"])))
+            by_name.setdefault(str(m["name"]), []).append(decode_llm_tool_content(str(m["content"])))
     return by_name
 
 

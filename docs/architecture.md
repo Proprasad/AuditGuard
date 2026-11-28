@@ -40,7 +40,7 @@ flowchart TB
     LG <--> CP
     LG <--> LTM
 
-    LG --> Hooks["Pre-Tool Hooks (Per-Agent RBAC · Policy Bounds · BudgetLedger)<br/>Post-Tool Hooks (Extended PII Masking · XML-Escaped untrusted_data · Injection Withholding)"]
+    LG --> Hooks["Pre-Tool Hooks (Per-Agent RBAC · Policy Bounds · BudgetLedger)<br/>Post-Tool Hooks (Extended PII Masking · Injection Withholding)<br/>LLM boundary: every tool result in one XML-escaped untrusted_data envelope"]
 
     subgraph MCP["4 Typed FastMCP Servers via fastmcp.Client (In-Memory | Streamable HTTP /mcp)"]
         S1["compliance-kb (READ — Retrieval v2)<br/>165 Passages (145 Reg + 20 Internal SOP) · BM25 + Dense SVD + RRF + Reranker + Abstention"]
@@ -55,7 +55,7 @@ flowchart TB
     S4 --> CM
     LG --> Gate{"LangGraph human_gate<br/>interrupt() + Single-Use HMAC Token"}
     Gate -->|"Approve (Exact SHA-256 + Single-Use Token + Active Interrupt)"| S4
-    Gate -->|"Edit (Restricted Fields -> Re-Verify -> New SHA-256 & Token)"| VF
+    Gate -->|"Edit (Restricted Fields -> Re-Verify -> New SHA-256; a different reviewer must approve)"| VF
     Gate -->|"Reject"| CM
 ```
 
@@ -106,9 +106,10 @@ sequenceDiagram
     opt Reviewer Edits Rationale / Disposition
         Analyst->>API: POST /decision (action="edit", edit={...})
         API->>Ver: Re-Verify against Stored evidence_registry
-        API->>DB: Bump Revision -> Supersede T1 -> Issue Fresh Token T2 (Hash H2)
-        API-->>Analyst: interrupt_required (H2, T2)
+        API->>DB: Bump Revision -> Supersede T1 -> New Hash H2 (editor recorded as edited_by)
+        API-->>Analyst: interrupt_required (H2, no token)
     end
+    Analyst->>API: POST /decision/prepare (reviewer is neither requester nor last editor) -> T2 bound to H2
     Analyst->>API: POST /decision (action="approve", approved_hash=H2, approval_token=T2)
     API->>MCP: case-actions.submit_case_disposition(worksheet_id, T2, reviewer=jwt.sub)
     MCP->>DB: Verify Active Interrupt + Atomic Consume T2 + INSERT cases + audit_logs

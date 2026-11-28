@@ -28,6 +28,7 @@ from src.agent.c1_single import run_investigation
 from src.config import settings
 from src.core.canonical import to_money
 from src.db.database import get_db
+from src.guardrails.hooks import decode_llm_tool_content
 from src.mcp_servers.client import call_mcp_tool
 from src.models import Alert, RiskLevel
 from src.observability.redaction import redact_for_logs, redact_text
@@ -231,7 +232,7 @@ async def test_17_respx_mocked_openrouter_http_end_to_end(monkeypatch):
         msgs = body["messages"]
         usage = {"prompt_tokens": 550, "completion_tokens": 200, "total_tokens": 750}
         tool_msgs = {
-            m["name"]: json.loads(m["content"]) for m in msgs if m.get("role") == "tool" and m.get("name")
+            m["name"]: decode_llm_tool_content(m["content"]) for m in msgs if m.get("role") == "tool" and m.get("name")
         }
 
         if call_idx == 1:

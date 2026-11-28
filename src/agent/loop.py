@@ -12,7 +12,6 @@ Enforces:
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from typing import Any, Optional
 
@@ -31,6 +30,7 @@ from src.core.adapters import kyc_summaries
 from src.core.canonical import dec_str, to_confidence
 from src.core.verifier import verify_worksheet
 from src.db.database import utc_now_iso
+from src.guardrails.hooks import llm_tool_content
 from src.llm.client import LLMClientProtocol
 from src.llm.schemas import ChatResponse, ToolCallRequest
 from src.memory.store import memory_store, trim_messages_with_summary
@@ -263,12 +263,12 @@ async def retrieve_frozen_lessons(state: InvestigationState, ctx: RunContext) ->
     return [f"[{les.lesson_id}] IF {les.trigger_precondition} THEN {les.actionable_rule}" for les in top]
 
 
-def tool_message(tc: ToolCallRequest, result: dict[str, Any]) -> dict[str, Any]:
+def tool_message(tc: ToolCallRequest, result: dict[str, Any], *, defenses_enabled: bool = True) -> dict[str, Any]:
     return {
         "role": "tool",
         "tool_call_id": tc.id,
         "name": tc.name,
-        "content": json.dumps(result, sort_keys=True, default=str),
+        "content": llm_tool_content(tc.name, result, defenses_enabled=defenses_enabled),
     }
 
 
@@ -402,7 +402,7 @@ async def execute_tool_turn_batch(
                 continue
             return None, repair_used, True, fail_reason
 
-        messages.append(tool_message(tc, res))
+        messages.append(tool_message(tc, res, defenses_enabled=runtime.box.defenses_enabled))
         if is_error(res) and res.get("error_code") == "BUDGET_EXCEEDED":
             reason = str(res.get("message") or "tool call budget exhausted")
     return None, repair_used, False, reason

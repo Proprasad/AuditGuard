@@ -188,13 +188,7 @@ async def submit_human_decision(
         if request.action == "edit":
             if request.edit is None:
                 raise approval_service.DecisionError(422, "EMPTY_EDIT", "edit payload is required")
-            return await asyncio.to_thread(
-                approval_service.apply_edit,
-                thread,
-                request.edit,
-                principal.sub,
-                can_approve=principal.at_least("senior_reviewer"),
-            )
+            return await asyncio.to_thread(approval_service.apply_edit, thread, request.edit, principal.sub)
         if request.action == "approve":
             return await approval_service.approve(thread, request, principal.sub)
         return await approval_service.reject(thread, request, principal.sub)

@@ -25,6 +25,7 @@ from src.agent.c2_multi import run_multi_agent
 from src.agent.tooling import GuardedToolbox, is_error
 from src.config import get_policy
 from src.guardrails.guardrails import apply_output_guardrails, detect_injection
+from src.guardrails.hooks import decode_llm_tool_content
 from src.llm.client import LLMClientProtocol
 from src.llm.schemas import ChatResponse, TokenUsage, ToolCallRequest
 from src.mcp_servers import bank_records
@@ -324,7 +325,7 @@ class _ContextSensitivePoisonTestLLM:
 
         if "finish" not in tool_names:
             ctx_obj = next(
-                (json.loads(str(m["content"])) for m in tool_msgs if m.get("name") == "get_alert_context"),
+                (decode_llm_tool_content(str(m["content"])) for m in tool_msgs if m.get("name") == "get_alert_context"),
                 {},
             )
             txs = ctx_obj.get("transactions") or [{}]

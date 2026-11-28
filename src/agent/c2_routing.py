@@ -38,10 +38,8 @@ _DEFAULT_DEPS: dict[str, list[str]] = {
 
 
 def _allocate_budgets(
-    by_role: dict[str, SpecialistHandOff], max_calls: int, reserved_critic: int, *, is_replay: bool
+    by_role: dict[str, SpecialistHandOff], max_calls: int, reserved_critic: int
 ) -> dict[str, int]:
-    if is_replay:
-        return {role: max(1, min(by_role[role].allowed_tool_budget, max_calls - 1)) for role in MANDATORY_ROLES}
     invest_pool = max(3, max_calls - reserved_critic)
     inv_roles: tuple[SpecialistRole, ...] = ("flow_tracer", "benign_investigator", "regulatory_analyst")
     raw_total = sum(max(1, by_role[r].allowed_tool_budget) for r in inv_roles)
@@ -90,8 +88,6 @@ def build_routing_plan(
     raw_plan: dict[str, Any] | None,
     handoffs_list: list[SpecialistHandOff],
     max_calls: int,
-    *,
-    is_replay: bool = False,
 ) -> tuple[SupervisorRoutingPlan, dict[str, SpecialistHandOff]]:
     """Build validated `SupervisorRoutingPlan` & budget-safe `SpecialistHandOff`s."""
     reserved_critic = max(2, min(3, max_calls // 5))
@@ -105,7 +101,7 @@ def build_routing_plan(
             rat = str(raw_rationale.get(role) or f"Mandatory coverage invariant enforced for {role}")
             by_role[role] = base_by_role[role].model_copy(update={"selection_rationale": rat})
 
-    budgets = _allocate_budgets(by_role, max_calls, reserved_critic, is_replay=is_replay)
+    budgets = _allocate_budgets(by_role, max_calls, reserved_critic)
     enriched: dict[str, SpecialistHandOff] = {}
     rationale_map: dict[str, str] = {}
     deps_map: dict[str, list[str]] = {}

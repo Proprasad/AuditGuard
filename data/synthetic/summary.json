@@ -2,8 +2,8 @@
   "total": 60,
   "dev": 20,
   "held_out": 40,
-  "dev_dir": "data\\synthetic\\dev",
-  "held_out_dir": "eval\\held_out",
+  "dev_dir": "data/synthetic/dev",
+  "held_out_dir": "eval/held_out",
   "categories": {
     "clear_scatter_gather": "escalate_str",
     "staggered_timing": "escalate_str",

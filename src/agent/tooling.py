@@ -3,7 +3,8 @@ Guarded tool access shared by C0 / C1 / C2.
 
 Every MCP call flows: pre_tool_hook (RBAC + bounds + BudgetLedger) -> MCP client -> post_tool_hook
 (PII scrub, escaped <untrusted_data> containment, normalised injection detection). Detections are written to
-`audit_logs` and exposed via `security_events` so the run records degraded evidence.
+`audit_logs` and exposed via `security_events` so the run records degraded evidence. `defenses_enabled=False`
+(E2 ablation) skips only the post_tool_hook; the pre-tool hook is never bypassed.
 """
 
 from __future__ import annotations
@@ -64,12 +65,6 @@ class GuardedToolbox:
         *,
         has_human_approval_token: bool = False,
     ) -> dict[str, Any]:
-        if not self.defenses_enabled:
-            self.calls += 1
-            if tool not in ("submit_case_disposition", "finish", "draft_disposition_report"):
-                self.ledger.try_consume_tool_call(reserve=0, allow_over_cost=True)
-            raw_ung = await call_mcp_tool(server, tool, params)
-            return raw_ung if isinstance(raw_ung, dict) else error_envelope("MCP_BAD_RESPONSE", "non-dict")
         is_exit_tool = tool in ("draft_disposition_report", "submit_case_disposition", "finish")
         if not is_exit_tool and self.allowed_tool_budget is not None and self.calls >= self.allowed_tool_budget:
             return await self._record_tool_error(
@@ -93,6 +88,10 @@ class GuardedToolbox:
             code = str(raw.get("error_code") or "MCP_TOOL_ERROR")
             msg = str(raw.get("message") or raw.get("error") or "tool call failed")
             await self._record_tool_error(server, tool, code, msg)
+            return raw
+        if not self.defenses_enabled:
+            # E2 `defenses_off` ablation: RBAC, approval hook, bounds and budgets above still run; only the
+            # post-tool guardrails (PII masking, <untrusted_data> wrapping, injection screening) are disabled.
             return raw
         flags: list[dict[str, Any]] = []
         sanitized = post_tool_hook(tool, raw, flags=flags)

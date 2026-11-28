@@ -1,9 +1,10 @@
 """
 Chainlit UI - AuditGuard Analyst Interface.
 
-A thin client of the authenticated FastAPI service: it logs in with a service account (`UI_API_USERNAME` /
-`UI_API_PASSWORD`, defaulting to the seeded `reviewer` account and `REVIEWER_PASSWORD`), starts an investigation,
-follows its durable event stream and submits decisions with the exact `approved_hash` + single-use `approval_token`.
+A thin client of the authenticated FastAPI service. Every person signs in with their OWN AuditGuard account through
+Chainlit's password auth (which also enables Chainlit's built-in user-menu logout; requires `CHAINLIT_AUTH_SECRET`).
+The API JWT minted at sign-in is held only in that user's Chainlit session, so identity, role checks and the
+maker-checker rule (requester / last editor may not approve) are enforced by the API for the real user.
 It never fabricates results: any failure is shown as an error and no approval card is created.
 """
 
@@ -25,34 +26,40 @@ TARGET_DISPOSITION = {
     "close_benign": "close_benign",
     "request_info": "request_info",
 }
-_token_cache: dict[str, str] = {}
-
-
 class ApiError(RuntimeError):
     pass
 
 
-async def _headers(client: httpx.AsyncClient) -> dict[str, str]:
-    if "token" not in _token_cache:
-        username = os.getenv("UI_API_USERNAME", "reviewer")
-        password = (
-            os.getenv("UI_API_PASSWORD")
-            or os.getenv("REVIEWER_PASSWORD")
-            or os.getenv("ANALYST_PASSWORD", "")
-        )
-        if not password:
-            raise ApiError("UI_API_PASSWORD (or REVIEWER_PASSWORD) is not configured")
-        resp = await client.post(f"{API_BASE}/api/v1/auth/token", json={"username": username, "password": password})
-        if resp.status_code != 200:
-            raise ApiError(f"login failed (HTTP {resp.status_code})")
-        _token_cache["token"] = str(resp.json()["access_token"])
-    return {"Authorization": f"Bearer {_token_cache['token']}"}
+async def login_user(client: httpx.AsyncClient, username: str, password: str) -> Optional[cl.User]:
+    """Exchange the user's own credentials for an API JWT. Returns None on any failed login."""
+    resp = await client.post(f"{API_BASE}/api/v1/auth/token", json={"username": username, "password": password})
+    if resp.status_code != 200:
+        return None
+    body = resp.json()
+    return cl.User(identifier=username, metadata={"role": str(body["role"]), "api_token": str(body["access_token"])})
+
+
+@cl.password_auth_callback  # type: ignore[untyped-decorator]
+async def auth_callback(username: str, password: str) -> Optional[cl.User]:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        return await login_user(client, username, password)
+
+
+def auth_header_for(user: Optional[cl.User]) -> dict[str, str]:
+    token = (getattr(user, "metadata", None) or {}).get("api_token") if user is not None else None
+    if not token:
+        raise ApiError("not signed in: log in with your own AuditGuard account")
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _headers(_client: httpx.AsyncClient) -> dict[str, str]:
+    return auth_header_for(cl.user_session.get("user"))
 
 
 async def _api(client: httpx.AsyncClient, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     resp = await client.request(method, f"{API_BASE}{path}", headers=await _headers(client), **kwargs)
     if resp.status_code == 401:
-        _token_cache.pop("token", None)
+        raise ApiError("session expired or revoked: log out from the user menu and sign in again")
     if resp.status_code >= 400:
         raise ApiError(f"HTTP {resp.status_code}: {resp.text[:300]}")
     data = resp.json()
@@ -240,8 +247,9 @@ async def _submit_decision_request(
     approved_hash, token = pending.get("approved_hash"), pending.get("approval_token")
     target = TARGET_DISPOSITION[choice]
     if target != pending.get("recommended_disposition") or not approved_hash:
+        # Maker-checker: whoever edits the worksheet cannot approve that edit, so stop after the edit.
         edited = await _api(client, "POST", path, json={"action": "edit", "edit": {"recommended_disposition": target}})
-        approved_hash, token = edited["approved_hash"], edited["approval_token"]
+        return {**edited, "edited_only": True}
     if not token:
         prepared = await _api(client, "POST", f"{path}/prepare", json={"approved_hash": approved_hash})
         approved_hash, token = prepared["approved_hash"], prepared["approval_token"]
@@ -265,6 +273,18 @@ async def _decide(choice: str, notes: str) -> None:
             body = await _submit_decision_request(client, path, pending, choice, notes)
     except (ApiError, httpx.HTTPError) as exc:
         await cl.Message(content=f"Decision was NOT recorded: {exc}", author="AuditGuard").send()
+        return
+    if body.get("edited_only"):
+        await cl.Message(
+            content=(
+                f"## Worksheet edited to `{TARGET_DISPOSITION[choice].upper()}`\n"
+                f"**New payload hash:** `{str(body.get('payload_hash', ''))[:20]}...`\n\n"
+                "Earlier approvals are void. A different senior reviewer (not the requester and not you, the "
+                "editor) must now approve this exact hash."
+            ),
+            author="AuditGuard",
+        ).send()
+        cl.user_session.set("pending", None)
         return
     receipt = body.get("receipt") or {}
     await cl.Message(

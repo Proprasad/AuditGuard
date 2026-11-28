@@ -44,6 +44,41 @@ def build_approval_token(token_id: str, sha: str, reviewer_id: str) -> str:
     return f"APPROVE:{token_id}:{sha}:{_signature(token_id, sha, reviewer_id)}"
 
 
+def token_digest(token: str) -> str:
+    """At-rest form of an approval token: only this digest is stored, never the bearer token itself."""
+    return "sha256:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------------------------------
+# Maker-checker: the requester and the last editor of a worksheet may never approve it
+# ---------------------------------------------------------------------------------------------------
+REQUESTED_EVENT = "investigation_requested"
+
+
+def _requester(conn: DbConn, thread_id: str) -> Optional[str]:
+    row = conn.execute(
+        "SELECT actor FROM audit_logs WHERE thread_id = ? AND event_type = ? ORDER BY log_id ASC LIMIT 1",
+        (thread_id, REQUESTED_EVENT),
+    ).fetchone()
+    return str(row["actor"]) if row else None
+
+
+def requester_of(thread_id: str) -> Optional[str]:
+    """Identity (JWT `sub`) that started `thread_id`, from the append-only audit log."""
+    init_db()
+    with get_db() as conn:
+        return _requester(conn, thread_id)
+
+
+def maker_checker_conflict(requester: Optional[str], content: dict[str, Any], reviewer_id: str) -> Optional[str]:
+    """Return why `reviewer_id` may not approve, or None. Unknown requesters are handled by the caller."""
+    if requester is not None and reviewer_id == requester:
+        return "the investigation requester cannot approve their own investigation"
+    if reviewer_id == content.get("edited_by"):
+        return "the last editor of the worksheet cannot approve their own edit"
+    return None
+
+
 def parse_approval_token(token: str) -> Optional[tuple[str, str, str]]:
     parts = token.split(":")
     if len(parts) != 4 or parts[0] != "APPROVE" or not all(parts[1:]):
@@ -215,7 +250,7 @@ def issue_approval_token(
             "INSERT INTO approval_tokens (token_id, thread_id, worksheet_id, "
             "worksheet_sha256, hmac_token, issued_to, issued_at, expires_at, consumed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
-            (token_id, thread_id, worksheet_id, sha, token, reviewer_id, now, expires_at),
+            (token_id, thread_id, worksheet_id, sha, token_digest(token), reviewer_id, now, expires_at),
         )
     return {
         "token_id": token_id,
@@ -256,8 +291,13 @@ def _validate_commit_token(
     if tok["expires_at"] and parse_utc_timestamp(tok["expires_at"]) <= utc_now():
         raise CaseRepoError("TOKEN_EXPIRED", "approval token has expired (15-minute TTL)")
     expected_sig = _signature(token_id, token_sha, reviewer_id)
-    if not hmac.compare_digest(token_sig, expected_sig) or tok["hmac_token"] != approval_token:
+    if not hmac.compare_digest(token_sig, expected_sig) or not hmac.compare_digest(
+        str(tok["hmac_token"]), token_digest(approval_token)
+    ):
         raise CaseRepoError("INVALID_HMAC_SIGNATURE", "approval token signature invalid")
+    conflict = maker_checker_conflict(_requester(conn, str(ws["thread_id"] or "")), content, reviewer_id)
+    if conflict:
+        raise CaseRepoError("SELF_APPROVAL_FORBIDDEN", conflict)
     return ws, content, current_sha, token_id
 
 
@@ -342,7 +382,11 @@ def log_rejection(thread_id: str, reviewer_id: str, worksheet_id: str, code: str
 
 
 def current_approval(worksheet_id: str, reviewer_id: Optional[str] = None) -> Optional[dict[str, Any]]:
-    """Read-only lookup of the active (unconsumed, non-expired) token for `reviewer_id` on `worksheet_id`."""
+    """
+    Read-only lookup of the active (unconsumed, non-expired) token metadata for `reviewer_id` on `worksheet_id`.
+    Tokens are stored as digests only, so `approval_token` is always None here: the bearer token is returned once,
+    by `issue_approval_token` (`/decision/prepare`), and must be kept by the client.
+    """
     ws = get_worksheet(worksheet_id)
     if ws is None:
         return None
@@ -370,7 +414,7 @@ def current_approval(worksheet_id: str, reviewer_id: Optional[str] = None) -> Op
     return {
         "token_id": row["token_id"],
         "approved_hash": row["worksheet_sha256"],
-        "approval_token": row["hmac_token"],
+        "approval_token": None,
         "issued_to": row["issued_to"],
         "issued_at": row["issued_at"],
         "expires_at": row["expires_at"],

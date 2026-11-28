@@ -130,7 +130,9 @@ async def test_c1_replans_when_evidence_contradicts_and_pauses_at_interrupt():
             .compile(checkpointer=saver)
             .aget_state({"configurable": {"thread_id": "thr-s5-c1"}})
         )
-    assert done.next == () and done.values["inv"]["current_node"] == "committed"
+    # AG-35: an approval without a token releases the gate but commits nothing, so it must not read as committed.
+    assert done.next == () and done.values["inv"]["current_node"] == "approval_missing_token"
+    assert done.values["inv"].get("human_decision") is None
     assert await resume_gate("thr-s5-c1", "c1_single", {"action": "approve"}) is False  # no double release
 
 

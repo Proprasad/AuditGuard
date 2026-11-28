@@ -61,23 +61,10 @@ class SupervisorPlanOutput(StrictModel):
     replan_conditions: list[str] = Field(default_factory=list)
 
 
-def _is_replay_ctx(ctx: RunContext) -> bool:
-    import os
-
-    return (ctx.llm_mode or os.getenv("LLM_MODE") or "").strip().lower() == "replay"
-
-
-def _finding_for_prompt(f: SpecialistFinding, *, is_replay: bool) -> dict[str, Any]:
-    if is_replay:
-        return {
-            "task_id": f.task_id,
-            "agent_name": f.agent_name,
-            "summary": f.summary,
-            "tool_calls": f.tool_calls,
-            "evidence_ids_added": list(f.evidence_ids_added),
-            "recommended_replan": f.recommended_replan,
-        }
-    return f.model_dump(mode="json")
+def _finding_for_prompt(f: SpecialistFinding) -> dict[str, Any]:
+    # Identical in live, record and replay, so a recorded cassette replays exactly. Run telemetry (wall-clock
+    # `duration_ms`) is not evidence and would make every request unique, so it never enters a prompt.
+    return f.model_dump(mode="json", exclude={"execution_metadata"})
 
 
 class SupervisorReplanCheck(StrictModel):
@@ -109,8 +96,7 @@ async def _supervisor_plan(
     from src.agent.c2_routing import build_routing_plan
 
     max_calls = ctx.policy.budgets.max_tool_calls
-    is_replay = _is_replay_ctx(ctx)
-    fallback_routing, fallback_handoffs = build_routing_plan(None, [], max_calls, is_replay=is_replay)
+    fallback_routing, fallback_handoffs = build_routing_plan(None, [], max_calls)
     fallback_steps = [f"[{h.target_agent}] {h.objective}" for h in fallback_handoffs.values()]
     if not ctx.ledger.check_llm_allowed().allowed:
         return fallback_steps, fallback_handoffs, fallback_routing
@@ -143,7 +129,7 @@ async def _supervisor_plan(
         try:
             validated = SupervisorPlanOutput.model_validate(parsed_dict)
             routing, enriched_ho = build_routing_plan(
-                parsed_dict, validated.handoffs, max_calls, is_replay=is_replay
+                parsed_dict, validated.handoffs, max_calls
             )
             return validated.steps, enriched_ho, routing
         except ValidationError:
@@ -196,7 +182,7 @@ async def _run_evidence_specialist(
         stop_specialist = False
         for tc in resp.tool_calls:
             res = await runtime.execute(tc.name, tc.arguments)
-            messages.append(tool_message(tc, res))
+            messages.append(tool_message(tc, res, defenses_enabled=runtime.box.defenses_enabled))
             if is_error(res) and res.get("error_code") in ("BUDGET_EXCEEDED", "SPECIALIST_BUDGET_EXCEEDED"):
                 stop_specialist = True
         if stop_specialist:
@@ -232,8 +218,7 @@ async def _supervisor_should_replan(
     spec = ctx.policy.model_for("c2_supervisor")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
     gb = ctx.policy.graph_bounds
-    is_replay = _is_replay_ctx(ctx)
-    prompt_findings = [_finding_for_prompt(f, is_replay=is_replay) for f in findings]
+    prompt_findings = [_finding_for_prompt(f) for f in findings]
     prompt = (
         f"Specialist findings:\n{json.dumps(prompt_findings, indent=2)}\n"
         f"Paths reconstructed so far: {len(flow_rt.fund_flow_paths)} "
@@ -270,21 +255,11 @@ def _critic_initial_messages(
     merged_rt: AgentToolRuntime,
     state: InvestigationState,
     findings: list[SpecialistFinding],
-    *,
-    is_replay: bool = False,
 ) -> list[dict[str, Any]]:
-    ordered_findings = list(findings)
-    if is_replay:
-        replan_f = next((f for f in findings if f.task_id == "HO-FLOW-REPLAN"), None)
-        if replan_f is not None:
-            ordered_findings = [
-                replan_f,
-                *(f for f in findings if f.task_id not in ("HO-FLOW", "HO-FLOW-REPLAN")),
-            ]
     ev_preview: dict[str, Any] = {
         "alert_id": state.alert.alert_id,
         "alert_amount_inr": str(state.alert.total_amount_inr),
-        "specialist_findings": [_finding_for_prompt(f, is_replay=is_replay) for f in ordered_findings],
+        "specialist_findings": [_finding_for_prompt(f) for f in findings],
         "candidate_paths": [p.model_dump(mode="json") for p in merged_rt.fund_flow_paths[:3]],
         "kyc_profiles": merged_rt.kyc_profiles[:5],
         "regulatory_clauses": [
@@ -292,11 +267,11 @@ def _critic_initial_messages(
         ],
         "known_evidence_ids": sorted(merged_rt.evidence_registry.keys())[:60],
     }
-    if not is_replay and state.hypothesis_assessment:
+    if state.hypothesis_assessment:
         ev_preview["hypothesis_assessment"] = state.hypothesis_assessment
-    if not is_replay and state.critic_assessment:
+    if state.critic_assessment:
         ev_preview["preliminary_critique"] = state.critic_assessment
-    if not is_replay and merged_rt.replan_records:
+    if merged_rt.replan_records:
         ev_preview["replan_records"] = merged_rt.replan_records[-2:]
     sys_prompt = render_specialist_prompt(
         "reporter_critic", handoff.objective, handoff.allowed_tool_budget, ev_preview
@@ -328,7 +303,7 @@ async def _run_reporter_critic(
     spec = ctx.policy.model_for("c2_specialists")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_specialists")
     tools = build_openai_tools("reporter_critic", include_finish=True, replanning_enabled=False)
-    messages = _critic_initial_messages(handoff, merged_rt, state, findings, is_replay=_is_replay_ctx(ctx))
+    messages = _critic_initial_messages(handoff, merged_rt, state, findings)
 
     repair_used = False
     forced_reason = "reporter_critic finished turns without valid finish"

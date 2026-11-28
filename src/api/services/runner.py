@@ -10,8 +10,9 @@ from typing import Any
 import uuid
 
 from src.api.metrics import CITATIONS_VERIFIED, INVESTIGATION_DURATION, INVESTIGATIONS_TOTAL, TOOL_CALLS_TOTAL
+from src.core.canonical import dec_str
 from src.db import case_repo
-from src.db.database import append_event, save_checkpoint
+from src.db.database import append_audit_log, append_event, save_checkpoint
 from src.models import Alert, InvestigationState
 from src.observability.loki_shipper import emit_loki_log
 
@@ -64,7 +65,11 @@ def register_thread(alert: Alert, mode: str, owner: str) -> str:
         mode=mode,
         current_node="registered",
         status="running",
-        state_dict={"alert": alert.model_dump(mode="json"), "thread_id": thread_id, "owner": owner},
+        state_dict={"alert": alert.model_dump(mode="json"), "thread_id": thread_id},
+    )
+    # Maker-checker anchor: the requester is recorded once in the append-only audit log (never in mutable state).
+    append_audit_log(
+        thread_id, case_repo.REQUESTED_EVENT, owner, {"alert_id": alert.alert_id, "mode": mode}
     )
     emit(
         thread_id,
@@ -281,7 +286,7 @@ def _finalize_thread_db(thread_id: str, alert: Alert, mode: str, state: Investig
         "worksheet_id": worksheet.worksheet_id,
         "payload_hash": payload_hash,
         "recommended_disposition": worksheet.recommended_disposition.value,
-        "confidence_score": float(worksheet.confidence_score),
+        "confidence_score": dec_str(worksheet.confidence_score),
         "rationale": worksheet.recommendation_rationale,
         "replan_count": state.replan_count,
         "tool_calls_used": state.tool_calls_used,

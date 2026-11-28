@@ -35,6 +35,7 @@ _STATUS_FOR_CODE = {
     "INVALID_TOKEN_FORMAT": 403,
     "TOKEN_NOT_FOUND": 403,
     "UNAPPROVED_CRITICAL_ACTION": 403,
+    "SELF_APPROVAL_FORBIDDEN": 403,
 }
 
 
@@ -83,9 +84,20 @@ def _require_open(thread: dict[str, Any], allowed: tuple[str, ...]) -> dict[str,
     return ws
 
 
+def _enforce_maker_checker(thread: dict[str, Any], ws: dict[str, Any], reviewer: str) -> None:
+    """Four-eyes rule: neither the requester nor the last editor may approve. Unknown requester fails closed."""
+    requester = case_repo.requester_of(thread["thread_id"])
+    if requester is None:
+        raise DecisionError(409, "REQUESTER_UNKNOWN", "no recorded requester for this thread; approval refused")
+    conflict = case_repo.maker_checker_conflict(requester, ws["content"], reviewer)
+    if conflict:
+        raise DecisionError(403, "SELF_APPROVAL_FORBIDDEN", conflict)
+
+
 def prepare_decision(thread: dict[str, Any], approved_hash: str | None, reviewer: str) -> dict[str, Any]:
     """Mint a single-use, 15-minute approval token bound to `(current_hash, reviewer, nonce)`."""
     ws = _require_open(thread, ("interrupt_required",))
+    _enforce_maker_checker(thread, ws, reviewer)
     if approved_hash and approved_hash != ws["current_hash"]:
         raise DecisionError(403, "APPROVAL_HASH_MISMATCH", "approved_hash does not match the current worksheet")
     recheck = verify_worksheet(
@@ -112,9 +124,8 @@ def prepare_decision(thread: dict[str, Any], approved_hash: str | None, reviewer
     }
 
 
-def apply_edit(
-    thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str, *, can_approve: bool = False
-) -> dict[str, Any]:
+def apply_edit(thread: dict[str, Any], edit: EditWorksheetRequest, reviewer: str) -> dict[str, Any]:
+    """Restricted edit. The editor becomes `edited_by`, so a different senior reviewer must approve the new hash."""
     ws = _require_open(thread, ("interrupt_required", "verification_failed"))
     changes: dict[str, Any] = {}
     if edit.recommended_disposition is not None:
@@ -151,11 +162,6 @@ def apply_edit(
         }
     )
     updated = case_repo.update_worksheet_content(ws["worksheet_id"], candidate, reviewer)
-    approval = (
-        case_repo.issue_approval_token(thread["thread_id"], ws["worksheet_id"], reviewer_id=reviewer)
-        if can_approve
-        else None
-    )
     thread["payload_hash"] = updated["payload_hash"]
     worksheet = thread["state"].get("worksheet") or {}
     worksheet.update(
@@ -178,11 +184,12 @@ def apply_edit(
         "status": "interrupt_required",
         "previous_hash_invalidated": updated["previous_hash"],
         "payload_hash": updated["payload_hash"],
-        "approved_hash": approval["approved_hash"] if approval else updated["payload_hash"],
-        "approval_token": approval["approval_token"] if approval else None,
+        "approved_hash": updated["payload_hash"],
+        "approval_token": None,
         "updated_content": candidate,
         "message": (
-            "Worksheet edited and re-verified. Prior approval tokens are void; approve using the new hash and token."
+            "Worksheet edited and re-verified. Prior approval tokens are void; a different senior reviewer "
+            "(not the requester or this editor) must prepare and approve the new hash."
         ),
     }
 
@@ -236,6 +243,7 @@ def _persist_post_commit(
 
 async def approve(thread: dict[str, Any], req: DecisionRequest, reviewer: str) -> dict[str, Any]:
     ws = await asyncio.to_thread(_require_open, thread, ("interrupt_required",))
+    await asyncio.to_thread(_enforce_maker_checker, thread, ws, reviewer)
     if not (req.approved_hash and req.approval_token):
         raise DecisionError(422, "MISSING_APPROVAL_CREDENTIALS", "approved_hash and approval_token are required")
     if req.approved_hash != ws["current_hash"]:

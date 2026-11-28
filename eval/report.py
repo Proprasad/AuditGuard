@@ -28,7 +28,8 @@ DEFAULT_REPORT_OUT = Path("docs/evaluation_report.md")
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    # Normalise CRLF -> LF so provenance hashes are identical on Windows (autocrlf) and POSIX checkouts.
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:16]
 
 
 def _load_json(path: Path) -> dict[str, Any]:

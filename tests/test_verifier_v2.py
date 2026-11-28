@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from src.agent.c1_single import run_investigation
+from src.guardrails.hooks import decode_llm_tool_content
 from src.guardrails.verifier import load_corpus_category_map, verify_inr_math, verify_worksheet
 from src.models import Alert, DispositionDecision, RiskLevel
 from tests.fakes import FakeLLM, make_text_turn, make_tool_turn
@@ -292,10 +293,8 @@ def test_verifier_both_hypotheses_and_missing_evidence_required() -> None:
 @pytest.mark.asyncio
 async def test_e4_no_verifier_ablation_vs_verifier_on() -> None:
     def _ungrounded_finish(messages: list[dict[str, Any]], _: Any) -> Any:
-        import json
-
-        reg_out = next(json.loads(m["content"]) for m in messages if m.get("name") == "search_regulations")
-        kyc_out = next(json.loads(m["content"]) for m in messages if m.get("name") == "get_kyc_profile")
+        reg_out = next(decode_llm_tool_content(m["content"]) for m in messages if m.get("name") == "search_regulations")
+        kyc_out = next(decode_llm_tool_content(m["content"]) for m in messages if m.get("name") == "get_kyc_profile")
         cid = reg_out["clauses"][0]["clause_id"]
         kid = kyc_out["evidence_id"]
         return make_tool_turn(
