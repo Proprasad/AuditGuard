@@ -73,7 +73,7 @@ def _require_open(thread: dict[str, Any], allowed: tuple[str, ...]) -> dict[str,
     if status not in allowed:
         raise DecisionError(
             409,
-            "NOT_READY" if status in ("running", "error") else "THREAD_CLOSED",
+            "NOT_READY" if status in ("running", "error", "interrupted") else "THREAD_CLOSED",
             f"thread status is {status}",
         )
     ws = case_repo.get_worksheet(thread["worksheet_id"]) if thread.get("worksheet_id") else None

@@ -27,6 +27,7 @@ from typing import Any, Optional
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.mcp_servers.annotations import READ_ONLY_TOOL
 from src.core.canonical import dec_str, parse_utc_timestamp, to_money
 from src.db.database import DbConn, get_ro_db
 from src.mcp_servers.http_auth import serve_mcp_http
@@ -196,7 +197,7 @@ def _sync_alert_context(alert_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def get_alert_context(params: GetAlertContextInput) -> dict[str, Any]:
     """Alert metadata, seed account and multi-bank network transactions."""
     overlay = _eval_case_ctx.get()
@@ -245,7 +246,7 @@ def _sync_account_txs(account_id: str, days_back: int, limit: int) -> list[dict[
     return [_tx_dict(r) for r in rows]
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def get_account_transactions(params: GetAccountTransactionsInput) -> dict[str, Any]:
     """Transaction history for an account within `days_back` (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
@@ -299,7 +300,7 @@ def _sync_kyc(account_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def get_kyc_profile(params: GetKYCProfileInput) -> dict[str, Any]:
     """KYC profile & risk tier for an account (`ACCOUNT_NOT_FOUND` if unknown - nothing is fabricated)."""
     overlay = _eval_case_ctx.get()
@@ -332,7 +333,7 @@ def _sync_counterparty_txs(account_id: str, counterparty_id: str, days_back: int
     return [_tx_dict(r) for r in rows]
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def get_counterparty_history(params: GetCounterpartyHistoryInput) -> dict[str, Any]:
     """Historical transfers between two accounts within `days_back` (hard cap: 200 rows)."""
     overlay = _eval_case_ctx.get()
@@ -400,7 +401,7 @@ def _sync_registry(entity_name: str, account_id: Optional[str], not_found: dict[
     return not_found
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def check_commercial_registry(params: CheckCommercialRegistryInput) -> dict[str, Any]:
     """GST / MCA / Section 80G / Chit registration lookup (a clean NOT_FOUND is a legitimate answer)."""
     overlay = _eval_case_ctx.get()

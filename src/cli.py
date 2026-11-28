@@ -5,6 +5,7 @@ Commands:
   investigate      Run a single investigation (c0_fixed | rule_engine | c1_single | c2_multi)
   retrieval-bench  Evaluate Recall@5 & MRR on the regulatory benchmarks
   serve            Initialize DB & launch FastAPI + Analyst Workbench locally
+  lessons          Human review of Reflexion lessons: list | accept | reject | edit | freeze | unfreeze
 """
 
 from __future__ import annotations
@@ -17,12 +18,15 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import typer
 from typer.models import OptionInfo
 
+from src.cli_lessons import lessons_app
+
 if TYPE_CHECKING:
     from src.llm.client import LLMClient
     from src.llm.replay import LLMMode
     from src.models import InvestigationState
 
 app = typer.Typer(name="auditguard", help="AuditGuard AML Investigation CLI")
+app.add_typer(lessons_app)
 
 
 def _opt_str(val: Any) -> Optional[str]:
@@ -125,9 +129,17 @@ def retrieval_bench(
     report: bool = typer.Option(False, "--report", help="Print full Markdown report across all 4 pipelines"),
     bench: str = typer.Option("eval/retrieval_bench_v2.jsonl", "--bench", help="Path to retrieval benchmark JSONL"),
     out: Optional[str] = typer.Option(None, "--out", help="Optional output path to save Markdown report"),
+    backend: Optional[str] = typer.Option(None, "--backend", help="builtin | neural (default: config value)"),
 ) -> None:
     """Evaluate BM25, dense, hybrid-RRF, and hybrid+reranker on Retrieval Benchmark v2."""
     from eval.retrieval_eval import ALL_PIPELINES, format_retrieval_report, run_retrieval_benchmark
+    from src.mcp_servers.compliance_kb import set_backend_override
+
+    chosen = _opt_str(backend)
+    if chosen is not None and chosen not in ("builtin", "neural"):
+        typer.echo("--backend must be builtin or neural")
+        raise typer.Exit(code=2)
+    set_backend_override(chosen)
 
     bench_path = Path(bench)
     if not bench_path.exists():

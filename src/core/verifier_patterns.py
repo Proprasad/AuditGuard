@@ -64,6 +64,31 @@ GUILT_FAMILIES = [
         r"\bproves? (?:the )?(?:money laundering|fraud)\b|\bdefinitive(?:ly)? launder"
     ),
 ]
+# Tipping-off (the RBI KYC Master Direction requires no tipping-off of the customer at any level): a disclosure verb
+# aimed at the customer side, paired with the STR, the suspicion or the investigation. Asking the customer for
+# documents is legitimate and never matches; negated instructions ("do not inform the customer ...") are excluded
+# by the clause negation guard.
+_TO_TARGET = (
+    r"(?:the |our |this |that |these |its )?(?:customers?|clients?|account ?holders?|subjects?|beneficiar(?:y|ies)|"
+    r"originators?|remitters?|counterpart(?:y|ies)|entity|accused)"
+)
+_TO_OBJECT = (
+    r"(?:strs?|suspicious (?:transaction|activity) reports?|sars?|suspicions?|suspected|investigations?|"
+    r"(?:being |been |under )(?:investigat\w*|monitor\w*|report\w*|review\w*|flagged)|reported to|fiu|"
+    r"filing|filed|escalat\w*)\b"
+)
+_GAP = r"(?:\s+\S+){0,12}?\s+"
+TIPPING_OFF_FAMILIES = [
+    re.compile(
+        rf"\b(?:inform|notify|tell|alert|advise|warn|tip off|update|contact)\s+{_TO_TARGET}\b{_GAP}"
+        rf"(?:about |of |regarding |that |on )?(?:\S+\s+){{0,6}}?{_TO_OBJECT}"
+    ),
+    re.compile(rf"\blet\s+{_TO_TARGET}\s+know\b{_GAP}(?:\S+\s+){{0,6}}?{_TO_OBJECT}"),
+    re.compile(
+        rf"\b(?:disclose|reveal|share|mention|communicate|forward|send)\b(?:\s+\S+){{0,4}}?\s+{_TO_OBJECT}"
+        rf"(?:\s+\S+){{0,6}}?\s+(?:to|with)\s+{_TO_TARGET}\b"
+    ),
+]
 _NEGATION_CLAUSE_RE = re.compile(
     r"\b(?:no|not|never|without|cannot|neither|nor|does not|do not|did not|is not|are not)\b"
     r"(?:\s+\w+){0,14}\s*$"
@@ -140,6 +165,20 @@ def check_prohibited_claims(text: str) -> list[str]:
         for m in pat.finditer(norm):
             if not _is_negated_in_clause(text, norm, m.start()):
                 hits.append(pat.pattern)
+                break
+    return hits
+
+
+def check_tipping_off(text: str) -> list[str]:
+    """Return matched tipping-off patterns (empty list = clean); negated clauses are ignored."""
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    norm = re.sub(r"[\-_/,;:()\[\]\"']+", " ", folded)
+    norm = re.sub(r"\s+", " ", norm).strip()
+    hits: list[str] = []
+    for pat in TIPPING_OFF_FAMILIES:
+        for m in pat.finditer(norm):
+            if not _is_negated_in_clause(text, norm, m.start()):
+                hits.append(m.group(0))
                 break
     return hits
 

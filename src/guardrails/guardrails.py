@@ -227,7 +227,7 @@ def apply_input_guardrails(text: str, is_external_data: bool = False) -> Guardra
 
 
 def apply_output_guardrails(text: str) -> GuardrailResult:
-    from src.core.verifier import check_prohibited_claims
+    from src.core.verifier import check_prohibited_claims, check_tipping_off
 
     scrubbed, pii_found = mask_pii(text)
     prohibited = check_prohibited_claims(scrubbed)
@@ -236,6 +236,13 @@ def apply_output_guardrails(text: str) -> GuardrailResult:
             allowed=False,
             scrubbed_text="[BLOCKED: Output contains prohibited guilt assertions]",
             blocked_reason=f"prohibited_claims: {prohibited}",
+            pii_found=pii_found,
+        )
+    if tipping := check_tipping_off(scrubbed):
+        return GuardrailResult(
+            allowed=False,
+            scrubbed_text="[BLOCKED: Output would tip off the customer about the STR or investigation]",
+            blocked_reason=f"tipping_off: {tipping}",
             pii_found=pii_found,
         )
     return GuardrailResult(allowed=True, scrubbed_text=scrubbed, pii_found=pii_found)

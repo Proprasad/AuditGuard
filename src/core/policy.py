@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -149,15 +149,81 @@ class Structuring(_Strict):
 
 class MemoryPolicy(_Strict):
     short_term_window_messages: int = Field(gt=0)
+    live_context_window_messages: int = Field(gt=0)
+    subject_history_max_episodes: int = Field(gt=0)
+
+
+class LessonRetrieval(_Strict):
+    top_k: int = Field(gt=0)
+    min_overlap: int = Field(gt=0)
+
+
+class DenseBlend(_Strict):
+    svd: Decimal
+    subword: Decimal
+
+
+class RerankWeights(_Strict):
+    rrf: Decimal
+    bm25: Decimal
+    dense: Decimal
+    coverage: Decimal
+    bigram: Decimal
+    title: Decimal
+    id_hit: Decimal
+
+
+class AbstentionThresholds(_Strict):
+    bm25_min: Decimal
+    bm25_soft_min: Decimal
+    bm25_per_token: Decimal
+    dense_min: Decimal
+    coverage_min: Decimal
+    term_hit_min: int = Field(ge=1)
+    short_query_bm25_min: Decimal
+    short_query_dense_min: Decimal
+    low_term_dense_min: Decimal
 
 
 class RetrievalPolicy(_Strict):
+    backend: Literal["builtin", "neural"] = "builtin"
     embedding_model: str
     reranker_model: str
+    embedding_query_prefix: str = ""
+    expansion_table_sha256: str
     rrf_k: int
     top_k_dense: int
     top_k_bm25: int
     top_k_final: int
+    bm25_k1: Decimal
+    bm25_b: Decimal
+    dense_blend: DenseBlend
+    rerank_weights: RerankWeights
+    abstention: AbstentionThresholds
+
+
+class AgentLimits(_Strict):
+    c1_max_turns: int = Field(gt=0)
+    c2_specialist_max_turns: int = Field(gt=0)
+    c2_replan_handoff_budget: int = Field(gt=0)
+    c2_replan_max_turns: int = Field(gt=0)
+
+
+class ApprovalPolicy(_Strict):
+    token_ttl_seconds: int = Field(gt=0)
+
+
+class ReflectorPolicy(_Strict):
+    temperature: Decimal
+    max_tokens: int = Field(gt=0)
+
+
+class QueryTypology(_Strict):
+    """Cut-offs that pick the case-specific regulatory query in `src/agent/gathering.py`."""
+
+    multi_tier_min_hops: int = Field(gt=0)
+    fee_skim_min_retention_pct: Decimal
+    staggered_min_span_days: int = Field(gt=0)
 
 
 class ScoringConfig(_Strict):
@@ -207,6 +273,11 @@ class PolicyConfig(_Strict):
     scoring: ScoringConfig
     memory: MemoryPolicy
     retrieval: RetrievalPolicy
+    agent_limits: AgentLimits
+    approval: ApprovalPolicy
+    reflector: ReflectorPolicy
+    query_typology: QueryTypology
+    lesson_retrieval: LessonRetrieval
 
     @model_validator(mode="after")
     def _models_allowed(self) -> PolicyConfig:

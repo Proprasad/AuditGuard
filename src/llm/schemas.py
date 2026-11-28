@@ -83,3 +83,6 @@ class TranscriptEntry(StrictModel):
     cost_usd: str
     latency_s: float = Field(ge=0.0)
     from_cassette: bool = False
+    # From the `[PROMPT_VERSION=x | AGENT=y]` header of the system prompt (audit AG-24); "" when absent.
+    prompt_version: str = ""
+    prompt_agent: str = ""

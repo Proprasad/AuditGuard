@@ -23,19 +23,18 @@ from typing import Any, Optional
 
 from pydantic import Field, ValidationError
 
-from src.agent.loop import (
-    execute_tool_turn_batch,
-    persist_forced_finish,
-    retrieve_frozen_lessons,
-    tool_message,
-)
-from src.agent.planning import RunContext, resolve_model_for_role, sync_budget
+from src.agent.loop import execute_tool_turn_batch, persist_forced_finish
+from src.agent.loop_context import retrieve_frozen_lessons, tool_message
+from src.agent.planning import RunContext, emit_tool_event, resolve_model_for_role, sync_budget
 from src.agent.prompts import render_c2_supervisor_prompt, render_specialist_prompt
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
 from src.agent.tools import AgentToolRuntime, build_openai_tools
 from src.core.canonical import Ratio
 from src.db.database import utc_now_iso
+from src.memory.store import memory_store, trim_live_context
+from src.memory.subject_history import render_subject_history, subject_history
+from src.reflexion.retrieval import observed_feature_text, select_lessons
 from src.llm.client import LLMClientProtocol
 from src.models import (
     DispositionWorksheet,
@@ -46,7 +45,6 @@ from src.models import (
     StrictModel,
 )
 
-SPECIALIST_MAX_TURNS = 4
 CRITIC_MAX_TURNS = 4
 
 
@@ -103,9 +101,11 @@ async def _supervisor_plan(
 
     spec = ctx.policy.model_for("c2_supervisor")
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
+    history = await asyncio.to_thread(subject_history, state.alert, memory_enabled=ctx.memory_enabled)
     user_prompt = (
         f"Plan investigation for Alert `{state.alert.alert_id}` (root=`{state.alert.root_account}`, "
-        f"amount=`INR {state.alert.total_amount_inr}`, rule=`{state.alert.rule_name}`).\n"
+        f"amount=`INR {state.alert.total_amount_inr}`, rule=`{state.alert.rule_name}`)."
+        f"{render_subject_history(history)}\n"
         "Return JSON: "
         '{"steps": ["..."], "handoffs": ['
         '{"task_id":"HO-FLOW","target_agent":"flow_tracer","objective":"...","allowed_tool_budget":4},'
@@ -145,7 +145,7 @@ async def _run_evidence_specialist(
     llm_client: LLMClientProtocol,
     context_summary: dict[str, Any],
     replanning_enabled: bool = False,
-    max_turns: int = SPECIALIST_MAX_TURNS,
+    max_turns: Optional[int] = None,
 ) -> SpecialistFinding:
     role = handoff.target_agent
     runtime.box.set_sub_budget(runtime.box.calls + handoff.allowed_tool_budget)
@@ -161,12 +161,13 @@ async def _run_evidence_specialist(
         },
         {"role": "user", "content": f"Execute hand-off `{handoff.task_id}` now using your allowed tools."},
     ]
+    window = ctx.policy.memory.live_context_window_messages
     summary_text = ""
-    for _ in range(max_turns):
+    for _ in range(max_turns if max_turns is not None else ctx.policy.agent_limits.c2_specialist_max_turns):
         if not ctx.ledger.check_llm_allowed().allowed:
             break
         resp = await llm_client.chat(
-            messages,
+            trim_live_context(messages, window),
             tools=tools,
             model=model_id,
             temperature=spec.temperature,
@@ -182,6 +183,7 @@ async def _run_evidence_specialist(
         stop_specialist = False
         for tc in resp.tool_calls:
             res = await runtime.execute(tc.name, tc.arguments)
+            await emit_tool_event(ctx, runtime.role, tc.name, res, len(runtime.tool_execution_log))
             messages.append(tool_message(tc, res, defenses_enabled=runtime.box.defenses_enabled))
             if is_error(res) and res.get("error_code") in ("BUDGET_EXCEEDED", "SPECIALIST_BUDGET_EXCEEDED"):
                 stop_specialist = True
@@ -219,8 +221,15 @@ async def _supervisor_should_replan(
     model_id = await asyncio.to_thread(resolve_model_for_role, ctx, "c2_supervisor", strong=True)
     gb = ctx.policy.graph_bounds
     prompt_findings = [_finding_for_prompt(f) for f in findings]
+    lessons: list[str] = []
+    if ctx.reflexion_enabled and ctx.memory_enabled:
+        observed = observed_feature_text(flow_rt.alert, flow_rt.fund_flow_paths, flow_rt.transactions)
+        lessons = await asyncio.to_thread(select_lessons, memory_store, observed, ctx.policy)
+        ctx.offered_lessons.extend(les for les in lessons if les not in ctx.offered_lessons)
+    lesson_txt = "".join(f"Reviewed playbook lesson matching the observed flows: {les}\n" for les in lessons)
     prompt = (
         f"Specialist findings:\n{json.dumps(prompt_findings, indent=2)}\n"
+        f"{lesson_txt}"
         f"Paths reconstructed so far: {len(flow_rt.fund_flow_paths)} "
         f"(multi-hop={sum(1 for p in flow_rt.fund_flow_paths if p.hop_count >= 2)}).\n"
         f"Bounds: time_window_days=[{gb.time_window_days.min}..{gb.time_window_days.max}], "
@@ -397,7 +406,8 @@ async def _maybe_replan_flow(
         return
     flow_rt.replanning_enabled = True
     replan_ho = SpecialistHandOff(
-        task_id="HO-FLOW-REPLAN", target_agent="flow_tracer", allowed_tool_budget=2,
+        task_id="HO-FLOW-REPLAN", target_agent="flow_tracer",
+        allowed_tool_budget=ctx.policy.agent_limits.c2_replan_handoff_budget,
         objective=(
             f"Call replan_graph(time_window_days={replan_req.time_window_days}, "
             f"max_hops={replan_req.max_hops}, amount_tolerance='{replan_req.amount_tolerance}', "
@@ -407,7 +417,7 @@ async def _maybe_replan_flow(
     findings[0] = await _run_evidence_specialist(
         handoff=replan_ho, runtime=flow_rt, ctx=ctx, llm_client=llm_client,
         context_summary={"replan_directive": replan_req.model_dump(mode="json")},
-        replanning_enabled=True, max_turns=2,
+        replanning_enabled=True, max_turns=ctx.policy.agent_limits.c2_replan_max_turns,
     )
 
 

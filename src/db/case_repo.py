@@ -17,12 +17,12 @@ import sqlite3
 from typing import Any, Optional
 import uuid
 
-from src.config import get_hmac_secret
+from src.config import get_hmac_secret, get_policy
 from src.core.canonical import canonical_sha256, dumps_json, parse_utc_timestamp, utc_now
 from src.db.database import DbConn, get_db, get_scoped_db, init_db, utc_now_iso
 
 CASE_WRITE_TABLES = frozenset({"worksheets", "approval_tokens", "cases", "audit_logs"})
-APPROVAL_TOKEN_TTL_SECONDS = 15 * 60  # 15 minutes per Phase 0 spec
+APPROVAL_TOKEN_TTL_SECONDS = get_policy().approval.token_ttl_seconds  # config/models.yaml `approval`
 
 
 class CaseRepoError(Exception):

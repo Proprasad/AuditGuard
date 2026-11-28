@@ -32,6 +32,7 @@ from src.core.verifier_patterns import (
     REF_PATTERN,
     as_pct,
     check_prohibited_claims,
+    check_tipping_off,
     extract_prose_amounts,
     extract_prose_percentages,
     load_corpus_category_map,
@@ -70,6 +71,7 @@ __all__ = [
     "Discrepancy",
     "VerificationResult",
     "check_prohibited_claims",
+    "check_tipping_off",
     "compute_canonical_hash",
     "extract_prose_amounts",
     "extract_prose_percentages",
@@ -467,6 +469,8 @@ def verify_worksheet(
         if hits := check_prohibited_claims(text):
             fail("no_guilt_claims", "PROHIBITED_CLAIM", name, f"guilt assertion matched: {hits}")
             checks["no_prohibited_claims"] = False
+        if tip := check_tipping_off(text):
+            fail("no_tipping_off", "TIPPING_OFF", name, f"customer disclosure of the STR/suspicion: {tip}")
 
     disposition = _check_confidence_and_disp(worksheet, fail)
     judge_sig = judge_citation_relevant
@@ -480,6 +484,7 @@ def verify_worksheet(
     for default_ok in (
         "no_guilt_claims",
         "no_prohibited_claims",
+        "no_tipping_off",
         "confidence_in_range",
         "valid_disposition",
         "has_citations",

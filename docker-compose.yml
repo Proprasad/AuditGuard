@@ -1,18 +1,26 @@
+# Explicit project name: containers, networks and volumes are scoped to `auditguard-v3-*`, so this stack never
+# collides with another local Compose project (e.g. one also called `auditguard`). Start/stop: scripts/start.sh / stop.sh.
+name: auditguard-v3
+# Published ports bind to 127.0.0.1 only (nothing is exposed to the LAN). Containers talk over the compose network.
+
 services:
   # ---- Relational & Checkpoint Persistence ----
   postgres:
-    image: postgres:16-alpine
-    container_name: auditguard_postgres
+    image: postgres:16.10-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: auditguard
       POSTGRES_USER: auditguard
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (python scripts/init_env.py)}
+      # Passwords for the two restricted service logins, applied on first boot by init_db_roles.sh.
+      POSTGRES_RO_PASSWORD: ${POSTGRES_RO_PASSWORD:?set POSTGRES_RO_PASSWORD in .env (python scripts/init_env.py)}
+      POSTGRES_CASE_WRITER_PASSWORD: ${POSTGRES_CASE_WRITER_PASSWORD:?set POSTGRES_CASE_WRITER_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init_db_roles.sh:/docker-entrypoint-initdb.d/zz_roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U auditguard"]
       interval: 5s
@@ -24,37 +32,54 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mcp_compliance_kb
     command: python -m src.mcp_servers.compliance_kb
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8010), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     env_file: .env
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     restart: unless-stopped
 
   mcp-graph-engine:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mcp_graph_engine
     command: python -m src.mcp_servers.graph_engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8011), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     env_file: .env
     ports:
-      - "8011:8011"
+      - "127.0.0.1:8011:8011"
     restart: unless-stopped
 
   mcp-bank-records:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mcp_bank_records
     command: python -m src.mcp_servers.bank_records
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8012), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     env_file: .env
     environment:
       USE_POSTGRES: "true"
       POSTGRES_HOST: postgres
-      POSTGRES_DB_ROLE: "auditguard_ro"
+      # Own read-only login: this container never holds the superuser credentials.
+      POSTGRES_USER: auditguard_ro
+      POSTGRES_PASSWORD: ${POSTGRES_RO_PASSWORD:?set POSTGRES_RO_PASSWORD in .env}
     ports:
-      - "8012:8012"
+      - "127.0.0.1:8012:8012"
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,15 +89,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mcp_case_actions
     command: python -m src.mcp_servers.case_actions
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8013), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     env_file: .env
     environment:
       USE_POSTGRES: "true"
       POSTGRES_HOST: postgres
-      POSTGRES_DB_ROLE: "auditguard_case_writer"
+      # Own login limited to INSERT/UPDATE on worksheets, approval_tokens, cases, audit_logs.
+      POSTGRES_USER: auditguard_case_writer
+      POSTGRES_PASSWORD: ${POSTGRES_CASE_WRITER_PASSWORD:?set POSTGRES_CASE_WRITER_PASSWORD in .env}
     ports:
-      - "8013:8013"
+      - "127.0.0.1:8013:8013"
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,8 +115,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: auditguard_api
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
     env_file: .env
     environment:
       USE_POSTGRES: "true"
@@ -96,49 +133,53 @@ services:
       MCP_CASE_ACTIONS_HOST: mcp-case-actions
       LOKI_URL: http://loki:3100
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       mcp-compliance-kb:
-        condition: service_started
+        condition: service_healthy
       mcp-graph-engine:
-        condition: service_started
+        condition: service_healthy
       mcp-bank-records:
-        condition: service_started
+        condition: service_healthy
       mcp-case-actions:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   ui:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: auditguard_ui
     command: chainlit run src/ui/app.py --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8001), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     env_file: .env
     environment:
       API_BASE_URL: http://api:8000
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
   # ---- Observability ----
   loki:
-    image: grafana/loki:latest
-    container_name: auditguard_loki
+    image: grafana/loki:3.4.2
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
-    container_name: auditguard_prometheus
+    image: prom/prometheus:v3.2.1
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -147,10 +188,9 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
-    container_name: auditguard_grafana
+    image: grafana/grafana:11.5.2
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
     volumes:

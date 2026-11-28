@@ -247,6 +247,8 @@ class InvestigationState(StrictModel):
     current_node: str = "start"
     current_step: int = 0
     replan_count: int = 0
+    # Supervisor-side counter: C2 replan hand-offs issued, whether or not the LLM then called replan_graph.
+    replan_attempts: int = 0
     max_replans: int = Field(default_factory=lambda: _policy().budgets.max_replans)
 
     evidence_registry: dict[str, Any] = Field(default_factory=dict)

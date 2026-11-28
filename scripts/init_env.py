@@ -19,6 +19,8 @@ GENERATED = {
     "API_SECRET_KEY": lambda: secrets.token_urlsafe(48),
     "HMAC_SECRET": lambda: secrets.token_urlsafe(48),
     "POSTGRES_PASSWORD": lambda: secrets.token_urlsafe(24),
+    "POSTGRES_RO_PASSWORD": lambda: secrets.token_urlsafe(24),
+    "POSTGRES_CASE_WRITER_PASSWORD": lambda: secrets.token_urlsafe(24),
     "NEXTAUTH_SECRET": lambda: secrets.token_urlsafe(32),
     "LANGFUSE_SALT": lambda: secrets.token_urlsafe(24),
     "GRAFANA_ADMIN_PASSWORD": lambda: secrets.token_urlsafe(18),

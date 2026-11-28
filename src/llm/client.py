@@ -29,6 +29,7 @@ from src.llm.replay import (
     compute_cassette_key,
 )
 from src.llm.schemas import ChatResponse, TokenUsage, ToolCallRequest
+from src.observability.metrics import LLM_CALL_DURATION, LLM_CALLS_TOTAL, LLM_COST_USD_TOTAL, LLM_TOKENS_TOTAL
 
 RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
@@ -55,6 +56,15 @@ class LLMClientProtocol(Protocol):
         response_format: Optional[dict[str, Any]] = None,
         seed: Optional[int] = None,
     ) -> ChatResponse: ...
+
+
+def _record_llm_metrics(model: str, mode: str, response: ChatResponse, seconds: float) -> None:
+    """Prometheus only (floats are fine here); budget accounting stays in exact Decimal in `BudgetLedger`."""
+    LLM_CALLS_TOTAL.labels(model=model, mode=mode, status="ok").inc()
+    LLM_CALL_DURATION.labels(model=model, mode=mode).observe(seconds)
+    LLM_TOKENS_TOTAL.labels(model=model, kind="prompt").inc(response.usage.prompt_tokens)
+    LLM_TOKENS_TOTAL.labels(model=model, kind="completion").inc(response.usage.completion_tokens)
+    LLM_COST_USD_TOTAL.labels(model=model).inc(float(response.cost_usd))
 
 
 def _norm_temperature(value: Optional[float | Decimal | str]) -> Optional[Decimal]:
@@ -275,7 +285,28 @@ class LLMClient:
             seed=seed,
         )
         cassette_key = compute_cassette_key(envelope)
+        started = time.perf_counter()
+        try:
+            response = await self._chat_once(envelope, cassette_key, chosen_model, messages, tools, norm_temp,
+                                             chosen_max_tokens, response_format, seed)
+        except Exception:
+            LLM_CALLS_TOTAL.labels(model=chosen_model, mode=self.mode, status="error").inc()
+            raise
+        _record_llm_metrics(chosen_model, self.mode, response, time.perf_counter() - started)
+        return response
 
+    async def _chat_once(
+        self,
+        envelope: dict[str, Any],
+        cassette_key: str,
+        chosen_model: str,
+        messages: list[dict[str, Any]],
+        tools: Optional[list[dict[str, Any]]],
+        norm_temp: Optional[Decimal],
+        chosen_max_tokens: int,
+        response_format: Optional[dict[str, Any]],
+        seed: Optional[int],
+    ) -> ChatResponse:
         if self.mode == "replay":
             replayed = await self.store.lookup(cassette_key)
             await self.store.write_transcript(cassette_key, envelope, replayed)

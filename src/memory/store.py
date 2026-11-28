@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.canonical import dumps_json
+from src.core.canonical import canonical_sha256, dumps_json
 from src.db.database import DbConn, get_db, init_db, utc_now_iso
 
 
@@ -29,6 +29,18 @@ class ReflexionLesson(BaseModel):
     status: str = "pending"  # pending | approved | rejected
     reviewer_rationale: str = ""
     created_at: str = Field(default_factory=utc_now_iso)
+    # Human review record (`auditguard lessons ...`); kept in the playbook JSON, the reviewed artifact.
+    reviewer: str = ""
+    reviewed_at: str = ""
+
+
+class PlaybookIntegrityError(RuntimeError):
+    """A frozen playbook's lessons do not match its recorded `frozen_sha256` (edited after freezing)."""
+
+
+def playbook_sha256(lessons: list[dict[str, Any]]) -> str:
+    """Canonical hash of a playbook's lessons (order-independent, every field included)."""
+    return canonical_sha256(sorted(lessons, key=lambda les: str(les.get("lesson_id", ""))))
 
 
 def trim_messages_with_summary(
@@ -62,6 +74,35 @@ def trim_messages_with_summary(
         content = str(msg.get("content", ""))[:120]
         summary_parts.append(f"[{role}] {content}")
     return [*pinned, *recent], " | ".join(summary_parts)[-2000:]
+
+
+def trim_live_context(messages: list[dict[str, Any]], window: int) -> list[dict[str, Any]]:
+    """
+    Copy of `messages` that fits `window` for the next LLM call (audit AG-11). Pins leading `system` messages and
+    the first `user` message (the alert), keeps the most recent turns without orphaning a `tool` reply, and puts a
+    summary of the evicted turns (wrapped as untrusted, since it quotes tool output) right after the pinned part.
+    """
+    from src.guardrails.guardrails import wrap_untrusted_data
+
+    if len(messages) <= window:
+        return messages
+    head = 0
+    while head < len(messages) and messages[head].get("role") == "system":
+        head += 1
+    if head < len(messages) and messages[head].get("role") == "user":
+        head += 1
+    pinned, rest = messages[:head], messages[head:]
+    keep = max(1, window - len(pinned) - 1)
+    cut = max(0, len(rest) - keep)
+    while cut < len(rest) and rest[cut].get("role") == "tool":
+        cut += 1
+    summary = " | ".join(f"[{m.get('role', 'unknown')}] {str(m.get('content', ''))[:120]}" for m in rest[:cut])[-2000:]
+    note = {
+        "role": "user",
+        "content": "Earlier turns were trimmed to fit the context window. Summary of trimmed turns:\n"
+        + wrap_untrusted_data(summary, "memory:trimmed_turns"),
+    }
+    return [*pinned, note, *rest[cut:]]
 
 
 class LongTermMemoryStore:
@@ -203,6 +244,14 @@ class LongTermMemoryStore:
             self._reflexion_playbook[lesson_id].reviewer_rationale = rationale
         return True
 
+    def set_status_for_ablation(self, lesson_id: str, status: str) -> None:
+        """Evaluation-only (E3 per-lesson ablation): flip a lesson's status even when frozen, then restore it."""
+        if lesson_id in self._reflexion_playbook:
+            self._reflexion_playbook[lesson_id].status = status
+        if self._persist:
+            with self._db() as conn:
+                conn.execute("UPDATE reflexion_playbook SET status = ? WHERE lesson_id = ?", (status, lesson_id))
+
     def list_all_lessons(self) -> list[ReflexionLesson]:
         if self._persist:
             with self._db() as conn:
@@ -218,6 +267,8 @@ class LongTermMemoryStore:
         if not p.exists():
             return 0
         raw = json.loads(p.read_text(encoding="utf-8"))
+        if raw.get("frozen") and raw.get("frozen_sha256") != playbook_sha256(list(raw.get("lessons", []))):
+            raise PlaybookIntegrityError(f"{p}: lessons changed after freezing (frozen_sha256 mismatch); refusing")
         # Temporarily unfreeze in target store to load exact exported rows, then restore exact frozen state
         self._playbook_frozen = False
         if self._persist:

@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+import re
 import threading
 from typing import Any, Literal, Optional
 from uuid import uuid4
@@ -54,6 +55,19 @@ def canonical_request_envelope(
 def compute_cassette_key(envelope: Mapping[str, Any]) -> str:
     """Return canonical SHA-256 digest of a normalized LLM request envelope."""
     return canonical_sha256(dict(envelope))
+
+
+_PROMPT_HEADER = re.compile(r"^\[PROMPT_VERSION=([^ |\]]+) \| AGENT=([^\]]+)\]")
+
+
+def prompt_header(request_envelope: Mapping[str, Any]) -> tuple[str, str]:
+    """`(version, agent)` from the leading system prompt's version header, or `("", "")`."""
+    messages = request_envelope.get("messages") or []
+    first = messages[0] if messages and isinstance(messages[0], Mapping) else {}
+    if first.get("role") != "system":
+        return "", ""
+    match = _PROMPT_HEADER.match(str(first.get("content", "")))
+    return (match.group(1), match.group(2)) if match else ("", "")
 
 
 class CassetteStore:
@@ -136,6 +150,7 @@ class CassetteStore:
     def write_transcript_sync(
         self, cassette_key: str, request_envelope: Mapping[str, Any], response: ChatResponse
     ) -> None:
+        version, agent = prompt_header(request_envelope)
         entry = TranscriptEntry(
             timestamp=datetime.now(timezone.utc).isoformat(),
             run_id=self.run_id,
@@ -150,6 +165,8 @@ class CassetteStore:
             cost_usd=str(response.cost_usd),
             latency_s=round(response.latency_s, 6),
             from_cassette=response.from_cassette,
+            prompt_version=version,
+            prompt_agent=agent,
         )
         self._append_jsonl_sync(self.transcript_path, entry.model_dump(mode="json"))
 

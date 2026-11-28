@@ -1,6 +1,6 @@
-# AuditGuard v3 CI, Replay & Evaluation Targets (`make verify`, `make replay`, `make report`, `make data`).
+# AuditGuard v3 CI, Replay, Evaluation & Run Targets (`make verify`, `make replay`, `make start`, `make stop`, ...).
 
-.PHONY: verify replay report data eval-e1 eval-e2 eval-e3 eval-e4
+.PHONY: verify eval-gate replay report data eval-e1 eval-e2 eval-e3 eval-e4 start stop start-local stop-local catalogue
 
 PYTHON ?= python
 
@@ -9,6 +9,11 @@ verify:
 	$(PYTHON) -m mypy src/ --strict
 	$(PYTHON) -m pytest tests/ -q
 	$(PYTHON) -m eval.verify_gates
+
+# CI accuracy floor (audit AG-20): offline dev split, fails if rule_engine, C1 or C2 drops below MIN_ACCURACY.
+MIN_ACCURACY ?= 0.45
+eval-gate:
+	$(PYTHON) -m eval.run_eval --config E1 --split v2_dev --repeats 1 --llm offline --min-accuracy $(MIN_ACCURACY) --run-id ci_dev_floor
 
 replay:
 	$(PYTHON) -m eval.run_replay_suite
@@ -35,3 +40,20 @@ eval-e3:
 
 eval-e4:
 	$(PYTHON) -m eval.run_eval --config E4
+
+# Full Docker Compose stack (project auditguard-v3); waits until the API is healthy.
+start:
+	scripts/start.sh
+
+stop:
+	scripts/stop.sh
+
+# API + workbench from the local venv only (SQLite, in-process MCP); PORT=8000 by default.
+start-local:
+	scripts/start.sh --local
+
+stop-local:
+	scripts/stop.sh --local
+
+catalogue:
+	$(PYTHON) -m eval.tool_catalogue

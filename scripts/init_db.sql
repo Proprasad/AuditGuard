@@ -198,3 +198,9 @@ GRANT INSERT, UPDATE ON worksheets, approval_tokens, cases, audit_logs TO auditg
 GRANT USAGE, SELECT ON SEQUENCE audit_logs_log_id_seq TO auditguard_case_writer;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO auditguard_ro, auditguard_case_writer;
 GRANT auditguard_ro, auditguard_case_writer TO CURRENT_USER;
+-- Credential tables (audit AG-33). This file is re-applied on every owner start-up (`postgres_ddl()`), so the
+-- REVOKEs must live here, after the blanket GRANT above. Password hashes are readable by neither service role;
+-- `revoked_tokens` (token ids + expiry only) stays readable by auditguard_ro, which the API's own read-only
+-- connections use for the logout-revocation check.
+REVOKE ALL ON users FROM auditguard_ro, auditguard_case_writer;
+REVOKE ALL ON revoked_tokens FROM auditguard_case_writer;

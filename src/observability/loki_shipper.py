@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
 from src.db.database import register_audit_observer
+from src.observability.correlation import current_correlation_id
 from src.observability.redaction import redact_for_logs, redact_text
 
 logger = logging.getLogger("auditguard.loki")
@@ -90,6 +91,8 @@ def emit_loki_log(
         "message": redact_text(message),
         **redact_for_logs(extra or {}),
     }
+    if (cid := current_correlation_id()) and "correlation_id" not in record:
+        record["correlation_id"] = cid
     line_str = json.dumps(record, default=str)
     try:
         _EXECUTOR.submit(_post_to_loki, labels, line_str, ts_ns)

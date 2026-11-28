@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -30,6 +31,9 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import get_policy
+from src.mcp_servers import neural_retrieval
+from src.mcp_servers.annotations import READ_ONLY_TOOL
+from src.mcp_servers.retrieval_lexicon import _STOPWORDS, DOMAIN_CONCEPTS
 
 mcp = FastMCP(
     name="compliance-kb",
@@ -40,68 +44,26 @@ mcp = FastMCP(
 RetrievalMode = Literal["hybrid_rrf_rerank", "hybrid_rrf", "bm25_only", "dense_only", "vector_only"]
 SourceFilter = Literal["all", "regulatory", "internal"]
 
+logger = logging.getLogger("auditguard.compliance_kb")
+_BACKEND_OVERRIDE: str | None = None
+_NEURAL_WARNED = False
+
+
+def set_backend_override(backend: str | None) -> None:
+    """Process-level override of `retrieval.backend` (used by `retrieval-bench --backend`)."""
+    global _BACKEND_OVERRIDE
+    _BACKEND_OVERRIDE = backend
+
+
+def _active_backend() -> str:
+    return _BACKEND_OVERRIDE or get_policy().retrieval.backend
+
+
 # Empirically selected default mode (verified by `python -m src.cli retrieval-bench --report` & pytest).
 DEFAULT_RETRIEVAL_MODE: RetrievalMode = "hybrid_rrf_rerank"
 
-_STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "been", "being", "by", "can", "do", "does", "for",
-    "from", "has", "have", "how", "if", "in", "into", "is", "it", "its", "may", "must", "not", "of",
-    "on", "or", "shall", "should", "such", "that", "the", "their", "them", "there", "these", "they",
-    "this", "to", "under", "was", "were", "what", "when", "where", "which", "who", "will", "with",
-    "india", "indian", "act", "section", "rule", "rules", "para", "paragraph", "clause", "law",
-    "legal", "bank", "banks", "entity", "entities", "financial", "institution", "institutions",
-})
 
-DOMAIN_CONCEPTS: dict[str, list[str]] = {
-    "skim": ["fee", "commission", "retaining", "cut", "mule"],
-    "commission": ["fee", "retaining", "skimming", "mule"],
-    "delay": ["staggered", "days", "replanning", "window", "consolidation"],
-    "stagger": ["staggered", "pass", "through", "window", "consolidation"],
-    "smurf": ["structuring", "below", "threshold", "lakh", "cash"],
-    "dodge": ["evade", "threshold", "structured"],
-    "salary": ["payroll", "employer", "employee", "disbursements", "income"],
-    "wage": ["salary", "payroll", "employer", "employee"],
-    "payroll": ["salary", "employer", "employee", "corporate", "epfo"],
-    "ngo": ["charitable", "trust", "non", "profit", "relief", "darpan", "80g"],
-    "charity": ["charitable", "trust", "relief", "darpan", "80g", "npo"],
-    "donat": ["charitable", "trust", "relief", "npo", "darpan"],
-    "ecommerce": ["marketplace", "seller", "aggregator", "escrow", "nodal"],
-    "marketplace": ["ecommerce", "seller", "aggregator", "escrow", "nodal"],
-    "wedding": ["banquet", "catering", "family", "social", "hotel"],
-    "marriage": ["banquet", "catering", "family", "social", "hotel"],
-    "gap": ["missing", "external", "correspondent", "insufficient", "request_info"],
-    "visibility": ["missing", "external", "correspondent", "insufficient"],
-    "forget": ["delete", "memory", "erasable", "retention", "episodes"],
-    "erase": ["delete", "memory", "erasable", "retention", "episodes"],
-    "inject": ["untrusted", "memo", "override", "instructions", "prompt"],
-    "hostile": ["untrusted", "memo", "override", "instructions"],
-    "warn": ["tipping", "prohibited", "confidentiality", "secrecy"],
-    "tipping": ["confidentiality", "prohibited", "secrecy", "disclosing"],
-    "deadline": ["seven", "working", "days", "furnish", "15th", "timeline"],
-    "politician": ["politically", "exposed", "pep", "senior", "wealth"],
-    "official": ["politically", "exposed", "pep", "senior", "wealth"],
-    "inactive": ["dormant", "inoperative", "reactivation", "velocity", "savings"],
-    "dormant": ["inoperative", "reactivation", "velocity", "savings"],
-    "outdated": ["expired", "minimal", "periodic", "updation", "fresh"],
-    "expired": ["periodic", "updation", "minimal", "fresh", "cdd"],
-    "bucket": ["categorized", "low", "medium", "high", "risk"],
-    "rotating": ["chit", "installments", "subscribers", "auction", "registrar"],
-    "dirty": ["proceeds", "crime", "concealment", "tainted", "untainted"],
-    "launder": ["proceeds", "crime", "concealment", "layering", "pmla"],
-    "guilt": ["criminal", "prohibited", "reasonable", "suspicion", "judicial"],
-    "math": ["decimal", "arithmetic", "calc", "precision"],
-    "aborted": ["attempted", "suspicious", "transaction", "reportable"],
-    "video": ["vcip", "digital", "onboarding", "identification"],
-    "darpan": ["npo", "charitable", "trust", "80g", "niti"],
-    "lakh": ["lakhs", "1000000", "threshold", "ctr", "cbwtr"],
-}
-
-# Calibrated length-normalized abstention thresholds (general IR signals; zero query-specific rules).
-_ABSTAIN_BM25_MIN = 10.5
-_ABSTAIN_BM25_PER_TOK = 1.15
-_ABSTAIN_DENSE_MIN = 0.44
-_ABSTAIN_COV_MIN = 0.34
-_ABSTAIN_TERM_HIT_MIN = 2
+# Abstention thresholds, BM25 parameters and blend/rerank weights live in `config/models.yaml` (`retrieval`).
 
 
 class _Strict(BaseModel):
@@ -245,7 +207,8 @@ class HybridRegulatoryIndex:
 
     def bm25_scores_all(self, query: str) -> tuple[list[float], int]:
         q_toks = _content_tokens(query)
-        k1, b = 1.5, 0.75
+        ret = get_policy().retrieval
+        k1, b = float(ret.bm25_k1), float(ret.bm25_b)
         matched_q_terms = sum(1 for qt in set(q_toks) if self.doc_freqs.get(qt, 0) > 0)
         scores = [0.0] * len(self.clauses)
         for idx, tf_map in enumerate(self.doc_tf):
@@ -269,7 +232,8 @@ class HybridRegulatoryIndex:
         q_dense, q_unit = self._encode_query_dense(query)
         svd_cos = self.doc_dense_matrix @ q_dense
         subword_cos = self.tfidf_unit @ q_unit
-        blended = 0.40 * svd_cos + 0.60 * subword_cos
+        blend = get_policy().retrieval.dense_blend
+        blended = float(blend.svd) * svd_cos + float(blend.subword) * subword_cos
         return [float(x) for x in blended]
 
     def _top_term_coverage(self, q_toks: list[str], top_idx: int) -> float:
@@ -289,27 +253,28 @@ class HybridRegulatoryIndex:
     ) -> tuple[bool, str]:
         if q_tok_count == 0:
             return True, "Empty or stopword-only query."
-        min_terms = 1 if q_tok_count <= 2 else _ABSTAIN_TERM_HIT_MIN
+        ab = get_policy().retrieval.abstention
+        bm25_min, bm25_soft_min, per_tok_min = float(ab.bm25_min), float(ab.bm25_soft_min), float(ab.bm25_per_token)
+        dense_min, cov_min = float(ab.dense_min), float(ab.coverage_min)
+        min_terms = 1 if q_tok_count <= 2 else ab.term_hit_min
         bm25_per_tok = top_bm25 / max(q_tok_count, 1)
         if q_tok_count <= 3:
-            if matched_terms < min_terms or (top_bm25 < 4.5 and top_dense < 0.30):
+            if matched_terms < min_terms or (
+                top_bm25 < float(ab.short_query_bm25_min) and top_dense < float(ab.short_query_dense_min)
+            ):
                 return True, f"Short query lacks in-domain AML/KYC match (bm25={top_bm25:.2f}, dense={top_dense:.3f})."
             return False, ""
         if mode == "bm25_only":
-            if matched_terms < min_terms or top_bm25 < _ABSTAIN_BM25_MIN or (
-                bm25_per_tok < _ABSTAIN_BM25_PER_TOK and top_cov < _ABSTAIN_COV_MIN
-            ):
+            if matched_terms < min_terms or top_bm25 < bm25_min or (bm25_per_tok < per_tok_min and top_cov < cov_min):
                 return True, f"BM25 evidence below threshold (bm25={top_bm25:.2f}, per_tok={bm25_per_tok:.2f})."
             return False, ""
         if mode in ("dense_only", "vector_only"):
-            if top_dense < _ABSTAIN_DENSE_MIN:
-                return True, f"Dense similarity below threshold ({top_dense:.3f} < {_ABSTAIN_DENSE_MIN})."
+            if top_dense < dense_min:
+                return True, f"Dense similarity below threshold ({top_dense:.3f} < {dense_min})."
             return False, ""
-        if matched_terms < min_terms and top_dense < 0.48:
+        if matched_terms < min_terms and top_dense < float(ab.low_term_dense_min):
             return True, f"Insufficient domain term overlap (terms={matched_terms}, dense={top_dense:.3f})."
-        if (bm25_per_tok < _ABSTAIN_BM25_PER_TOK and top_cov < _ABSTAIN_COV_MIN) or (
-            top_bm25 < 9.5 and top_dense < _ABSTAIN_DENSE_MIN
-        ):
+        if (bm25_per_tok < per_tok_min and top_cov < cov_min) or (top_bm25 < bm25_soft_min and top_dense < dense_min):
             return (
                 True,
                 f"Hybrid evidence below threshold (bm25={top_bm25:.2f}, cov={top_cov:.2f}, dense={top_dense:.3f}).",
@@ -331,6 +296,9 @@ class HybridRegulatoryIndex:
         max_rrf = max(rrf_map.values(), default=1.0) or 1.0
         max_bm25 = max((bm25_all[i] for i in candidates), default=1.0) or 1.0
         max_dense = max((dense_all[i] for i in candidates), default=1.0) or 1.0
+        w = get_policy().retrieval.rerank_weights
+        w_rrf, w_bm25, w_dense, w_cov = float(w.rrf), float(w.bm25), float(w.dense), float(w.coverage)
+        w_bg, w_title, w_id = float(w.bigram), float(w.title), float(w.id_hit)
         out: list[tuple[int, float]] = []
         for idx in candidates:
             c = self.clauses[idx]
@@ -341,18 +309,18 @@ class HybridRegulatoryIndex:
             dense_norm = max(0.0, dense_all[idx]) / max_dense
             cov = len(q_set & set(d_toks)) / max(len(q_set), 1)
             bg = (len(q_bigrams & d_bigrams) / max(len(q_bigrams), 1)) if q_bigrams else 0.0
-            id_hit = 0.35 if c.clause_id.lower() in q_low else 0.0
+            id_hit = w_id if c.clause_id.lower() in q_low else 0.0
             title_toks = set(_content_tokens(c.title))
             title_hit = len(q_set & title_toks) / max(len(q_set), 1)
             score = min(
                 0.9999,
                 round(
-                    0.35 * rrf_norm
-                    + 0.25 * bm25_norm
-                    + 0.20 * dense_norm
-                    + 0.10 * cov
-                    + 0.06 * bg
-                    + 0.04 * title_hit
+                    w_rrf * rrf_norm
+                    + w_bm25 * bm25_norm
+                    + w_dense * dense_norm
+                    + w_cov * cov
+                    + w_bg * bg
+                    + w_title * title_hit
                     + id_hit,
                     4,
                 ),
@@ -374,6 +342,7 @@ class HybridRegulatoryIndex:
         q_toks = _content_tokens(query)
         bm25_all, matched_terms = self.bm25_scores_all(query)
         dense_all = self.dense_scores_all(query)
+        neural = self._neural() if _active_backend() == "neural" else None
         best_bm25_idx = max(allowed, key=lambda i: bm25_all[i])
         top_bm25 = bm25_all[best_bm25_idx]
         top_dense = max((dense_all[i] for i in allowed), default=0.0)
@@ -388,11 +357,29 @@ class HybridRegulatoryIndex:
             hits = [(i, round(bm25_all[i] / denom, 4)) for i in ranked if bm25_all[i] > 0]
             return [self.clauses[i].model_copy(update={"relevance_score": s}) for i, s in hits], False, ""
 
+        if neural is not None:  # abstention above stays on the calibrated builtin signals
+            dense_all = neural.dense_scores_all(query)
         if mode in ("dense_only", "vector_only"):
             ranked = sorted(allowed, key=lambda i: -dense_all[i])[:top_k]
             hits = [(i, round(max(0.0, dense_all[i]), 4)) for i in ranked if dense_all[i] > 0]
             return [self.clauses[i].model_copy(update={"relevance_score": s}) for i, s in hits], False, ""
 
+        final, empty_reason = self._fuse_and_rank(query, allowed, top_k, mode, bm25_all, dense_all, neural)
+        if empty_reason:
+            return [], True, empty_reason
+        return [self.clauses[i].model_copy(update={"relevance_score": s}) for i, s in final], False, ""
+
+    def _fuse_and_rank(
+        self,
+        query: str,
+        allowed: list[int],
+        top_k: int,
+        mode: str,
+        bm25_all: list[float],
+        dense_all: list[float],
+        neural: Any,
+    ) -> tuple[list[tuple[int, float]], str]:
+        """RRF over BM25 + dense candidates, then the configured final ranking; returns (hits, empty_reason)."""
         ret_cfg = get_policy().retrieval
         bm25_ranked = sorted(allowed, key=lambda i: -bm25_all[i])[: ret_cfg.top_k_bm25]
         dense_ranked = sorted(allowed, key=lambda i: -dense_all[i])[: ret_cfg.top_k_dense]
@@ -405,16 +392,35 @@ class HybridRegulatoryIndex:
             if dense_all[idx] > 0:
                 rrf_scores[idx] = rrf_scores.get(idx, 0.0) + 1.0 / (rrf_k + rank)
         if not rrf_scores:
-            return [], True, "No positive lexical or semantic matches."
+            return [], "No positive lexical or semantic matches."
 
         pool_limit = max(top_k, ret_cfg.top_k_final * 3)
         top_cands = sorted(rrf_scores, key=lambda i: -rrf_scores[i])[:pool_limit]
         if mode == "hybrid_rrf":
             max_r = max(rrf_scores.values(), default=1.0) or 1.0
             final = [(i, round(rrf_scores[i] / max_r, 4)) for i in top_cands[:top_k]]
+        elif neural is not None:
+            final = neural.rerank(query, top_cands)[:top_k]
         else:
             final = self._rerank_candidates(query, top_cands, rrf_scores, bm25_all, dense_all)[:top_k]
-        return [self.clauses[i].model_copy(update={"relevance_score": s}) for i, s in final], False, ""
+        return final, ""
+
+    def _neural(self) -> Any:
+        """The cached neural retriever, or None (with one warning) when the [rag] extra is unavailable."""
+        global _NEURAL_WARNED
+        cfg = get_policy().retrieval
+        try:
+            return neural_retrieval.get_neural_retriever(
+                [f"{c.title}. {c.text}" for c in self.clauses],
+                cfg.embedding_model,
+                cfg.reranker_model,
+                cfg.embedding_query_prefix,
+            )
+        except neural_retrieval.NeuralBackendUnavailable as exc:
+            if not _NEURAL_WARNED:
+                logger.warning("retrieval.backend=neural unavailable (%s); using the builtin path", exc)
+                _NEURAL_WARNED = True
+            return None
 
     def search(
         self,
@@ -531,7 +537,7 @@ def _sync_search_regulations(params: SearchRegulationsInput) -> SearchRegulation
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def search_regulations(params: SearchRegulationsInput) -> SearchRegulationsOutput:
     """Search the Indian AML/KYC regulatory corpus and internal SOPs with calibrated abstention."""
     return await asyncio.to_thread(_sync_search_regulations, params)
@@ -552,7 +558,7 @@ def _sync_get_clause(clause_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def get_clause_by_id(params: GetClauseInput) -> dict[str, Any]:
     """Retrieve a specific regulatory passage or internal SOP by its exact passage identifier."""
     return await asyncio.to_thread(_sync_get_clause, params.clause_id)

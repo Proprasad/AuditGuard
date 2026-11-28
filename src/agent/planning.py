@@ -16,7 +16,7 @@ from typing import Any, Optional
 from src.agent import reasoning
 from src.agent.drafting import security_notes
 from src.agent.llm_client import LlmCallMeta, get_model_for_role
-from src.agent.tooling import GuardedToolbox
+from src.agent.tooling import GuardedToolbox, is_error
 from src.core.canonical import to_ratio
 from src.core.policy import BudgetLedger, PolicyConfig
 from src.memory.store import memory_store, trim_messages_with_summary
@@ -59,11 +59,30 @@ class RunContext:
     strong_model_override: Optional[str] = None
     seed: Optional[int] = None
     emit: Optional[Callable[[str, dict[str, Any]], None]] = None
+    offered_lessons: list[str] = field(default_factory=list)
     timings: dict[str, float] = field(default_factory=dict)
     last_graph_output: Optional[dict[str, Any]] = None
 
     def box(self, name: str) -> GuardedToolbox:
         return self.boxes.get(name) or self.boxes["primary"]
+
+
+TOOL_EVENT_NODE = "tool_executed"
+
+
+async def emit_tool_event(ctx: RunContext, role: str, tool: str, result: dict[str, Any], call_index: int) -> None:
+    """Stream one LLM-requested tool call to the run's event sink as it completes (audit AG-29)."""
+    if ctx.emit is None:
+        return
+    failed = is_error(result)
+    payload = {
+        "role": role,
+        "tool": tool,
+        "status": "error" if failed else "ok",
+        "error_code": result.get("error_code") if failed else None,
+        "call_index": call_index,
+    }
+    await asyncio.to_thread(ctx.emit, TOOL_EVENT_NODE, payload)
 
 
 def resolve_model_for_role(ctx: RunContext, role: str, *, strong: bool = False) -> str:
@@ -217,8 +236,10 @@ async def plan_node(state: InvestigationState, ctx: RunContext) -> dict[str, Any
     typology_name = spec.name if spec else "Scatter-Gather"
     lessons: list[str] = []
     if ctx.reflexion_enabled and ctx.memory_enabled:
-        top = await asyncio.to_thread(memory_store.retrieve_top_lessons, f"{state.alert.rule_name} scatter gather", 3)
-        lessons = [f"[{les.lesson_id}] IF {les.trigger_precondition} THEN {les.actionable_rule}" for les in top]
+        from src.reflexion.retrieval import observed_feature_text, select_lessons
+
+        text = observed_feature_text(state.alert, state.fund_flow_paths, state.transactions)
+        lessons = await asyncio.to_thread(select_lessons, memory_store, text, ctx.policy)
     seeded = state.model_copy(update={"retrieved_lessons": lessons})
 
     base_params = GraphParams(**spec.default_graph_params) if spec else GraphParams.policy_default()

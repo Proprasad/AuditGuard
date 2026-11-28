@@ -33,3 +33,5 @@ jobs:
           python -m eval.build_red_team_v2
       - name: Run full verification gate (make verify)
         run: make verify
+      - name: Dev-split accuracy floor (offline, deterministic; every non-C0 mode must reach 45%)
+        run: make eval-gate

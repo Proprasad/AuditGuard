@@ -37,5 +37,8 @@
       "reviewer_rationale": "REJECTED: lexical shortcut bypasses mandatory GST/MCA/80G registry check (SOP-SG-003).",
       "created_at": "2026-11-23T11:05:03.311059+00:00"
     }
-  ]
+  ],
+  "frozen_sha256": "c59bd2575fd45171923624a46947c8f8d16f45c2b951b479379147d3af7e9ff6",
+  "frozen_by": "scripts/build_frozen_playbook.py (scripted approval, no human reviewer recorded; see audit AG-04)",
+  "frozen_sha256_recorded_at": "2026-11-28T14:25:45.254321+00:00"
 }

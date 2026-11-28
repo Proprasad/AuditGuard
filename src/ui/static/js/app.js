@@ -79,12 +79,23 @@ function ensureLogin() {
       try {
         await api.login(overlay.querySelector("#loginUser").value.trim(), overlay.querySelector("#loginPass").value);
         overlay.remove();
+        renderCurrentUser();
         resolve();
       } catch (err) {
         overlay.querySelector("#loginErr").textContent = err.message;
       }
     });
   });
+}
+
+function renderCurrentUser() {
+  document.getElementById("currentUserLabel").textContent = api.currentUser() || "Not signed in";
+}
+
+async function logoutAndReload() {
+  await api.logout();
+  // Reload drops every in-memory case, worksheet and trace; the login overlay appears on the fresh page.
+  window.location.replace("/");
 }
 
 /* ── Initialization ──────────────────────────────────────────────────────── */
@@ -100,6 +111,7 @@ async function init() {
 
   bindUIEvents();
   await ensureLogin();
+  renderCurrentUser();
   await refreshHealthAndCatalog();
 
   // Auto-load showcase alert ALT-2026-0412 (or first alert) on boot so the workbench is alive immediately
@@ -207,6 +219,7 @@ function bindUIEvents() {
   });
 
   document.getElementById("btnRunInvestigation").addEventListener("click", () => runLiveInvestigation());
+  document.getElementById("btnLogout").addEventListener("click", () => logoutAndReload());
 
   document.getElementById("btnExportReport").addEventListener("click", () => {
     if (!state.threadId) return;

@@ -5,6 +5,7 @@ A thin client of the authenticated FastAPI service. Every person signs in with t
 Chainlit's password auth (which also enables Chainlit's built-in user-menu logout; requires `CHAINLIT_AUTH_SECRET`).
 The API JWT minted at sign-in is held only in that user's Chainlit session, so identity, role checks and the
 maker-checker rule (requester / last editor may not approve) are enforced by the API for the real user.
+Logging out of Chainlit also revokes that API JWT server-side (`@cl.on_logout`), so it cannot be reused.
 It never fabricates results: any failure is shown as an error and no approval card is created.
 """
 
@@ -15,7 +16,12 @@ import os
 from typing import Any, Optional
 
 import chainlit as cl
+from chainlit.auth import decode_jwt
+from chainlit.auth.cookie import get_token_from_cookies
 import httpx
+import jwt
+from starlette.requests import Request
+from starlette.responses import Response
 
 from src.config import settings
 
@@ -43,6 +49,32 @@ async def login_user(client: httpx.AsyncClient, username: str, password: str) ->
 async def auth_callback(username: str, password: str) -> Optional[cl.User]:
     async with httpx.AsyncClient(timeout=15.0) as client:
         return await login_user(client, username, password)
+
+
+async def revoke_from_cookies(cookies: dict[str, str], client: httpx.AsyncClient) -> bool:
+    """Revoke the API JWT held in the signed Chainlit session cookie. False when there is nothing valid to revoke."""
+    cookie_token = get_token_from_cookies(cookies)
+    if not cookie_token:
+        return False
+    try:
+        user = decode_jwt(cookie_token)
+    except jwt.PyJWTError:
+        return False
+    api_token = (user.metadata or {}).get("api_token")
+    if not api_token:
+        return False
+    resp = await client.post(f"{API_BASE}/api/v1/auth/logout", headers={"Authorization": f"Bearer {api_token}"})
+    return resp.status_code == 200
+
+
+@cl.on_logout  # type: ignore[untyped-decorator]
+async def on_logout(request: Request, _response: Response) -> dict[str, bool]:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            revoked = await revoke_from_cookies(dict(request.cookies), client)
+        except httpx.HTTPError:
+            revoked = False
+    return {"success": True, "api_token_revoked": revoked}
 
 
 def auth_header_for(user: Optional[cl.User]) -> dict[str, str]:

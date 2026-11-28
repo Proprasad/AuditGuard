@@ -45,6 +45,12 @@ def _upsert_account_and_kyc(conn: Any, idx: int, acc_id: str, kyc: dict[str, Any
     cust_id = str(kyc.get("customer_id") or f"CUST-{acc_id}")
     pan_raw = str(kyc.get("pan") or f"SYNTH-{acc_id}")
     pan_hash = hashlib.sha256(pan_raw.encode("utf-8")).hexdigest()
+    owner = conn.execute("SELECT customer_id FROM customers WHERE synthetic_pan_hash = ?", (pan_hash,)).fetchone()
+    if owner is not None and str(owner[0]) != cust_id:
+        # Two synthetic customers share one PAN in the seed data. `synthetic_pan_hash` is UNIQUE: SQLite's
+        # INSERT OR REPLACE used to delete the other customer silently, and Postgres refused the insert.
+        # Keep both customers with a per-customer hash instead.
+        pan_hash = hashlib.sha256(f"{pan_raw}|{cust_id}".encode("utf-8")).hexdigest()
     risk = str(kyc.get("risk_category", "MEDIUM")).upper()
     if risk not in ("LOW", "MEDIUM", "HIGH"):
         risk = "MEDIUM"

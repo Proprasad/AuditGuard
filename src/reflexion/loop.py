@@ -270,8 +270,8 @@ async def reflect_on_failure_trace(
             {"role": "user", "content": json.dumps(trace_digest, indent=2)},
         ],
         model=chosen_model,
-        temperature="0.1",
-        max_tokens=512,
+        temperature=policy.reflector.temperature,
+        max_tokens=policy.reflector.max_tokens,
         response_format={"type": "json_object"},
     )
     draft = CandidateLessonDraft.model_validate(_extract_json_obj(resp.text))

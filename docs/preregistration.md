@@ -59,3 +59,12 @@ All four modes (`c0_fixed`, `rule_engine`, `c1_single`, `c2_multi`) execute unde
 2. **Continuous & Composite Metrics:** Reported with **10,000-iteration cluster-bootstrap 95% confidence intervals**, clustering on case sub-variant (`family`) so repeated structural templates do not overstate precision.
 3. **Mode Comparisons:** Evaluated via **10,000-iteration paired cluster-bootstrap 95% CIs** on case-matched differences `(mode_A - mode_B)` plus **exact two-sided McNemar's test** for `disposition_accuracy` and standardized paired effect size (`cohens_d`).
 4. **Honest Inference Rule:** **No mode or ablation is claimed to "outperform" another unless the paired 95% confidence interval excludes `0`.** Null, negative, or trade-off findings (e.g., `rule_engine` winning on cost/latency or matching LLM accuracy on clean cases) are reported verbatim without post-hoc hypothesis edits.
+
+## Amendment 2026-11-28 (audit Wave 2)
+
+- **E3 per-lesson ablation (AG-32):** `config/experiments/E3.yaml` sets `lesson_ablation: true`.
+  - It adds one `playbook_on_minus_<ID>` arm per approved lesson.
+  - The E3 summary gains a `lesson_report`: playbook sha256, approved lessons, lessons without a recorded human reviewer, lesson prompt size, per-case cost delta versus `playbook_off_memory_on`, and a per-lesson **harmful** flag. A lesson is harmful when removing it raises accuracy, or keeps accuracy and lowers weighted error cost.
+  - The existing arms are unchanged.
+- **Lesson retrieval (AG-06):** lessons are now offered only when their precondition matches the observed case features (top 2, minimum overlap 3), not top-3 by a constant query. E3 `playbook_on` arms run with the new rule.
+- **C2 replans (AG-12):** C2 can now replan up to `budgets.max_replans`, counted on the supervisor side, not exactly once. C2 E1/E3 results are not comparable with runs before this date.

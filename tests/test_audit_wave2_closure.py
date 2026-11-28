@@ -466,8 +466,15 @@ async def test_w2_09_chainlit_ui_handlers(monkeypatch: pytest.MonkeyPatch) -> No
     stub_cl.password_auth_callback = lambda fn: fn
     stub_cl.User = types.SimpleNamespace
     stub_cl.action_callback = lambda _name: (lambda fn: fn)
+    stub_cl.on_logout = lambda fn: fn
+    stub_auth: Any = types.ModuleType("chainlit.auth")
+    stub_auth.decode_jwt = lambda _token: None
+    stub_cookie: Any = types.ModuleType("chainlit.auth.cookie")
+    stub_cookie.get_token_from_cookies = lambda _cookies: None
     monkeypatch.setitem(sys.modules, "chainlit", stub_cl)
-    sys.modules.pop("src.ui.app", None)
+    monkeypatch.setitem(sys.modules, "chainlit.auth", stub_auth)
+    monkeypatch.setitem(sys.modules, "chainlit.auth.cookie", stub_cookie)
+    monkeypatch.delitem(sys.modules, "src.ui.app", raising=False)  # restored at teardown; the stub copy never leaks
     ui_app = importlib.import_module("src.ui.app")
 
     assert ui_app._render_event("plan_updated", {"steps": ["1. Step A"]}) is not None

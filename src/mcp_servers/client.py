@@ -18,6 +18,7 @@ import importlib
 import json
 import logging
 import os
+import time
 from typing import Any, cast
 
 from fastmcp import Client
@@ -25,6 +26,8 @@ from fastmcp.client.transports import StreamableHttpTransport
 
 from src.config import get_policy, settings
 from src.mcp_servers.http_auth import MCP_TOKEN_HEADER, mcp_service_token
+from src.observability.correlation import current_correlation_id
+from src.observability.metrics import MCP_TOOL_CALLS_TOTAL, MCP_TOOL_DURATION
 
 logger = logging.getLogger("auditguard.mcp")
 
@@ -147,20 +150,33 @@ async def call_mcp_tool(
     server: str, tool: str, params: dict[str, Any], timeout_s: float | None = None
 ) -> dict[str, Any]:
     """Invoke `tool` on `server` through the MCP protocol. Never raises for transport/tool failures."""
+    started = time.perf_counter()
+    result = await _call_mcp_tool(server, tool, params, timeout_s)
+    status = str(result.get("error_code") or "error") if result.get("status") == "error" else "ok"
+    MCP_TOOL_CALLS_TOTAL.labels(server=server, tool=tool, status=status).inc()
+    MCP_TOOL_DURATION.labels(server=server, tool=tool).observe(time.perf_counter() - started)
+    return result
+
+
+async def _call_mcp_tool(
+    server: str, tool: str, params: dict[str, Any], timeout_s: float | None
+) -> dict[str, Any]:
     if server not in _SERVERS:
         return error_envelope(server, tool, "UNKNOWN_MCP_SERVER", f"unknown MCP server {server!r}")
     timeout = timeout_s if timeout_s is not None else float(get_policy().timeouts.mcp_call_seconds)
     use_pool = _POOL_ACTIVE and settings.mcp_transport == "http"
+    cid = current_correlation_id()
+    meta = {"correlation_id": cid} if cid else None
     try:
         if use_pool:
             pooled = await asyncio.wait_for(_get_pooled_http_client(server, timeout), timeout=timeout)
             result = await asyncio.wait_for(
-                pooled.call_tool(tool, {"params": params}, raise_on_error=False), timeout=timeout
+                pooled.call_tool(tool, {"params": params}, raise_on_error=False, meta=meta), timeout=timeout
             )
         else:
             async with Client(_target(server), timeout=timeout) as client:
                 result = await asyncio.wait_for(
-                    client.call_tool(tool, {"params": params}, raise_on_error=False), timeout=timeout
+                    client.call_tool(tool, {"params": params}, raise_on_error=False, meta=meta), timeout=timeout
                 )
         return _unwrap(server, tool, result)
     except asyncio.TimeoutError:

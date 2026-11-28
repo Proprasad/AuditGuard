@@ -3,6 +3,8 @@ name: "Reflexion Playbook"
 description: "Compare Frozen Playbook OFF vs. ON (plus Memory ON vs. OFF) on 120 held-out cases."
 split: "held_out"
 repeats: 3
+# Audit AG-32: add one `playbook_on_minus_<ID>` arm per approved lesson and report harmful lessons + lesson cost.
+lesson_ablation: true
 modes:
   - "c1_single"
   - "c2_multi"

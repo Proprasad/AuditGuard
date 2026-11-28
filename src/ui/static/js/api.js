@@ -15,6 +15,25 @@ export class AuditGuardAPI {
   clearToken() {
     this.token = "";
     window.sessionStorage.removeItem("ag_token");
+    window.sessionStorage.removeItem("ag_user");
+  }
+
+  currentUser() {
+    return window.sessionStorage.getItem("ag_user") || "";
+  }
+
+  async logout() {
+    // Close any live SSE stream first, then revoke the JWT server-side; local state is cleared even if the
+    // server is unreachable, so a shared browser never keeps a usable session.
+    this.closeStream();
+    const token = this.token;
+    try {
+      if (token) await fetch("/api/v1/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    } catch (err) {
+      console.warn("logout request failed; local session cleared anyway", err);
+    } finally {
+      this.clearToken();
+    }
   }
 
   async login(username, password) {
@@ -24,6 +43,7 @@ export class AuditGuardAPI {
     });
     this.token = data.access_token;
     window.sessionStorage.setItem("ag_token", this.token);
+    window.sessionStorage.setItem("ag_user", `${username} (${data.role || "user"})`);
     return data;
   }
 

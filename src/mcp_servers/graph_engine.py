@@ -11,6 +11,7 @@ from typing import Any, Optional
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.mcp_servers.annotations import READ_ONLY_TOOL
 from src.config import get_policy
 from src.core import graph_math
 from src.core.adapters import txn_from_record
@@ -144,7 +145,7 @@ def _metrics_from_model(path: FundFlowPath) -> graph_math.PathMetrics:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def find_candidate_fund_flows(params: FindCandidateFlowsInput) -> FindCandidateFlowsOutput:
     """Build a directed transaction multigraph and find candidate layering paths within policy bounds."""
     policy = get_policy()
@@ -174,7 +175,7 @@ async def find_candidate_fund_flows(params: FindCandidateFlowsInput) -> FindCand
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def compute_flow_conservation(params: FlowConservationInput) -> FlowConservationOutput:
     """Test whether fund amounts are conserved across candidate paths using Decimal math."""
     policy = get_policy()
@@ -208,7 +209,7 @@ def _run_from_output(out: FindCandidateFlowsOutput) -> graph_math.GraphRun:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_TOOL)
 async def compare_graph_runs(params: CompareGraphRunsInput) -> CompareGraphRunsOutput:
     """Compare two graph analysis runs to evaluate replanning improvement."""
     diff = graph_math.compare_runs(_run_from_output(params.run_a), _run_from_output(params.run_b))

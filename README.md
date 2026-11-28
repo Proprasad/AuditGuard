@@ -22,6 +22,20 @@ python scripts/init_env.py
 - **Health & Prometheus Metrics:** `http://127.0.0.1:8000/health` | `http://127.0.0.1:8000/metrics`
 - **Optional Chainlit chat UI:** `chainlit run src/ui/app.py --port 8001`. Each person signs in with their own account (`analyst` / `reviewer` / `admin`); it needs `CHAINLIT_AUTH_SECRET`, which `python scripts/init_env.py` adds to an existing `.env`.
 - **Four-eyes approval:** the user who started an investigation, and whoever last edited its worksheet, can never approve it (`403 SELF_APPROVAL_FORBIDDEN`). Start as `analyst`, approve as `reviewer` or `admin`.
+- **Log out:** the workbench's top-bar log-out button revokes the session token server-side and closes any live stream. Chainlit's user-menu logout revokes its API token too.
+
+### One-command start / stop (macOS / Linux)
+
+```bash
+python scripts/init_env.py           # once: adds any missing secrets to .env (never overwrites)
+make start                           # full Docker Compose stack (project "auditguard-v3"); waits until healthy
+make stop                            # stop it (data volumes kept; scripts/stop.sh --volumes deletes them)
+make start-local / make stop-local   # API + workbench only, from the local venv (PORT=8000 by default)
+```
+
+- **Ports:** all Compose ports are published on `127.0.0.1` only. If host port 5432 is taken, run `POSTGRES_HOST_PORT=55432 make start`.
+- **DB credentials:** the bank-records and case-actions MCP containers use their own restricted Postgres logins (read-only, and a 4-table writer). They never receive the superuser password.
+- **Single worker:** run the API single-worker (the default). Runs execute in-process, so any thread still `running` at start-up is marked `interrupted`; continue it with `POST /api/v1/investigations/{thread_id}/resume`.
 
 ---
 
@@ -60,6 +74,20 @@ python -m eval.run_eval --config E2
 python -m eval.run_eval --config E3
 python -m eval.run_eval --config E4
 
+# CI accuracy floor: offline dev split; fails if rule_engine, C1 or C2 drops below 45%
+make eval-gate
+
+# Human review of Reflexion lessons, then freeze (records sha256; edited frozen playbooks are refused)
+python -m src.cli lessons list --status pending
+python -m src.cli lessons accept LES-XXXX --reviewer "<you>" --reason "<why it generalises>"
+python -m src.cli lessons freeze --reviewer "<you>"
+
+# MCP tool catalogue (docs/tool_catalogue.md is generated; a test fails if it is stale)
+make catalogue
+
+# Retrieval with the optional neural backend (needs: pip install -e ".[rag]")
+python -m src.cli retrieval-bench --report --backend neural
+
 # Single-alert CLI investigation (supports --llm live|record|replay|offline and --cassette)
 python -m src.cli investigate ALT-2026-0412 --mode c1_single --llm replay --cassette eval/cassettes/e1_smoke_10.jsonl
 
@@ -89,4 +117,5 @@ python scripts/purge_operational_db.py --check
    - Regulatory passages in `data/regulatory_corpus/indian_aml_corpus.jsonl` carry `human_verified: false` until verified against official Gazette of India / RBI / FIU-IND / FATF originals ([HUMAN_VERIFICATION_CHECKLIST.md](data/regulatory_corpus/HUMAN_VERIFICATION_CHECKLIST.md)).
 3. **Keyless Replay Scope:** `make replay` reproduces recorded LLM cassettes (`eval/cassettes/e1_smoke_10.jsonl`, `eval/cassettes/judge_smoke.jsonl`) plus the full deterministic held-out, E2 red-team v2, and Retrieval v2 suites without API keys. Running a full 120-case x 3-repeat live LLM sweep across `c1_single` and `c2_multi` requires a funded OpenRouter API key.
 4. **Offline Dense Retrieval Backend:** Default CI dense retrieval uses deterministic L2-normalized float32 SVD embeddings over word, character 3/4-gram, and AML concept features so CI requires zero multi-GB model downloads. Neural embeddings (e.g. `BAAI/bge-m3`) are not bundled in CI.
-5. **Decision-Support Only:** AuditGuard never files STRs autonomously, never freezes accounts, and prohibits criminal guilt assertions; every committed disposition requires an authenticated human reviewer signature and matching canonical SHA-256 payload hash.
+5. **India-only jurisdiction:** money fields are INR-typed and the corpus is Indian; a US SAR profile is a proposed design, not implemented ([ADR 0001](docs/adr/0001-us-sar-jurisdiction-profile.md)).
+6. **Decision-Support Only:** AuditGuard never files STRs autonomously, never freezes accounts, and prohibits criminal guilt assertions; every committed disposition requires an authenticated human reviewer signature and matching canonical SHA-256 payload hash.

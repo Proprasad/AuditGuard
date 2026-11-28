@@ -17,6 +17,13 @@ import typer
 import yaml
 
 from eval.exp_report import write_run_artifacts
+from eval.lesson_report import (
+    ablation_label_map,
+    approved_lesson_ids,
+    expand_lesson_ablation,
+    lesson_ablation,
+    lesson_report,
+)
 from eval.metrics import (
     aggregate_mode_metrics,
     cited_evidence_ids,
@@ -533,25 +540,28 @@ def run(
     persist_eval = eff_split in ("dev", "v2_dev", "v1_dev")
 
     typer.echo(f"Running {cfg_name} on {len(redacted_cases)} {eff_split} cases (repeats={eff_repeats})...")
+    exp_config = expand_lesson_ablation(exp_config, approved_lesson_ids())
+    hidden_by_label = ablation_label_map(exp_config)
     specs = _build_specs(exp_config)
     all_results: dict[str, dict[str, Any]] = {}
     for label, s_kwargs in specs:
-        agg, last_cases = asyncio.run(
-            _execute_matrix_spec(
-                label=label,
-                spec_kwargs=s_kwargs,
-                redacted_cases=redacted_cases,
-                gold_records=gold_records,
-                eff_repeats=eff_repeats,
-                base_seed=seed_v,
-                concurrency=conc_v,
-                persist_eval=persist_eval,
-                llm_mode_str=llm_mode_str,
-                shared_llm=shared_llm,
-                run_id=rid_v,
-                cases_out_dir=cases_dir,
+        with lesson_ablation(memory_store, hidden_by_label.get(label, [])):
+            agg, last_cases = asyncio.run(
+                _execute_matrix_spec(
+                    label=label,
+                    spec_kwargs=s_kwargs,
+                    redacted_cases=redacted_cases,
+                    gold_records=gold_records,
+                    eff_repeats=eff_repeats,
+                    base_seed=seed_v,
+                    concurrency=conc_v,
+                    persist_eval=persist_eval,
+                    llm_mode_str=llm_mode_str,
+                    shared_llm=shared_llm,
+                    run_id=rid_v,
+                    cases_out_dir=cases_dir,
+                )
             )
-        )
         for m_name in requested_metrics:
             if m_name not in agg:
                 raise NotImplementedError(f"Metric {m_name!r} missing from aggregated output")
@@ -592,6 +602,8 @@ def run(
         "shortcut_baselines": shortcut_out,
         "challenge_slice": challenge_out,
     }
+    if any(v.get("reflexion_enabled") for v in exp_config.get("variants", [])) or exp_config.get("reflexion_enabled"):
+        summary_out["lesson_report"] = lesson_report(all_results, exp_config)
     write_run_artifacts(run_dir, summary_out, out_v)
     return summary_out
 

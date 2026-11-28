@@ -14,6 +14,7 @@ from typing import Any
 
 from src.agent.planning import RunContext, all_security_notes, err_code, sync_budget
 from src.agent.tooling import GuardedToolbox, is_error
+from src.config import get_policy
 from src.core.adapters import flow_paths_from_result, graph_tx_payload
 from src.guardrails.guardrails import unwrap_untrusted_data
 from src.memory.store import trim_messages_with_summary
@@ -48,11 +49,12 @@ def _typology_query(alert: Alert, paths: list[FundFlowPath], profiles: list[dict
     rule_low = alert.rule_name.lower()
     prof_blob = _clean_profile_blob(profiles)
 
-    if max_hops >= 4 or "two_tier" in rule_low or "multi_tier" in rule_low:
+    qt = get_policy().query_typology
+    if max_hops >= qt.multi_tier_min_hops or "two_tier" in rule_low or "multi_tier" in rule_low:
         return "multi-tier four to five hop shell layering consolidation FIU-IND red flag"
-    if max_ret >= 5.0 or "skim" in rule_low or "fee" in rule_low:
+    if max_ret >= float(qt.fee_skim_min_retention_pct) or "skim" in rule_low or "fee" in rule_low:
         return "intermediary mule fee skimming 5 to 12 percent commission retention FIU-IND"
-    if max_span >= 10 or "stagger" in rule_low:
+    if max_span >= qt.staggered_min_span_days or "stagger" in rule_low:
         return "staggered delayed 14 to 30 day scatter-gather consolidation layering replanning"
     if "structur" in rule_low or "smurf" in rule_low:
         return "structuring smurfing cash transfers below INR 10 lakh CTR threshold PMLR Rule 3"

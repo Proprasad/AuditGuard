@@ -10,7 +10,6 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 import logging
 import time
-import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,11 +19,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from src.agent.llm_client import close_shared_llm_client, open_shared_llm_client
+from src.api.services.runner import mark_interrupted_threads
 from src.api.users import ensure_seed_users
 from src.config import env_mapping, reload_policy, settings, validate_startup
 from src.db.database import ensure_dev_alerts_seeded, init_db, use_postgres_active
 from src.db.postgres_backend import close_postgres_pool, open_postgres_pool
 from src.mcp_servers.client import close_mcp_client_pool, open_mcp_client_pool
+from src.observability.correlation import (
+    CORRELATION_HEADER,
+    bind_correlation_id,
+    new_correlation_id,
+    reset_correlation_id,
+)
 from src.observability.loki_shipper import emit_loki_log
 
 logger = logging.getLogger("auditguard.api")
@@ -39,6 +45,7 @@ def _startup_sync() -> None:
     init_db()
     if settings.is_dev:
         ensure_dev_alerts_seeded()
+    mark_interrupted_threads()
     seeded = ensure_seed_users(env_mapping())
     logger.info(
         "PolicyConfig %s loaded (max_tool_calls=%s, max_cost_usd=%s); users=%s",
@@ -103,11 +110,37 @@ async def loki_http_request_logger(request: Request, call_next: Callable[[Reques
     return response
 
 
+@app.middleware("http")
+async def no_store_api_responses(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """API payloads carry case data and tokens: browsers and proxies must never cache them (back button, shared PC)."""
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# Registered after the request logger, so it is the outer layer: the id is bound before anything else runs.
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    cid, token = bind_correlation_id(request.headers.get(CORRELATION_HEADER))
+    request.state.correlation_id = cid
+    try:
+        response = await call_next(request)
+    finally:
+        reset_correlation_id(token)
+    response.headers[CORRELATION_HEADER] = cid
+    return response
+
+
 @app.exception_handler(Exception)
 async def masked_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
-    correlation = uuid.uuid4().hex[:12]
+    correlation = str(getattr(request.state, "correlation_id", "") or new_correlation_id())
     logger.exception("unhandled error path=%s correlation_id=%s", request.url.path, correlation)
-    return JSONResponse(status_code=500, content={"detail": "INTERNAL_ERROR", "correlation_id": correlation})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "INTERNAL_ERROR", "correlation_id": correlation},
+        headers={CORRELATION_HEADER: correlation},
+    )
 
 
 @app.exception_handler(RequestValidationError)

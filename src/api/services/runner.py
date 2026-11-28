@@ -9,11 +9,13 @@ import time
 from typing import Any
 import uuid
 
+from src.agent.planning import TOOL_EVENT_NODE
 from src.api.metrics import CITATIONS_VERIFIED, INVESTIGATION_DURATION, INVESTIGATIONS_TOTAL, TOOL_CALLS_TOTAL
 from src.core.canonical import dec_str
 from src.db import case_repo
-from src.db.database import append_audit_log, append_event, save_checkpoint
+from src.db.database import append_audit_log, append_event, get_db, save_checkpoint, utc_now_iso
 from src.models import Alert, InvestigationState
+from src.observability.correlation import current_correlation_id
 from src.observability.loki_shipper import emit_loki_log
 
 logger = logging.getLogger("auditguard.runner")
@@ -22,6 +24,9 @@ _TASKS: set[asyncio.Task[Any]] = set()
 
 
 def emit(thread_id: str, alert_id: str, mode: str, event: str, data: dict[str, Any]) -> None:
+    cid = current_correlation_id()
+    if cid and "correlation_id" not in data:
+        data = {**data, "correlation_id": cid}
     append_event(thread_id, event, data)
     emit_loki_log(
         stream_type="agent_flow",
@@ -88,6 +93,18 @@ def register_thread(alert: Alert, mode: str, owner: str) -> str:
 
 
 def _node_events(node: str, inv: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    if node == TOOL_EVENT_NODE:
+        outcome = inv.get("error_code") or inv.get("status")
+        return [
+            (
+                "tool_executed",
+                {
+                    "category": "mcp_tool",
+                    **inv,
+                    "message": f"[{inv.get('role')}] #{inv.get('call_index')} {inv.get('tool')} -> {outcome}",
+                },
+            )
+        ]
     plan = inv.get("plan") or {}
     if node in ("plan", "supervisor_plan"):
         steps = plan.get("steps", [])
@@ -236,6 +253,42 @@ def live_callback(thread_id: str, alert: Alert, mode: str) -> Callable[[str, dic
     return on_node
 
 
+def mark_interrupted_threads() -> int:
+    """
+    Startup sweep (audit AG-28): a thread still `running` when the API starts was owned by a process that died, since
+    runs execute in-process and the API is deployed single-worker. Mark it `interrupted` and end its event stream;
+    `POST /api/v1/investigations/{thread_id}/resume` continues it from the last LangGraph checkpoint.
+    """
+    with get_db() as conn:
+        rows = [
+            (str(r[0]), str(r[1]), str(r[2]))
+            for r in conn.execute(
+                "SELECT thread_id, alert_id, mode FROM thread_checkpoints WHERE status = 'running'"
+            ).fetchall()
+        ]
+        for thread_id, _alert_id, _mode in rows:
+            conn.execute(
+                "UPDATE thread_checkpoints SET status = 'interrupted', current_node = 'interrupted', updated_at = ? "
+                "WHERE thread_id = ? AND status = 'running'",
+                (utc_now_iso(), thread_id),
+            )
+    for thread_id, alert_id, mode in rows:
+        emit(
+            thread_id,
+            alert_id,
+            mode,
+            "error",
+            {
+                "category": "error",
+                "code": "INTERRUPTED",
+                "message": "The server restarted during this run. Resume it with POST .../resume.",
+            },
+        )
+    if rows:
+        logger.warning("marked %d thread(s) interrupted after restart: %s", len(rows), [r[0] for r in rows])
+    return len(rows)
+
+
 def _record_thread_error(thread_id: str, alert: Alert, mode: str, correlation: str) -> None:
     save_checkpoint(
         thread_id=thread_id,
@@ -316,7 +369,7 @@ async def run_thread(thread_id: str, alert: Alert, mode: str, resume: bool = Fal
         if state.worksheet is None:
             raise RuntimeError("investigation finished without a worksheet")
     except Exception:  # noqa: BLE001 - background boundary: log with a correlation id, never leak internals
-        correlation = uuid.uuid4().hex[:12]
+        correlation = current_correlation_id() or uuid.uuid4().hex[:12]
         logger.exception("investigation failed thread=%s correlation_id=%s", thread_id, correlation)
         await asyncio.to_thread(_record_thread_error, thread_id, alert, mode, correlation)
         return "error"

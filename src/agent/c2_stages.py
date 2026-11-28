@@ -27,7 +27,7 @@ from src.agent.c2_loop import (
 )
 from src.agent.c2_routing import MANDATORY_ROLES, build_routing_plan
 from src.agent.hypothesis_eval import hypothesis_evaluation_node
-from src.agent.loop import retrieve_frozen_lessons
+from src.agent.loop_context import retrieve_frozen_lessons
 from src.agent.planning import RunContext, c2_handoffs, sync_budget
 from src.agent.telemetry import compute_network_flow_summary
 from src.core.claims import classify_evidence_source
@@ -276,7 +276,10 @@ def make_c2_stage_nodes(llm_client: LLMClientProtocol) -> dict[str, Any]:
         }
 
     async def supervisor_replan_check_stage(state: InvestigationState, ctx: RunContext) -> dict[str, Any]:
-        if state.replan_count >= 1:
+        # Bounded by the policy budget on the supervisor's own counter (audit AG-12): the loop ends even if the
+        # flow tracer ignores the directive, and C2 can replan more than once when the evidence calls for it.
+        max_replans = ctx.policy.budgets.max_replans
+        if state.replan_attempts >= max_replans or ctx.ledger.replans_used >= max_replans:
             return {
                 "proposed_params": None,
                 "current_node": "supervisor_replan_check",
@@ -321,7 +324,7 @@ def make_c2_stage_nodes(llm_client: LLMClientProtocol) -> dict[str, Any]:
                 f"max_hops={proposed.max_hops}, amount_tolerance='{proposed.amount_tolerance}', "
                 f"reason={reason!r})"
             ),
-            allowed_tool_budget=2,
+            allowed_tool_budget=ctx.policy.agent_limits.c2_replan_handoff_budget,
         )
         raw_f = await _run_evidence_specialist(
             handoff=replan_ho,
@@ -338,7 +341,7 @@ def make_c2_stage_nodes(llm_client: LLMClientProtocol) -> dict[str, Any]:
                 }
             },
             replanning_enabled=True,
-            max_turns=2,
+            max_turns=ctx.policy.agent_limits.c2_replan_max_turns,
         )
         finding = enrich_specialist_finding(
             replan_ho,
@@ -359,6 +362,7 @@ def make_c2_stage_nodes(llm_client: LLMClientProtocol) -> dict[str, Any]:
             "plan": updated_plan,
             "proposed_params": None,
             "replan_count": flow_rt.replan_count,
+            "replan_attempts": state.replan_attempts + 1,
             "fund_flow_paths": flow_rt.fund_flow_paths,
             "initial_fund_flow_paths": flow_rt.initial_fund_flow_paths,
             "evidence_registry": flow_rt.evidence_registry,

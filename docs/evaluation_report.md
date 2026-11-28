@@ -8,8 +8,8 @@ Every quantitative value in this report was generated programmatically by `pytho
 
 | Artifact | Path | SHA-256 (prefix) |
 |---|---|---|
-| E1 Deterministic Held-Out (120 + 30 challenge) | `eval/replay_bundle/e1_held_out_det_summary.json` | `e48532e5d9517ee6` |
-| E1 Offline Replay Smoke (10 dev, all 4 modes) | `eval/replay_bundle/e1_smoke_summary.json` | `a0731d99c8cd5ee3` |
+| E1 Deterministic Held-Out (120 + 30 challenge) | `eval/replay_bundle/e1_held_out_det_summary.json` | `88b7b1caadbe9451` |
+| E1 Offline Replay Smoke (10 dev, all 4 modes) | `eval/replay_bundle/e1_smoke_summary.json` | `64fce40ffcf97a2e` |
 | E2 Red-Team v2 Security Suite | `eval/replay_bundle/e2_security_summary.json` | `1abd2d9d9c514a5b` |
 | Retrieval v2 Benchmark (110 queries) | `eval/replay_bundle/retrieval_v2_summary.json` | `8c03f05f23c58c52` |
 | Phase 4 Judge Calibration Status | `eval/replay_bundle/calibration_status.json` | `300e12d909b14420` |
@@ -31,8 +31,8 @@ Every quantitative value in this report was generated programmatically by `pytho
 
 | Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
 |---|---:|---:|---:|---:|---|---|---|---:|
-| `c0_fixed` | 0.0% | 0.0% | 0.00% | 92.5% | \$0.0000 / \$0.0000 | 0.23s / 0.27s | 12.0 / 12.0 | 0.14% |
-| `rule_engine` | 80.3% | 95.5% | 0.99% | 100.0% | \$0.0000 / \$0.0000 | 0.43s / 0.50s | 15.0 / 15.0 | 0.23% |
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 92.5% | \$0.0000 / \$0.0000 | 0.24s / 0.28s | 12.0 / 12.0 | 0.14% |
+| `rule_engine` | 80.3% | 95.5% | 0.99% | 100.0% | \$0.0000 / \$0.0000 | 0.44s / 0.49s | 15.0 / 15.0 | 0.23% |
 
 ### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
 
@@ -78,17 +78,17 @@ Every quantitative value in this report was generated programmatically by `pytho
 |---|---|---|---:|---|---|---:|---:|
 | `c0_fixed` | `deterministic` | 30.0% [10.8%, 60.3%] | 0.262 | 3.8000 [0.9091, 7.0000] | 60.0% [23.1%, 88.2%] | 8.9% | 45.0% |
 | `c1_single` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 25.2% | 57.9% |
-| `c2_multi` | `replay` | 30.0% [10.8%, 60.3%] | 0.154 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 6.7% | 44.3% |
+| `c2_multi` | `replay` | 30.0% [10.8%, 60.3%] | 0.232 | 1.4000 [0.7273, 2.0000] | 0.0% [0.0%, 43.4%] | 11.7% | 51.5% |
 | `rule_engine` | `deterministic` | 80.0% [49.0%, 94.3%] | 0.785 | 0.4000 [0.0000, 1.0000] | 0.0% [0.0%, 43.4%] | 21.4% | 98.6% |
 
 ### 2. Replanning, Verification & Resource Percentiles (`p50` / `p95`)
 
 | Configuration | Replan Recovery | Needless Replan | INR Math Err | Citation Valid | Cost USD (p50 / p95) | Latency s (p50 / p95) | Tool Calls (p50 / p95) | Tool Err Rate |
 |---|---:|---:|---:|---:|---|---|---|---:|
-| `c0_fixed` | 0.0% | 0.0% | 0.00% | 90.0% | \$0.0000 / \$0.0000 | 0.25s / 1.02s | 12.0 / 12.0 | 0.00% |
-| `c1_single` | 20.0% | 0.0% | 2.90% | 40.0% | \$0.0259 / \$0.0407 | 0.29s / 0.34s | 15.0 / 15.0 | 13.77% |
-| `c2_multi` | 20.0% | 100.0% | 0.00% | 100.0% | \$0.0349 / \$0.0381 | 0.40s / 0.50s | 12.0 / 13.0 | 35.29% |
-| `rule_engine` | 80.0% | 80.0% | 0.00% | 100.0% | \$0.0000 / \$0.0000 | 0.42s / 0.48s | 15.0 / 15.0 | 0.00% |
+| `c0_fixed` | 0.0% | 0.0% | 0.00% | 90.0% | \$0.0000 / \$0.0000 | 0.27s / 0.98s | 12.0 / 12.0 | 0.00% |
+| `c1_single` | 20.0% | 0.0% | 2.90% | 40.0% | \$0.0259 / \$0.0407 | 0.33s / 0.38s | 15.0 / 15.0 | 13.77% |
+| `c2_multi` | 20.0% | 100.0% | 0.00% | 100.0% | \$0.0464 / \$0.0517 | 0.59s / 0.67s | 14.5 / 15.0 | 31.47% |
+| `rule_engine` | 80.0% | 80.0% | 0.00% | 100.0% | \$0.0000 / \$0.0000 | 0.45s / 0.46s | 15.0 / 15.0 | 0.00% |
 
 ### 3. Paired Cluster-Bootstrap (10k) & Exact McNemar Comparisons
 

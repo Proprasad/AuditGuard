@@ -3,7 +3,7 @@ AuditGuard v3 C1 Single-Agent ReAct / OpenAI Tool-Calling Loop (`src/agent/loop.
 
 Enforces:
   * System prompt loaded & versioned from `config/prompts/c1_investigator.yaml` (+ frozen Reflexion lessons)
-  * Hard caps: `max_tool_calls` (15), `max_replans` (3), `max_cost_usd` ($0.15), `max_turns` (12)
+  * Hard caps from `config/models.yaml`: `max_tool_calls`, `max_replans`, `max_cost_usd`, `agent_limits.c1_max_turns`
   * Real token & `Decimal` USD cost tracking in `BudgetLedger` on every `llm_client.chat(...)` turn
   * Structured `finish(...)` validated with Pydantic + `verify_worksheet`, with ONE repair retry on error
   * Forced `INSUFFICIENT_DATA` (`request_info`) finish if turns or budgets exhaust before verified `finish`
@@ -15,8 +15,10 @@ import asyncio
 import time
 from typing import Any, Optional
 
-from src.agent.planning import RunContext, all_security_notes, resolve_model_for_role, sync_budget, tool_error_notes
-from src.agent.prompts import render_alert_user_message, render_c1_system_prompt
+from src.agent.planning import RunContext, all_security_notes, emit_tool_event, resolve_model_for_role
+from src.agent.planning import sync_budget, tool_error_notes
+from src.agent.loop_context import alert_user_message, offer_observed_lessons, retrieve_frozen_lessons, tool_message
+from src.agent.prompts import render_c1_system_prompt
 from src.agent.telemetry import compute_network_flow_summary
 from src.agent.tooling import is_error
 from src.agent.tools import (
@@ -30,10 +32,9 @@ from src.core.adapters import kyc_summaries
 from src.core.canonical import dec_str, to_confidence
 from src.core.verifier import verify_worksheet
 from src.db.database import utc_now_iso
-from src.guardrails.hooks import llm_tool_content
 from src.llm.client import LLMClientProtocol
 from src.llm.schemas import ChatResponse, ToolCallRequest
-from src.memory.store import memory_store, trim_messages_with_summary
+from src.memory.store import trim_live_context, trim_messages_with_summary
 from src.models import (
     Alert,
     DispositionDecision,
@@ -42,9 +43,6 @@ from src.models import (
     HypothesisLabel,
     InvestigationState,
 )
-
-DEFAULT_MAX_TURNS = 12
-
 
 def _candidate_draft_payload(
     *,
@@ -256,22 +254,6 @@ async def persist_forced_finish(
     )
 
 
-async def retrieve_frozen_lessons(state: InvestigationState, ctx: RunContext) -> list[str]:
-    if not (ctx.reflexion_enabled and ctx.memory_enabled):
-        return []
-    top = await asyncio.to_thread(memory_store.retrieve_top_lessons, f"{state.alert.rule_name} scatter gather", 3)
-    return [f"[{les.lesson_id}] IF {les.trigger_precondition} THEN {les.actionable_rule}" for les in top]
-
-
-def tool_message(tc: ToolCallRequest, result: dict[str, Any], *, defenses_enabled: bool = True) -> dict[str, Any]:
-    return {
-        "role": "tool",
-        "tool_call_id": tc.id,
-        "name": tc.name,
-        "content": llm_tool_content(tc.name, result, defenses_enabled=defenses_enabled),
-    }
-
-
 def _c1_loop_telemetry(
     runtime: AgentToolRuntime, ctx: RunContext, ws: DispositionWorksheet, elapsed_ms: float
 ) -> dict[str, Any]:
@@ -384,6 +366,7 @@ async def execute_tool_turn_batch(
     reason = ""
     for tc in tool_calls:
         res = await runtime.execute(tc.name, tc.arguments)
+        await emit_tool_event(ctx, runtime.role, tc.name, res, len(runtime.tool_execution_log))
         if tc.name == "finish":
             ws, repair_msg, repair_used, fail_reason = await handle_finish_attempt(
                 tc=tc,
@@ -405,6 +388,8 @@ async def execute_tool_turn_batch(
         messages.append(tool_message(tc, res, defenses_enabled=runtime.box.defenses_enabled))
         if is_error(res) and res.get("error_code") == "BUDGET_EXCEEDED":
             reason = str(res.get("message") or "tool call budget exhausted")
+    if lesson_note := await offer_observed_lessons(ctx, runtime):  # after every tool reply of this turn
+        messages.append(lesson_note)
     return None, repair_used, False, reason
 
 
@@ -448,7 +433,7 @@ async def _drive_tool_loop(
             break
         active_tools = _select_turn_tools(turn, max_turns, tools_schema, messages)
         resp: ChatResponse = await llm_client.chat(
-            messages,
+            trim_live_context(messages, ctx.policy.memory.live_context_window_messages),
             tools=active_tools,
             model=model_id,
             temperature=spec.temperature,
@@ -563,7 +548,7 @@ async def run_c1_agent_loop(
     ctx: RunContext,
     llm_client: LLMClientProtocol,
     *,
-    max_turns: int = DEFAULT_MAX_TURNS,
+    max_turns: Optional[int] = None,
 ) -> dict[str, Any]:
     """Execute the genuine C1 LLM ReAct / tool-calling loop and return LangGraph state update."""
     t0 = time.perf_counter()
@@ -591,10 +576,12 @@ async def run_c1_agent_loop(
     sys_txt = render_c1_system_prompt(ctx.policy, lessons=lessons, replanning_enabled=ctx.replanning_enabled)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": sys_txt},
-        {"role": "user", "content": render_alert_user_message(state.alert)},
+        {"role": "user", "content": await alert_user_message(state, ctx)},
     ]
     ws = await _drive_tool_loop(
         messages=messages, tools_schema=tools_schema, runtime=runtime, ctx=ctx,
-        state=state, llm_client=llm_client, model_id=model_id, max_turns=max_turns,
+        state=state, llm_client=llm_client, model_id=model_id,
+        max_turns=max_turns if max_turns is not None else ctx.policy.agent_limits.c1_max_turns,
     )
-    return _c1_state_update(state, ctx, runtime, messages, lessons, ws, (time.perf_counter() - t0) * 1000)
+    all_lessons = [*lessons, *ctx.offered_lessons]
+    return _c1_state_update(state, ctx, runtime, messages, all_lessons, ws, (time.perf_counter() - t0) * 1000)

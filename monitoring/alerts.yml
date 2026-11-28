@@ -23,3 +23,13 @@ groups:
         annotations:
           summary: "Investigation p95 latency exceeded 45s"
           description: "95th percentile investigation latency is above the 45-second C2 SLO."
+
+      - alert: MCPRepeatedFailures
+        expr: |
+          sum by (server, tool) (increase(auditguard_mcp_tool_calls_total{status!="ok"}[5m])) >= 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP tool {{ $labels.server }}.{{ $labels.tool }} is failing repeatedly"
+          description: "5 or more failed calls in 5 minutes (timeouts, unavailable server or tool errors). Investigations fall back to degraded evidence; check the MCP server health and logs by correlation_id."

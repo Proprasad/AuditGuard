@@ -25,7 +25,7 @@ from src.api.deps import (
 )
 from src.api.services import approval as approval_service
 from src.api.services import runner
-from src.api.services.erasure import erase_customer
+from src.api.services.erasure import ErasureIncomplete, erase_customer
 from src.api.services.threads import get_thread, thread_view
 from src.config import get_policy
 from src.core.canonical import NumericError, to_confidence
@@ -281,7 +281,17 @@ async def export_investigation_report(thread_id: str, _principal: Principal = AN
 
 @router.delete("/api/v1/memory/{customer_id}", dependencies=api_deps)
 async def forget_customer(customer_id: str, principal: Principal = SENIOR) -> dict[str, Any]:
-    result = await asyncio.to_thread(erase_customer, customer_id, principal.sub)
+    try:
+        result = await asyncio.to_thread(erase_customer, customer_id, principal.sub)
+    except ErasureIncomplete as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "ERASURE_INCOMPLETE",
+                "stage": exc.stage,
+                "message": "Erasure did not finish; it is idempotent, so retry the request.",
+            },
+        ) from exc
     return {
         **result,
         "status": "deleted",

@@ -17,8 +17,9 @@ from typing import Any, Literal, Optional
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.mcp_servers.annotations import COMMIT_WRITE_TOOL, DRAFT_WRITE_TOOL
 from src.core.canonical import Confidence
-from src.core.verifier import check_prohibited_claims, verify_worksheet
+from src.core.verifier import check_prohibited_claims, check_tipping_off, verify_worksheet
 from src.db import case_repo
 from src.db.case_repo import CaseRepoError
 from src.db.database import utc_now_iso
@@ -104,10 +105,13 @@ def _enforce_server_side_verification(
         str(h.get("explanation", "")) for h in content.get("hypotheses", []) if isinstance(h, dict)
     ]
     guilt_hits = [hit for t in texts for hit in check_prohibited_claims(t)]
-    if guilt_hits:
+    tipping_hits = [hit for t in texts for hit in check_tipping_off(t)]
+    if guilt_hits or tipping_hits:
         content["verification_status"] = "failed"
         content["verification_discrepancies"] = [
-            {"code": "PROHIBITED_CLAIM", "field": "recommendation_rationale", "detail": str(guilt_hits)}
+            {"code": code, "field": "recommendation_rationale", "detail": str(hits)}
+            for code, hits in (("PROHIBITED_CLAIM", guilt_hits), ("TIPPING_OFF", tipping_hits))
+            if hits
         ]
         if enforce_verifier_gate:
             content["recommended_disposition"] = "request_info"
@@ -122,7 +126,7 @@ def _enforce_server_side_verification(
     return content
 
 
-@mcp.tool()
+@mcp.tool(annotations=DRAFT_WRITE_TOOL)
 async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispositionOutput:
     """Persist a verified draft disposition worksheet and return its canonical SHA-256 hash."""
     now = utc_now_iso()
@@ -141,7 +145,7 @@ async def draft_disposition_report(params: DraftDispositionInput) -> DraftDispos
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=COMMIT_WRITE_TOOL)
 async def submit_case_disposition(params: SubmitCaseDispositionInput) -> SubmitCaseDispositionOutput:
     """Commit the approved disposition. Replays, tampered payloads and invalid tokens are rejected."""
     now = utc_now_iso()

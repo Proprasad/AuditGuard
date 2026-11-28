@@ -222,8 +222,12 @@ def init_db(force: bool = False) -> Path:
         key = f"postgres://{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
         if key not in _initialized_targets or force:
             with get_db() as conn:
-                conn.executescript(postgres_ddl())
-                _seed_banks(conn)
+                # Restricted service logins (bank-records RO, case-actions writer) cannot run DDL; the API's owner
+                # login creates and seeds the schema (audit AG-33).
+                row = conn.execute("SELECT has_schema_privilege(current_user, 'public', 'CREATE')").fetchone()
+                if row is not None and bool(row[0]):
+                    conn.executescript(postgres_ddl())
+                    _seed_banks(conn)
             _initialized_targets.add(key)
         return Path(settings.postgres_db)
 
